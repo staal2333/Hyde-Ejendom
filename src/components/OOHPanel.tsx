@@ -127,6 +127,7 @@ function ensureQuad(p: FramePlacement): [Point2D, Point2D, Point2D, Point2D] {
 }
 
 // ── Placement Editor (multi-placement + 4-point perspective + fullscreen) ──
+// Photopea-lite: small markers, scroll zoom, opacity slider, dark UI, snappy
 
 function PlacementEditor({ frame, creative, onChangePlacements, onSave, saving }: {
   frame: Frame;
@@ -136,16 +137,22 @@ function PlacementEditor({ frame, creative, onChangePlacements, onSave, saving }
   saving: boolean;
 }) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasWrapRef = useRef<HTMLDivElement>(null);
   const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
   const [fullscreen, setFullscreen] = useState(false);
   const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStart = useRef({ x: 0, y: 0, panX: 0, panY: 0 });
   const [activeIdx, setActiveIdx] = useState(0);
+  const [opacity, setOpacity] = useState(60);
+  const [showGrid, setShowGrid] = useState(false);
 
   const placements = ensurePlacements(frame);
   const activePlacement = placements[activeIdx] || placements[0];
   const quad = ensureQuad(activePlacement);
   const CORNER_LABELS = ["TL", "TR", "BR", "BL"];
-  const CORNER_COLORS = ["bg-red-500", "bg-blue-500", "bg-green-500", "bg-amber-500"];
+  const CORNER_COLORS_SOLID = ["#ef4444", "#3b82f6", "#22c55e", "#f59e0b"];
 
   const updateActivePlacement = (updated: FramePlacement) => {
     const newPlacements = [...placements];
@@ -178,19 +185,60 @@ function PlacementEditor({ frame, creative, onChangePlacements, onSave, saving }
     onChangePlacements(newPlacements);
   };
 
+  // Keyboard shortcuts
   useEffect(() => {
-    if (!fullscreen) return;
     const onKey = (e: KeyboardEvent) => {
+      if (!fullscreen) return;
       if (e.key === "Escape") setFullscreen(false);
-      if (e.key === "+" || e.key === "=") setZoom(z => Math.min(3, z + 0.25));
-      if (e.key === "-" || e.key === "_") setZoom(z => Math.max(0.25, z - 0.25));
-      if (e.key === "0") setZoom(1);
+      if (e.key === "+" || e.key === "=") setZoom(z => Math.min(5, +(z + 0.1).toFixed(1)));
+      if (e.key === "-" || e.key === "_") setZoom(z => Math.max(0.1, +(z - 0.1).toFixed(1)));
+      if (e.key === "0") { setZoom(1); setPan({ x: 0, y: 0 }); }
+      if (e.key === "g") setShowGrid(g => !g);
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [fullscreen]);
 
-  useEffect(() => { setZoom(1); }, [fullscreen]);
+  useEffect(() => { setZoom(1); setPan({ x: 0, y: 0 }); }, [fullscreen]);
+
+  // Scroll-wheel zoom (both modes)
+  useEffect(() => {
+    const el = canvasWrapRef.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault();
+      const delta = -e.deltaY * 0.001;
+      setZoom(z => {
+        const next = Math.max(0.1, Math.min(5, +(z + delta * z).toFixed(2)));
+        return next;
+      });
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, []);
+
+  // Middle-click or space+drag pan
+  useEffect(() => {
+    if (!isPanning) return;
+    const onMove = (e: globalThis.MouseEvent) => {
+      setPan({
+        x: panStart.current.panX + (e.clientX - panStart.current.x),
+        y: panStart.current.panY + (e.clientY - panStart.current.y),
+      });
+    };
+    const onUp = () => setIsPanning(false);
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+  }, [isPanning]);
+
+  const startPan = (e: ReactMouseEvent) => {
+    if (e.button === 1 || (e.button === 0 && e.altKey)) {
+      e.preventDefault();
+      setIsPanning(true);
+      panStart.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+    }
+  };
 
   const getMouseImageCoords = useCallback((e: { clientX: number; clientY: number }) => {
     const el = containerRef.current;
@@ -199,19 +247,24 @@ function PlacementEditor({ frame, creative, onChangePlacements, onSave, saving }
     return { x: ((e.clientX - rect.left) / rect.width) * frame.frameWidth, y: ((e.clientY - rect.top) / rect.height) * frame.frameHeight };
   }, [frame.frameWidth, frame.frameHeight]);
 
+  // Drag corner points - uses requestAnimationFrame for snappiness
   useEffect(() => {
     if (draggingIdx === null) return;
+    let rafId = 0;
     const onMove = (e: globalThis.MouseEvent) => {
-      const pt = getMouseImageCoords(e);
-      const clamped = { x: Math.max(0, Math.min(frame.frameWidth, Math.round(pt.x))), y: Math.max(0, Math.min(frame.frameHeight, Math.round(pt.y))) };
-      const nq = [...quad] as [Point2D, Point2D, Point2D, Point2D];
-      nq[draggingIdx] = clamped;
-      updateActivePlacement({ ...quadBounds(nq), quadPoints: nq });
+      cancelAnimationFrame(rafId);
+      rafId = requestAnimationFrame(() => {
+        const pt = getMouseImageCoords(e);
+        const clamped = { x: Math.max(0, Math.min(frame.frameWidth, Math.round(pt.x))), y: Math.max(0, Math.min(frame.frameHeight, Math.round(pt.y))) };
+        const nq = [...quad] as [Point2D, Point2D, Point2D, Point2D];
+        nq[draggingIdx] = clamped;
+        updateActivePlacement({ ...quadBounds(nq), quadPoints: nq });
+      });
     };
-    const onUp = () => setDraggingIdx(null);
+    const onUp = () => { cancelAnimationFrame(rafId); setDraggingIdx(null); };
     window.addEventListener("mousemove", onMove);
     window.addEventListener("mouseup", onUp);
-    return () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
+    return () => { cancelAnimationFrame(rafId); window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [draggingIdx, frame.frameWidth, frame.frameHeight, activeIdx]);
 
@@ -227,157 +280,287 @@ function PlacementEditor({ frame, creative, onChangePlacements, onSave, saving }
     updateActivePlacement({ ...p, quadPoints: defQ });
   };
 
-  // ── Placement tabs bar ──
-  const placementTabs = (isFs: boolean) => (
-    <div className={`flex items-center gap-1.5 ${isFs ? "px-6 py-2 bg-slate-900/80 border-b border-white/10" : "px-5 py-2.5 border-b border-slate-100 bg-slate-50/50"} flex-wrap`}>
+  const zoomTo = (level: number) => { setZoom(level); if (level === 1) setPan({ x: 0, y: 0 }); };
+
+  // ── Placement tabs ──
+  const placementTabs = (
+    <div className="flex items-center gap-1 px-3 py-1.5 bg-[#1e1e2e] border-b border-white/[0.06] flex-wrap">
       {placements.map((p, i) => {
         const color = PLACEMENT_COLORS[i % PLACEMENT_COLORS.length];
         const isActive = i === activeIdx;
         return (
           <button key={i} onClick={() => setActiveIdx(i)}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${isActive
-              ? (isFs ? "bg-white/15 text-white ring-1 ring-white/20" : "bg-white text-slate-900 shadow-sm ring-1 ring-slate-200")
-              : (isFs ? "text-white/50 hover:text-white/80 hover:bg-white/5" : "text-slate-500 hover:text-slate-700 hover:bg-white")}`}>
-            <span className={`w-2.5 h-2.5 rounded-full ${color.bg} shrink-0`} />
-            {p.label || `Placering ${i + 1}`}
+            className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[10px] font-semibold transition-all ${isActive
+              ? "bg-white/[0.12] text-white ring-1 ring-white/[0.15]"
+              : "text-white/40 hover:text-white/70 hover:bg-white/[0.05]"}`}>
+            <span className={`w-2 h-2 rounded-full ${color.bg} shrink-0`} />
+            {p.label || `P${i + 1}`}
             {isActive && placements.length > 1 && (
               <span onClick={(e) => { e.stopPropagation(); removePlacement(i); }}
-                className={`ml-0.5 w-4 h-4 flex items-center justify-center rounded-full ${isFs ? "hover:bg-red-500/30 text-white/40 hover:text-red-300" : "hover:bg-red-100 text-slate-400 hover:text-red-500"} transition-colors`}>
-                <Ic d="M6 18L18 6M6 6l12 12" className="w-2.5 h-2.5" />
+                className="ml-0.5 w-3.5 h-3.5 flex items-center justify-center rounded hover:bg-red-500/30 text-white/30 hover:text-red-300 transition-colors">
+                <Ic d="M6 18L18 6M6 6l12 12" className="w-2 h-2" />
               </span>
             )}
           </button>
         );
       })}
       <button onClick={addPlacement}
-        className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${isFs ? "text-white/40 hover:text-white/70 hover:bg-white/5" : "text-slate-400 hover:text-violet-600 hover:bg-violet-50"}`}>
-        <Ic d="M12 4.5v15m7.5-7.5h-15" className="w-3 h-3" />Tilføj
+        className="flex items-center gap-0.5 px-2 py-1 rounded-md text-[10px] font-semibold text-white/30 hover:text-white/60 hover:bg-white/[0.05] transition-all">
+        <Ic d="M12 4.5v15m7.5-7.5h-15" className="w-2.5 h-2.5" />
       </button>
     </div>
   );
 
+  // ── Canvas ──
   const editorCanvas = (isFs: boolean) => (
-    <div ref={containerRef} className={`relative select-none`} style={{ cursor: draggingIdx !== null ? "grabbing" : "crosshair" }}>
-      <div className="relative" style={isFs ? { transform: `scale(${zoom})`, transformOrigin: "center center", transition: "transform 0.15s ease" } : undefined}>
+    <div ref={canvasWrapRef} className="relative select-none overflow-hidden"
+      onMouseDown={startPan}
+      style={{ cursor: isPanning ? "grabbing" : draggingIdx !== null ? "grabbing" : "crosshair" }}>
+      <div ref={containerRef} className="relative"
+        style={{
+          transform: isFs ? `translate(${pan.x}px, ${pan.y}px) scale(${zoom})` : undefined,
+          transformOrigin: "center center",
+          transition: isPanning || draggingIdx !== null ? "none" : "transform 0.12s cubic-bezier(0.16,1,0.3,1)",
+          willChange: "transform",
+        }}>
         {frame.frameImageUrl ? (
-          <img src={frame.frameImageUrl} alt={frame.name} className={`${isFs ? "max-h-[calc(100vh-200px)] w-auto mx-auto" : "w-full h-auto"} block`} draggable={false} />
+          <img src={frame.frameImageUrl} alt={frame.name}
+            className={`${isFs ? "max-h-[calc(100vh-160px)] w-auto mx-auto" : "w-full h-auto"} block`}
+            draggable={false}
+            style={{ imageRendering: zoom > 2 ? "pixelated" : "auto" }} />
         ) : (
-          <div className="aspect-[4/3] bg-gradient-to-br from-slate-100 to-slate-200 flex items-center justify-center"><p className="text-sm text-slate-400">Intet billede</p></div>
+          <div className="aspect-[4/3] bg-gradient-to-br from-slate-800 to-slate-900 flex items-center justify-center">
+            <p className="text-xs text-white/30">Intet billede</p>
+          </div>
         )}
+
+        {/* SVG overlay */}
         <svg className="absolute inset-0 w-full h-full pointer-events-none" viewBox="0 0 100 100" preserveAspectRatio="none">
-          {/* Dim overlay with active placement cut out */}
-          <defs><mask id={isFs ? "qm-fs" : "qm"}><rect x="0" y="0" width="100" height="100" fill="white" /><polygon points={quad.map(p => `${pctX(p.x)},${pctY(p.y)}`).join(" ")} fill="black" /></mask></defs>
-          <rect x="0" y="0" width="100" height="100" fill={isFs ? "rgba(0,0,0,0.5)" : "rgba(0,0,0,0.35)"} mask={`url(#${isFs ? "qm-fs" : "qm"})`} />
-          {/* Inactive placements as dimmed outlines */}
+          <defs>
+            <mask id={isFs ? "qm-fs" : "qm"}>
+              <rect x="0" y="0" width="100" height="100" fill="white" />
+              <polygon points={quad.map(p => `${pctX(p.x)},${pctY(p.y)}`).join(" ")} fill="black" />
+            </mask>
+          </defs>
+          {/* Dim overlay */}
+          <rect x="0" y="0" width="100" height="100" fill="rgba(0,0,0,0.4)" mask={`url(#${isFs ? "qm-fs" : "qm"})`} />
+          {/* Inactive placements */}
           {placements.map((p, i) => {
             if (i === activeIdx) return null;
             const q = ensureQuad(p);
             const c = PLACEMENT_COLORS[i % PLACEMENT_COLORS.length];
-            return <polygon key={i} points={q.map(pt => `${pctX(pt.x)},${pctY(pt.y)}`).join(" ")} fill={c.fill} stroke={c.stroke} strokeWidth="0.2" strokeDasharray="1,1" opacity="0.6" />;
+            return <polygon key={i} points={q.map(pt => `${pctX(pt.x)},${pctY(pt.y)}`).join(" ")} fill={c.fill} stroke={c.stroke} strokeWidth="0.15" strokeDasharray="0.8,0.5" opacity="0.5" />;
           })}
-          {/* Active placement outline */}
-          {(() => { const c = PLACEMENT_COLORS[activeIdx % PLACEMENT_COLORS.length]; return <polygon points={quad.map(p => `${pctX(p.x)},${pctY(p.y)}`).join(" ")} fill="none" stroke={c.stroke} strokeWidth="0.3" strokeDasharray="1.5,1" />; })()}
-          {isFs && [25, 50, 75].map(v => <line key={`h${v}`} x1="0" y1={`${v}`} x2="100" y2={`${v}`} stroke="rgba(255,255,255,0.05)" strokeWidth="0.1" />)}
-          {isFs && [25, 50, 75].map(v => <line key={`v${v}`} x1={`${v}`} y1="0" x2={`${v}`} y2="100" stroke="rgba(255,255,255,0.05)" strokeWidth="0.1" />)}
+          {/* Active placement outline - thin, crisp */}
+          {(() => {
+            const c = PLACEMENT_COLORS[activeIdx % PLACEMENT_COLORS.length];
+            return (
+              <>
+                <polygon points={quad.map(p => `${pctX(p.x)},${pctY(p.y)}`).join(" ")} fill="none" stroke={c.stroke} strokeWidth="0.2" />
+                {/* Edge midpoint markers */}
+                {quad.map((pt, i) => {
+                  const next = quad[(i + 1) % 4];
+                  const mx = (pctX(pt.x) + pctX(next.x)) / 2;
+                  const my = (pctY(pt.y) + pctY(next.y)) / 2;
+                  return <circle key={`mid-${i}`} cx={mx} cy={my} r="0.3" fill="white" opacity="0.3" />;
+                })}
+              </>
+            );
+          })()}
+          {/* Grid overlay */}
+          {showGrid && [10, 20, 30, 40, 50, 60, 70, 80, 90].map(v => (
+            <g key={`grid-${v}`}>
+              <line x1="0" y1={`${v}`} x2="100" y2={`${v}`} stroke="rgba(255,255,255,0.06)" strokeWidth="0.06" />
+              <line x1={`${v}`} y1="0" x2={`${v}`} y2="100" stroke="rgba(255,255,255,0.06)" strokeWidth="0.06" />
+            </g>
+          ))}
         </svg>
+
+        {/* Creative preview with adjustable opacity */}
         {creative?.thumbnailUrl && (
-          <div className="absolute inset-0 pointer-events-none" style={{ clipPath: `polygon(${quad.map(p => `${pctX(p.x)}% ${pctY(p.y)}%`).join(", ")})` }}>
-            <img src={creative.thumbnailUrl} alt="" className="w-full h-full object-cover opacity-50" draggable={false} />
+          <div className="absolute inset-0 pointer-events-none"
+            style={{ clipPath: `polygon(${quad.map(p => `${pctX(p.x)}% ${pctY(p.y)}%`).join(", ")})`, opacity: opacity / 100 }}>
+            <img src={creative.thumbnailUrl} alt="" className="w-full h-full object-cover" draggable={false} />
           </div>
         )}
-        {/* Active placement corner handles */}
-        {quad.map((pt, i) => (
-          <div key={i} onMouseDown={(e: ReactMouseEvent) => { e.preventDefault(); e.stopPropagation(); setDraggingIdx(i); }}
-            className="absolute z-20 group" style={{ left: `${pctX(pt.x)}%`, top: `${pctY(pt.y)}%`, transform: "translate(-50%, -50%)", cursor: "grab" }}>
-            <div className={`${isFs ? "w-12 h-12" : "w-8 h-8"} flex items-center justify-center`}>
-              <div className={`${isFs ? "w-5 h-5" : "w-4 h-4"} rounded-full ${CORNER_COLORS[i]} border-2 border-white shadow-lg transition-transform ${draggingIdx === i ? "scale-150" : "group-hover:scale-125"}`} />
+
+        {/* Corner handles - SMALL, precise */}
+        {quad.map((pt, i) => {
+          const isDragging = draggingIdx === i;
+          const markerSize = isFs ? 7 : 6;
+          return (
+            <div key={i}
+              onMouseDown={(e: ReactMouseEvent) => { e.preventDefault(); e.stopPropagation(); setDraggingIdx(i); }}
+              className="absolute z-20"
+              style={{
+                left: `${pctX(pt.x)}%`, top: `${pctY(pt.y)}%`,
+                transform: "translate(-50%, -50%)",
+                cursor: "grab",
+                padding: isFs ? "8px" : "6px",
+              }}>
+              {/* Crosshair lines */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="absolute" style={{ width: markerSize * 3, height: 1, backgroundColor: CORNER_COLORS_SOLID[i], opacity: isDragging ? 0.8 : 0.4 }} />
+                <div className="absolute" style={{ width: 1, height: markerSize * 3, backgroundColor: CORNER_COLORS_SOLID[i], opacity: isDragging ? 0.8 : 0.4 }} />
+              </div>
+              {/* Center dot */}
+              <div className="flex items-center justify-center" style={{ width: markerSize * 2, height: markerSize * 2 }}>
+                <div style={{
+                  width: isDragging ? markerSize + 2 : markerSize,
+                  height: isDragging ? markerSize + 2 : markerSize,
+                  borderRadius: "50%",
+                  backgroundColor: CORNER_COLORS_SOLID[i],
+                  border: "1.5px solid white",
+                  boxShadow: isDragging ? `0 0 0 2px ${CORNER_COLORS_SOLID[i]}40, 0 1px 4px rgba(0,0,0,0.5)` : "0 1px 3px rgba(0,0,0,0.4)",
+                  transition: "width 0.1s, height 0.1s, box-shadow 0.1s",
+                }} />
+              </div>
+              {/* Label - only show on hover/drag or in fullscreen */}
+              {(isFs || isDragging) && (
+                <div className="absolute left-1/2 -translate-x-1/2 -top-4 text-[7px] font-bold text-white/80 bg-black/70 px-1 py-px rounded leading-none whitespace-nowrap" style={{ pointerEvents: "none" }}>
+                  {CORNER_LABELS[i]}
+                </div>
+              )}
             </div>
-            <div className={`absolute left-1/2 -translate-x-1/2 font-bold text-white bg-slate-900/90 px-1.5 rounded ${isFs ? "-top-7 text-[10px]" : "-top-5 text-[8px]"}`}>{CORNER_LABELS[i]}</div>
-            {isFs && <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 text-[9px] font-mono text-white/70 bg-slate-900/80 px-1.5 py-0.5 rounded whitespace-nowrap">{Math.round(pt.x)}, {Math.round(pt.y)}</div>}
-          </div>
-        ))}
+          );
+        })}
       </div>
     </div>
   );
 
+  // ── Toolbar (Photopea-style) ──
+  const toolbar = (isFs: boolean) => (
+    <div className={`flex items-center gap-2 px-3 py-1.5 ${isFs ? "bg-[#1e1e2e] border-b border-white/[0.06]" : "bg-slate-900 border-b border-slate-700/50"}`}>
+      {/* Zoom controls */}
+      <div className="flex items-center gap-0.5 bg-white/[0.06] rounded-md px-1 py-0.5">
+        <button onClick={() => zoomTo(Math.max(0.1, +(zoom - 0.1).toFixed(1)))} className="w-5 h-5 flex items-center justify-center text-white/50 hover:text-white rounded hover:bg-white/[0.08]">
+          <Ic d="M19.5 12h-15" className="w-3 h-3" />
+        </button>
+        <button onClick={() => zoomTo(1)} className="px-1.5 py-0.5 text-[9px] font-mono text-white/60 hover:text-white hover:bg-white/[0.08] rounded min-w-[36px] text-center">
+          {Math.round(zoom * 100)}%
+        </button>
+        <button onClick={() => zoomTo(Math.min(5, +(zoom + 0.1).toFixed(1)))} className="w-5 h-5 flex items-center justify-center text-white/50 hover:text-white rounded hover:bg-white/[0.08]">
+          <Ic d="M12 4.5v15m7.5-7.5h-15" className="w-3 h-3" />
+        </button>
+      </div>
+      <div className="w-px h-4 bg-white/[0.08]" />
+      {/* Quick zoom presets */}
+      {[0.5, 1, 1.5, 2].map(z => (
+        <button key={z} onClick={() => zoomTo(z)}
+          className={`px-1.5 py-0.5 text-[9px] font-medium rounded transition-all ${Math.abs(zoom - z) < 0.05 ? "bg-white/[0.12] text-white" : "text-white/35 hover:text-white/70 hover:bg-white/[0.05]"}`}>
+          {z * 100}%
+        </button>
+      ))}
+      <div className="w-px h-4 bg-white/[0.08]" />
+      {/* Opacity slider */}
+      {creative?.thumbnailUrl && (
+        <div className="flex items-center gap-1.5">
+          <Ic d="M2.036 12.322a1.012 1.012 0 010-.639C3.423 7.51 7.36 4.5 12 4.5c4.638 0 8.573 3.007 9.963 7.178.07.207.07.431 0 .639C20.577 16.49 16.64 19.5 12 19.5c-4.638 0-8.573-3.007-9.963-7.178z" className="w-3 h-3 text-white/40" />
+          <input type="range" min="0" max="100" value={opacity}
+            onChange={(e) => setOpacity(parseInt(e.target.value))}
+            className="w-16 h-1 appearance-none bg-white/[0.12] rounded-full cursor-pointer accent-violet-500"
+            style={{ accentColor: "#8b5cf6" }} />
+          <span className="text-[9px] font-mono text-white/40 w-6">{opacity}%</span>
+        </div>
+      )}
+      <div className="w-px h-4 bg-white/[0.08]" />
+      {/* Grid toggle */}
+      <button onClick={() => setShowGrid(!showGrid)}
+        className={`w-5 h-5 flex items-center justify-center rounded transition-all ${showGrid ? "bg-white/[0.12] text-white" : "text-white/35 hover:text-white/60"}`}
+        title="Grid (G)">
+        <Ic d="M3.75 6A2.25 2.25 0 016 3.75h2.25A2.25 2.25 0 0110.5 6v2.25a2.25 2.25 0 01-2.25 2.25H6a2.25 2.25 0 01-2.25-2.25V6zM3.75 15.75A2.25 2.25 0 016 13.5h2.25a2.25 2.25 0 012.25 2.25V18a2.25 2.25 0 01-2.25 2.25H6A2.25 2.25 0 013.75 18v-2.25zM13.5 6a2.25 2.25 0 012.25-2.25H18A2.25 2.25 0 0120.25 6v2.25A2.25 2.25 0 0118 10.5h-2.25a2.25 2.25 0 01-2.25-2.25V6zM13.5 15.75a2.25 2.25 0 012.25-2.25H18a2.25 2.25 0 012.25 2.25V18A2.25 2.25 0 0118 20.25h-2.25A2.25 2.25 0 0113.5 18v-2.25z" className="w-3 h-3" />
+      </button>
+      {/* Reset */}
+      <button onClick={resetToRect} className="text-[9px] font-medium text-white/35 hover:text-white/70 px-1.5 py-0.5 rounded hover:bg-white/[0.05]">Reset</button>
+      {/* Spacer */}
+      <div className="flex-1" />
+      {/* Dimensions */}
+      <span className="text-[9px] font-mono text-white/25">{frame.frameWidth}x{frame.frameHeight}</span>
+    </div>
+  );
+
+  // ── Coord bar (compact) ──
   const coordBar = (isFs: boolean) => (
-    <div className={`${isFs ? "bg-slate-900/95 border-t border-white/10 px-6 py-3" : "px-5 py-3 border-t border-slate-100"}`}>
-      <div className="flex items-center justify-between mb-2">
-        <div className="flex items-center gap-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${PLACEMENT_COLORS[activeIdx % PLACEMENT_COLORS.length].bg}`} />
+    <div className={`px-3 py-2 ${isFs ? "bg-[#1e1e2e] border-t border-white/[0.06]" : "bg-slate-900 border-t border-slate-700/50"}`}>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          <span className={`w-2 h-2 rounded-full ${PLACEMENT_COLORS[activeIdx % PLACEMENT_COLORS.length].bg}`} />
           <input type="text" value={activePlacement.label || `Placering ${activeIdx + 1}`}
             onChange={(e) => renameActivePlacement(e.target.value)}
-            className={`text-[10px] font-bold uppercase tracking-wide border-none bg-transparent p-0 focus:ring-0 ${isFs ? "text-white/70 focus:text-white" : "text-slate-600 focus:text-slate-900"}`}
-            style={{ width: `${Math.max(80, (activePlacement.label || `Placering ${activeIdx + 1}`).length * 7)}px` }} />
+            className="text-[9px] font-bold uppercase tracking-wide border-none bg-transparent p-0 focus:ring-0 text-white/50 focus:text-white w-20" />
         </div>
-        <button onClick={resetToRect} className={`text-[10px] font-semibold ${isFs ? "text-violet-400 hover:text-violet-300" : "text-violet-600 hover:text-violet-700"}`}>Nulstil</button>
-      </div>
-      <div className="grid grid-cols-4 gap-2">
-        {quad.map((pt, i) => (
-          <div key={i} className="flex items-center gap-1">
-            <span className={`inline-block w-2.5 h-2.5 rounded-full ${CORNER_COLORS[i]} flex-shrink-0`} />
-            <div className="flex gap-1 flex-1">
+        <div className="flex items-center gap-2 flex-1">
+          {quad.map((pt, i) => (
+            <div key={i} className="flex items-center gap-1">
+              <span style={{ width: 6, height: 6, borderRadius: "50%", backgroundColor: CORNER_COLORS_SOLID[i], flexShrink: 0 }} />
               <input type="number" value={Math.round(pt.x)} onChange={(e) => { const nq = [...quad] as [Point2D, Point2D, Point2D, Point2D]; nq[i] = { ...nq[i], x: parseInt(e.target.value) || 0 }; updateActivePlacement({ ...quadBounds(nq), quadPoints: nq }); }}
-                className={`w-full px-1.5 py-1 border rounded text-[10px] font-mono ${isFs ? "bg-white/10 border-white/15 text-white/90" : "border-slate-200 text-slate-700"}`} />
+                className="w-10 px-1 py-0.5 bg-white/[0.06] border border-white/[0.08] rounded text-[9px] font-mono text-white/70" />
               <input type="number" value={Math.round(pt.y)} onChange={(e) => { const nq = [...quad] as [Point2D, Point2D, Point2D, Point2D]; nq[i] = { ...nq[i], y: parseInt(e.target.value) || 0 }; updateActivePlacement({ ...quadBounds(nq), quadPoints: nq }); }}
-                className={`w-full px-1.5 py-1 border rounded text-[10px] font-mono ${isFs ? "bg-white/10 border-white/15 text-white/90" : "border-slate-200 text-slate-700"}`} />
+                className="w-10 px-1 py-0.5 bg-white/[0.06] border border-white/[0.08] rounded text-[9px] font-mono text-white/70" />
             </div>
-          </div>
-        ))}
+          ))}
+        </div>
       </div>
     </div>
   );
 
+  // ═══ FULLSCREEN MODE ═══
   if (fullscreen) {
     return (
       <>
-        <div className="bg-slate-100 rounded-2xl border border-slate-200/80 p-6 text-center">
-          <p className="text-sm font-semibold text-slate-700">Fullscreen Editor aktiv</p>
-          <p className="text-xs text-slate-400 mt-1">Tryk <kbd className="px-1.5 py-0.5 bg-slate-200 rounded text-[10px] font-mono">Esc</kbd> for at lukke</p>
+        <div className="bg-slate-100 rounded-2xl border border-slate-200/60 p-5 text-center">
+          <p className="text-xs font-semibold text-slate-600">Fullscreen Editor aktiv</p>
+          <p className="text-[10px] text-slate-400 mt-1">Tryk <kbd className="px-1 py-0.5 bg-slate-200 rounded text-[9px] font-mono">Esc</kbd> for at lukke</p>
         </div>
-        <div className="fixed inset-0 z-[9999] bg-slate-950 flex flex-col" style={{ isolation: "isolate" }}>
-          <div className="flex items-center justify-between px-6 py-3 bg-slate-900/95 border-b border-white/10 flex-shrink-0">
-            <div className="flex items-center gap-3">
-              <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center"><Ic d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159" className="w-4 h-4 text-white" /></div>
-              <div><h2 className="text-sm font-bold text-white">{frame.name}</h2><p className="text-[10px] text-white/40">{frame.frameWidth}x{frame.frameHeight}px · {placements.length} placering{placements.length > 1 ? "er" : ""}</p></div>
-            </div>
-            <div className="flex items-center gap-3">
-              <div className="flex items-center gap-1 bg-white/10 rounded-lg px-2 py-1">
-                <button onClick={() => setZoom(z => Math.max(0.25, z - 0.25))} className="w-6 h-6 flex items-center justify-center text-white/60 hover:text-white"><Ic d="M19.5 12h-15" className="w-3.5 h-3.5" /></button>
-                <span className="text-[10px] font-mono text-white/70 w-10 text-center">{Math.round(zoom * 100)}%</span>
-                <button onClick={() => setZoom(z => Math.min(3, z + 0.25))} className="w-6 h-6 flex items-center justify-center text-white/60 hover:text-white"><Ic d="M12 4.5v15m7.5-7.5h-15" className="w-3.5 h-3.5" /></button>
-                <button onClick={() => setZoom(1)} className="text-[9px] text-white/40 hover:text-white/70 ml-1 font-medium">Fit</button>
+        <div className="fixed inset-0 z-[9999] bg-[#121218] flex flex-col" style={{ isolation: "isolate" }}>
+          {/* Header */}
+          <div className="flex items-center justify-between px-3 py-2 bg-[#1e1e2e] border-b border-white/[0.06] flex-shrink-0">
+            <div className="flex items-center gap-2.5">
+              <div className="w-6 h-6 rounded bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center">
+                <Ic d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159" className="w-3 h-3 text-white" />
               </div>
-              <button onClick={onSave} disabled={saving} className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-lg disabled:opacity-40 flex items-center gap-2">
-                {saving ? <div className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white/30 border-t-white" /> : <Ic d="M4.5 12.75l6 6 9-13.5" className="w-3.5 h-3.5" />}Gem
+              <div>
+                <h2 className="text-[11px] font-bold text-white leading-none">{frame.name}</h2>
+                <p className="text-[9px] text-white/30 mt-0.5">{frame.frameWidth}x{frame.frameHeight}px</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <button onClick={onSave} disabled={saving} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded-md disabled:opacity-40 flex items-center gap-1.5 transition-colors">
+                {saving ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-white/30 border-t-white" /> : <Ic d="M4.5 12.75l6 6 9-13.5" className="w-3 h-3" />}Gem
               </button>
-              <button onClick={() => setFullscreen(false)} className="px-4 py-2 bg-white/10 hover:bg-white/20 text-white text-xs font-semibold rounded-lg flex items-center gap-2">
-                <Ic d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" className="w-3.5 h-3.5" />Luk
+              <button onClick={() => setFullscreen(false)} className="px-3 py-1.5 bg-white/[0.08] hover:bg-white/[0.12] text-white/70 text-[10px] font-semibold rounded-md flex items-center gap-1.5 transition-colors">
+                <Ic d="M6 18L18 6M6 6l12 12" className="w-3 h-3" />Luk
               </button>
             </div>
           </div>
-          {placementTabs(true)}
-          <div className="flex-1 overflow-auto flex items-center justify-center p-4">{editorCanvas(true)}</div>
+          {toolbar(true)}
+          {placementTabs}
+          <div className="flex-1 overflow-hidden flex items-center justify-center bg-[#0a0a0f]">{editorCanvas(true)}</div>
           {coordBar(true)}
         </div>
       </>
     );
   }
 
+  // ═══ INLINE MODE (dark, app-like) ═══
   return (
-    <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm overflow-hidden">
-      <div className="px-5 py-3 border-b border-slate-100 flex items-center justify-between flex-wrap gap-2">
-        <div><span className="text-xs font-bold text-slate-700 uppercase tracking-wide">Perspektiv Placement</span><span className="text-[10px] text-slate-400 ml-2">Træk de 4 hjørner · {placements.length} placering{placements.length > 1 ? "er" : ""}</span></div>
+    <div className="rounded-2xl overflow-hidden border border-slate-700/50 bg-slate-900">
+      <div className="px-3 py-2 border-b border-slate-700/50 flex items-center justify-between">
         <div className="flex items-center gap-2">
-          <button onClick={() => setFullscreen(true)} className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-600 text-[11px] font-semibold rounded-lg flex items-center gap-1.5">
-            <Ic d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" className="w-3.5 h-3.5" />Fullscreen
+          <span className="text-[10px] font-bold text-white/70 uppercase tracking-wide">Placement Editor</span>
+          <span className="text-[9px] text-white/30">{placements.length} placering{placements.length > 1 ? "er" : ""}</span>
+        </div>
+        <div className="flex items-center gap-1.5">
+          <button onClick={() => setFullscreen(true)} className="px-2 py-1 bg-white/[0.06] hover:bg-white/[0.12] text-white/60 text-[10px] font-semibold rounded-md flex items-center gap-1 transition-colors">
+            <Ic d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" className="w-3 h-3" />Expand
           </button>
-          <button onClick={onSave} disabled={saving} className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[11px] font-semibold rounded-lg disabled:opacity-40 flex items-center gap-1.5">
-            {saving ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-white/30 border-t-white" /> : <Ic d="M4.5 12.75l6 6 9-13.5" className="w-3 h-3" />}Gem
+          <button onClick={onSave} disabled={saving} className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-500 text-white text-[10px] font-bold rounded-md disabled:opacity-40 flex items-center gap-1 transition-colors">
+            {saving ? <div className="animate-spin rounded-full h-2.5 w-2.5 border-2 border-white/30 border-t-white" /> : <Ic d="M4.5 12.75l6 6 9-13.5" className="w-2.5 h-2.5" />}Gem
           </button>
         </div>
       </div>
-      {placementTabs(false)}
+      {toolbar(false)}
+      {placementTabs}
       {editorCanvas(false)}
       {coordBar(false)}
     </div>
