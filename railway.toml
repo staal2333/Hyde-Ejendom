@@ -1,0 +1,15 @@
+[build]
+builder = "nixpacks"
+
+[deploy]
+startCommand = "npm start"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30
+restartPolicyType = "on_failure"
+restartPolicyMaxRetries = 3
+
+# Cron job: Run research every hour
+# Configure this in Railway's cron settings:
+# Schedule: 0 * * * *
+# Endpoint: /api/run-research
+# Headers: Authorization: Bearer $CRON_SECRET
