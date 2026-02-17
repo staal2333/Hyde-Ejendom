@@ -64,6 +64,35 @@ interface DragState {
 
 /* ---------- Helpers ---------- */
 
+const GRID_STEP = 6; // PDF points – finer grid for precise placements
+
+function snapToGrid(val: number, step: number = GRID_STEP): number {
+  return Math.round(val / step) * step;
+}
+
+/** Snap a rect's edges to grid and return { x, y, width, height }; enforces min size. */
+function snapRectToGrid(
+  x: number, y: number, width: number, height: number,
+  maxW: number, maxH: number, minSize: number = 20
+): { x: number; y: number; width: number; height: number } {
+  const left = Math.max(0, snapToGrid(x));
+  const right = Math.min(maxW, snapToGrid(x + width));
+  const top = Math.max(0, snapToGrid(y));
+  const bottom = Math.min(maxH, snapToGrid(y + height));
+  let w = Math.max(minSize, right - left);
+  let h = Math.max(minSize, bottom - top);
+  let nx = left, ny = top;
+  if (right - left < minSize) {
+    w = minSize;
+    nx = Math.min(left, maxW - minSize);
+  }
+  if (bottom - top < minSize) {
+    h = minSize;
+    ny = Math.min(top, maxH - minSize);
+  }
+  return { x: nx, y: ny, width: w, height: h };
+}
+
 // Ic imported from ./ui/Icon
 
 /* ---------- Component ---------- */
@@ -80,9 +109,75 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
   const [saveFlash, setSaveFlash] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState("");
+  const [fullscreen, setFullscreen] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
+  const panStartRef = useRef<{ x: number; y: number; panX: number; panY: number } | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
   const canvasWrapperRef = useRef<HTMLDivElement>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!fullscreen) return;
+    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") setFullscreen(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [fullscreen]);
+
+  // Ctrl + wheel: zoom only the canvas, never the whole window (capture on document so we run before browser zoom)
+  useEffect(() => {
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey) return;
+      const root = rootRef.current;
+      const container = containerRef.current;
+      const target = e.target as Node;
+      const insideEditor = root?.contains(target);
+      const insideCanvas = container?.contains(target);
+      if (!insideEditor) return;
+      e.preventDefault();
+      e.stopPropagation();
+      if (insideCanvas) {
+        const step = e.deltaY > 0 ? -0.08 : 0.08;
+        setZoom(z => Math.min(3, Math.max(0.5, z + step)));
+      }
+    };
+    document.addEventListener("wheel", onWheel, { passive: false, capture: true });
+    return () => document.removeEventListener("wheel", onWheel, { capture: true });
+  }, []);
+
+  // Middle mouse (wheel button) drag to pan the canvas
+  useEffect(() => {
+    if (!isPanning) return;
+    const onMove = (e: MouseEvent) => {
+      const start = panStartRef.current;
+      if (!start) return;
+      setPan({ x: start.panX + (e.clientX - start.x), y: start.panY + (e.clientY - start.y) });
+    };
+    const onUp = () => {
+      panStartRef.current = null;
+      setIsPanning(false);
+    };
+    window.addEventListener("mousemove", onMove);
+    window.addEventListener("mouseup", onUp);
+    return () => {
+      window.removeEventListener("mousemove", onMove);
+      window.removeEventListener("mouseup", onUp);
+    };
+  }, [isPanning]);
+
+  const handleCanvasMouseDown = useCallback((e: React.MouseEvent) => {
+    if (e.button !== 1) return; // middle button
+    e.preventDefault();
+    e.stopPropagation();
+    panStartRef.current = { x: e.clientX, y: e.clientY, panX: pan.x, panY: pan.y };
+    setIsPanning(true);
+  }, [pan.x, pan.y]);
+
+  useEffect(() => {
+    setPan({ x: 0, y: 0 });
+  }, [activePageIdx]);
 
   // ── Undo/Redo ─────────────────────────────────────────
   const historyRef = useRef<{ past: PresentationPage[][]; future: PresentationPage[][] }>({ past: [], future: [] });
@@ -217,13 +312,14 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
   const addSlot = useCallback(() => {
     if (!dim) return;
     pushHistory(pages);
+    const snapped = snapRectToGrid(
+      dim.pdfW * 0.1, dim.pdfH * 0.1, dim.pdfW * 0.8, dim.pdfH * 0.35,
+      dim.pdfW, dim.pdfH, 40
+    );
     const newSlot: ImageSlot = {
       id: `slot_${Date.now()}_${Math.random().toString(36).substring(2, 5)}`,
       label: `Billede ${currentSlots.length + 1}`,
-      x: dim.pdfW * 0.1,
-      y: dim.pdfH * 0.1,
-      width: dim.pdfW * 0.8,
-      height: dim.pdfH * 0.35,
+      ...snapped,
       pageWidth: dim.pdfW,
       pageHeight: dim.pdfH,
       objectFit: "cover",
@@ -330,32 +426,26 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
       const o = dragState.origSlot;
 
       if (dragState.type === "move") {
+        const rawX = Math.max(0, Math.min(dim.pdfW - o.width, o.x + dx));
+        const rawY = Math.max(0, Math.min(dim.pdfH - o.height, o.y + dy));
         updateSlot(dragState.slotId, {
-          x: Math.max(0, Math.min(dim.pdfW - o.width, o.x + dx)),
-          y: Math.max(0, Math.min(dim.pdfH - o.height, o.y + dy)),
+          x: snapToGrid(rawX),
+          y: snapToGrid(rawY),
         });
         return;
       }
 
-      // Resize with handle direction
+      // Resize with handle direction, then snap to grid
       let nx = o.x, ny = o.y, nw = o.width, nh = o.height;
       const h = dragState.type as ResizeHandle;
 
-      // Horizontal
       if (h.includes("w")) { nx = Math.max(0, o.x + dx); nw = o.width - (nx - o.x); }
       if (h.includes("e")) { nw = o.width + dx; }
-      // Vertical
       if (h.includes("n")) { ny = Math.max(0, o.y + dy); nh = o.height - (ny - o.y); }
       if (h.includes("s")) { nh = o.height + dy; }
 
-      // Clamp minimums
-      if (nw < 20) { nw = 20; if (h.includes("w")) nx = o.x + o.width - 20; }
-      if (nh < 20) { nh = 20; if (h.includes("n")) ny = o.y + o.height - 20; }
-      // Clamp to page
-      if (nx + nw > dim.pdfW) nw = dim.pdfW - nx;
-      if (ny + nh > dim.pdfH) nh = dim.pdfH - ny;
-
-      updateSlot(dragState.slotId, { x: nx, y: ny, width: nw, height: nh });
+      const snapped = snapRectToGrid(nx, ny, nw, nh, dim.pdfW, dim.pdfH, 20);
+      updateSlot(dragState.slotId, { x: snapped.x, y: snapped.y, width: snapped.width, height: snapped.height });
     };
 
     const onUp = () => setDragState(null);
@@ -412,7 +502,7 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
   }
 
   return (
-    <div className="flex flex-col h-full">
+    <div ref={rootRef} className={fullscreen ? "fixed inset-0 z-50 bg-slate-100 flex flex-col" : "flex flex-col h-full"}>
       {/* ── Toolbar ──────────────────────────────────── */}
       <div className="flex items-center justify-between px-4 py-2.5 bg-white border-b border-slate-200 shrink-0">
         <div className="flex items-center gap-3">
@@ -433,7 +523,24 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
               </button>
             )
           ) : null}
-          <span className="text-[11px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">Side {activePageIdx + 1}/{pageImages.length}</span>
+          <span className="text-[11px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+            {fullscreen ? (
+              <>
+                <button type="button" onClick={() => { setActivePageIdx(i => Math.max(0, i - 1)); setSelectedSlotId(null); }} className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-30" disabled={activePageIdx === 0} title="Forrige side">
+                  <Ic d="M15.75 19.5L8.25 12l7.5-7.5" className="w-3.5 h-3.5" />
+                </button>
+                <span>Side {activePageIdx + 1}/{pageImages.length}</span>
+                <button type="button" onClick={() => { setActivePageIdx(i => Math.min(pageImages.length - 1, i + 1)); setSelectedSlotId(null); }} className="p-0.5 rounded hover:bg-slate-200 disabled:opacity-30" disabled={activePageIdx >= pageImages.length - 1} title="Næste side">
+                  <Ic d="M8.25 4.5l7.5 7.5-7.5 7.5" className="w-3.5 h-3.5" />
+                </button>
+              </>
+            ) : (
+              `Side ${activePageIdx + 1}/${pageImages.length}`
+            )}
+          </span>
+          <span className="text-[11px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md" title="Ctrl + musehjul for at zoome">
+            {Math.round(zoom * 100)}%
+          </span>
           {currentSlots.length > 0 && (
             <span className="text-[11px] text-violet-600 bg-violet-50 px-2 py-0.5 rounded-md font-semibold">{currentSlots.length} plads{currentSlots.length !== 1 ? "er" : ""}</span>
           )}
@@ -456,6 +563,17 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
           <button onClick={addTextSlot} className="px-3 py-1.5 bg-emerald-600 text-white text-[11px] font-semibold rounded-lg hover:bg-emerald-700 flex items-center gap-1.5" title="Tilføj tekstfelt">
             <Ic d="M12 4.5v15m7.5-7.5h-15" className="w-3 h-3" />Tekstfelt
           </button>
+          <button
+            onClick={() => setFullscreen(f => !f)}
+            className="px-3 py-1.5 bg-slate-100 text-slate-700 text-[11px] font-semibold rounded-lg hover:bg-slate-200 flex items-center gap-1.5"
+            title={fullscreen ? "Luk fuld skærm (Esc)" : "Fuld skærm"}
+          >
+            {fullscreen ? (
+              <><Ic d="M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" className="w-3.5 h-3.5" />Luk fuld skærm</>
+            ) : (
+              <><Ic d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" className="w-3.5 h-3.5" />Fuld skærm</>
+            )}
+          </button>
           {onClose && (
             <button onClick={() => { setSaveFlash(true); setTimeout(() => setSaveFlash(false), 1500); onClose(); }}
               className={`px-3 py-1.5 text-[11px] font-semibold rounded-lg flex items-center gap-1.5 transition-all ${saveFlash ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-700 hover:bg-slate-200"}`}>
@@ -470,7 +588,8 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
       </div>
 
       <div className="flex flex-1 min-h-0">
-        {/* ── Page sidebar ─────────────────────────── */}
+        {/* ── Page sidebar (hidden in fullscreen) ───── */}
+        {!fullscreen && (
         <div className="w-[88px] bg-slate-50 border-r border-slate-200 overflow-y-auto py-2 px-1.5 space-y-1.5 shrink-0">
           {pageImages.map((img, idx) => {
             const slotCount = pages[idx]?.imageSlots?.length || 0;
@@ -486,17 +605,49 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
             );
           })}
         </div>
+        )}
 
         {/* ── Main canvas area ─────────────────────── */}
-        <div className="flex-1 overflow-auto bg-slate-100/80 flex items-start justify-center p-4" ref={containerRef}>
+        <div
+          className={`flex-1 overflow-auto flex items-center justify-center ${fullscreen ? "p-6 bg-slate-100" : "bg-slate-100/80 items-start p-4"}`}
+          ref={containerRef}
+          style={{ overscrollBehavior: "contain", cursor: isPanning ? "grabbing" : "grab" }}
+          onMouseDown={handleCanvasMouseDown}
+        >
           {pageImages[activePageIdx] && dim && (
             <div
               ref={canvasWrapperRef}
-              className="relative shadow-2xl rounded-lg overflow-visible bg-white"
-              style={{ width: dim.w, height: dim.h }}
-              onClick={() => setSelectedSlotId(null)}
+              style={{
+                width: dim.w * zoom,
+                height: dim.h * zoom,
+                transform: `translate(${pan.x}px, ${pan.y}px)`,
+              }}
             >
+              <div
+                className="relative shadow-2xl rounded-lg overflow-visible bg-white"
+                style={{ width: dim.w, height: dim.h, transform: `scale(${zoom})`, transformOrigin: "0 0" }}
+                onClick={() => setSelectedSlotId(null)}
+              >
               <img src={pageImages[activePageIdx]} alt="" className="w-full h-full pointer-events-none select-none rounded-lg" draggable={false} />
+
+              {/* Grid guidelines (PDF space) – aligned placements */}
+              {dim && (
+                <svg
+                  className="absolute inset-0 w-full h-full pointer-events-none rounded-lg"
+                  viewBox={`0 0 ${dim.pdfW} ${dim.pdfH}`}
+                  preserveAspectRatio="none"
+                  aria-hidden
+                >
+                  <defs>
+                    <pattern id="grid-pattern" width={GRID_STEP} height={GRID_STEP} patternUnits="userSpaceOnUse">
+                      <path d={`M ${GRID_STEP} 0 V ${GRID_STEP}`} stroke="rgba(139,92,246,0.2)" strokeWidth="0.35" fill="none" />
+                      <path d={`M 0 ${GRID_STEP} H ${GRID_STEP}`} stroke="rgba(139,92,246,0.2)" strokeWidth="0.35" fill="none" />
+                    </pattern>
+                  </defs>
+                  <rect width={dim.pdfW} height={dim.pdfH} fill="url(#grid-pattern)" />
+                  <path d={`M 0 0 V ${dim.pdfH} M 0 0 H ${dim.pdfW}`} stroke="rgba(139,92,246,0.3)" strokeWidth="0.5" fill="none" />
+                </svg>
+              )}
 
               {/* Text slot overlays */}
               {currentTextSlots.map(ts => {
@@ -529,9 +680,11 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
                           const scaleY = rect ? dim!.pdfH / rect.height : dim!.pdfH / dim!.h;
                           const dx = (ev.clientX - startX) * scaleX;
                           const dy = (ev.clientY - startY) * scaleY;
+                          const rawX = Math.max(0, Math.min(dim!.pdfW - ts.width, origX + dx));
+                          const rawY = Math.max(0, Math.min(dim!.pdfH - ts.height, origY + dy));
                           updateTextSlot(ts.id, {
-                            x: Math.max(0, Math.min(dim!.pdfW - ts.width, origX + dx)),
-                            y: Math.max(0, Math.min(dim!.pdfH - ts.height, origY + dy)),
+                            x: snapToGrid(rawX),
+                            y: snapToGrid(rawY),
                           });
                         };
                         const onUp = () => { window.removeEventListener("mousemove", onMove); window.removeEventListener("mouseup", onUp); };
@@ -594,11 +747,13 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
                   </div>
                 );
               })}
+              </div>
             </div>
           )}
         </div>
 
-        {/* ── Right panel ──────────────────────────── */}
+        {/* ── Right panel (hidden in fullscreen) ───── */}
+        {!fullscreen && (
         <div className="w-72 bg-white border-l border-slate-200 overflow-y-auto shrink-0">
           <div className="p-3">
             <h4 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-3">Billedpladser · Side {activePageIdx + 1}</h4>
@@ -798,6 +953,7 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
             )}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

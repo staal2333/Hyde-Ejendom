@@ -23,7 +23,7 @@ export async function GET(req: NextRequest) {
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("[frames]", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ frames: [], total: 0, error: msg });
   }
 }
 
