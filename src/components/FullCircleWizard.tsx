@@ -51,6 +51,7 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
   const [scanCity, setScanCity] = useState(city);
   const [sourceType, setSourceType] = useState<SourceType | null>(null);
   const minimizedRef = useRef(false);
+  const lastStepRef = useRef<WizardStep | null>(null);
 
   // Step 1: Scan / Import
   const [scanning, setScanning] = useState(false);
@@ -102,13 +103,22 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
     onRunningChange?.(isRunning);
   }, [isRunning, onRunningChange]);
 
+  const [showMinimizeConfirm, setShowMinimizeConfirm] = useState(false);
+
   const handleClose = useCallback(() => {
     if (isRunning) {
-      minimizedRef.current = true;
-      onMinimizeToBackground?.();
+      setShowMinimizeConfirm(true);
+      return;
     }
     onClose();
-  }, [isRunning, onMinimizeToBackground, onClose]);
+  }, [isRunning, onClose]);
+
+  const confirmMinimize = useCallback(() => {
+    minimizedRef.current = true;
+    onMinimizeToBackground?.();
+    setShowMinimizeConfirm(false);
+    onClose();
+  }, [onMinimizeToBackground, onClose]);
 
   // Reset wizard only when opening fresh (not when resuming from background)
   useEffect(() => {
@@ -117,6 +127,7 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
       minimizedRef.current = false;
       return;
     }
+    lastStepRef.current = null;
     setStep(1); setSourceType(null);
     setScanning(false); setScanProgress(0); setScanLog([]);
     setPermits([]); setDiscoveryStreet(""); setDiscoveryRunning(false); setManualAddressesText("");
@@ -483,6 +494,19 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
     setResearchLog(l => [...l, `Research afsluttet for alle ${staged.length} ejendomme`]);
   }, [selected, permits, scanCity]);
 
+  // Start Stage & Research automatisk når bruger kommer til trin 3 (så research kører før HubSpot)
+  useEffect(() => {
+    if (step !== 3) {
+      lastStepRef.current = step;
+      return;
+    }
+    if (lastStepRef.current === 3) return;
+    lastStepRef.current = 3;
+    if (selected.size > 0 && stagedProps.length === 0 && !staging && !researching) {
+      runStageAndResearch();
+    }
+  }, [step, selected.size, stagedProps.length, staging, researching, runStageAndResearch]);
+
   // ── Step 4: Approve ─────────────────────────────────────────
   const runApprove = useCallback(async () => {
     setApproving(true); setApproveResults([]);
@@ -676,7 +700,24 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
   // ── Render ──────────────────────────────────────────────────
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={handleClose}>
-      <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
+      <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col relative" onClick={e => e.stopPropagation()}>
+        {/* Bekræft minimér – processen fortsætter i baggrunden */}
+        {showMinimizeConfirm && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-black/40 rounded-2xl" onClick={e => e.stopPropagation()}>
+            <div className="bg-white rounded-xl shadow-xl border border-slate-200 p-6 max-w-sm mx-4">
+              <p className="text-sm font-medium text-slate-800 mb-1">Processen kører stadig</p>
+              <p className="text-xs text-slate-600 mb-4">Vil du minimere til baggrunden? Du kan åbne Full Circle igen for at se status.</p>
+              <div className="flex gap-2 justify-end">
+                <button type="button" onClick={() => setShowMinimizeConfirm(false)} className="px-4 py-2 border border-slate-200 rounded-lg text-slate-700 text-sm font-medium hover:bg-slate-50">
+                  Bliv
+                </button>
+                <button type="button" onClick={confirmMinimize} className="px-4 py-2 bg-violet-600 text-white rounded-lg text-sm font-semibold hover:bg-violet-700">
+                  Minimér
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Header ── */}
         <div className="bg-gradient-to-r from-violet-600 via-purple-600 to-indigo-600 px-6 py-5 text-white">
@@ -692,7 +733,7 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
                 <p className="text-sm text-white/70">Start fra stilladser, discovery eller egne adresser → Vælg → Research → Godkend → Oplæg → Send</p>
               </div>
             </div>
-            <button onClick={handleClose} className="p-2 hover:bg-white/20 rounded-lg transition-colors">
+            <button onClick={handleClose} className="p-2 hover:bg-white/20 rounded-lg transition-colors" title="Luk">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
