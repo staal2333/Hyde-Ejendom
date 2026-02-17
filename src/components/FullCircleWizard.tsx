@@ -211,6 +211,16 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
     }
   }, [scanCity]);
 
+  // Auto-start stillads-scan når bruger vælger Stilladser (så man ikke skal trykke Start scan)
+  const prevSourceRef = useRef<SourceType | null>(null);
+  useEffect(() => {
+    if (sourceType === "scaffolding" && prevSourceRef.current !== "scaffolding" && !scanning) {
+      runScan();
+    }
+    prevSourceRef.current = sourceType;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- kun når man vælger scaffolding
+  }, [sourceType]);
+
   const runDiscovery = useCallback(async () => {
     const street = discoveryStreet.trim();
     if (!street) return;

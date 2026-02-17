@@ -427,6 +427,20 @@ function DashboardContent() {
     if (fullCircleOpen) setFullCircleRunningInBackground(false);
   }, [fullCircleOpen]);
 
+  // Hold stillads-data opdateret: start scan automatisk når bruger åbner Stilladser-fanen
+  const scaffoldTabAutoScanRef = useRef(false);
+  useEffect(() => {
+    if (activeTab !== "scaffolding") {
+      scaffoldTabAutoScanRef.current = false;
+      return;
+    }
+    if (scaffoldTabAutoScanRef.current || scaffoldRunning) return;
+    scaffoldTabAutoScanRef.current = true;
+    triggerScaffolding();
+  // Kun når man skifter til stilladser-fanen
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- triggerScaffolding er stabil nok
+  }, [activeTab]);
+
   // ── Property Feedback ──
   const submitFeedback = useCallback(async (propertyId: string, feedback: string, note?: string) => {
     try {
@@ -782,66 +796,83 @@ function DashboardContent() {
     afterTrafficFilter: 0, afterScoring: 0, created: 0, skipped: 0, alreadyExists: 0, candidates: [],
   });
 
-  // ── Filtered + Sorted Properties (memoized) ──
-  const availableCities = useMemo(
-    () => [...new Set(properties.map(p => p.city).filter(Boolean))].sort((a, b) => a.localeCompare(b, "da")),
-    [properties]
-  );
+  // ── Filtered + Sorted Properties (memoized). Guard so useMemo never throws (avoids React #310). ──
+  const safeProperties = properties ?? [];
+  const availableCities = useMemo(() => {
+    try {
+      return [...new Set(safeProperties.map(p => p?.city).filter(Boolean))].sort((a, b) => String(a).localeCompare(String(b), "da"));
+    } catch {
+      return [];
+    }
+  }, [safeProperties]);
 
   const filteredProperties = useMemo(() => {
-    const q = propertyFilter?.toLowerCase();
-    return properties
-      .filter((p) => {
-        if (q) {
-          const matches = p.name?.toLowerCase().includes(q) ||
-            p.address?.toLowerCase().includes(q) ||
-            p.ownerCompanyName?.toLowerCase().includes(q) ||
-            p.city?.toLowerCase().includes(q);
-          if (!matches) return false;
-        }
-        if (statusFilter) {
-          const filterKey = STATUS_TO_FILTER[p.outreachStatus] || "unknown";
-          if (filterKey !== statusFilter) return false;
-        }
-        if (cityFilter && p.city !== cityFilter) return false;
-        const score = p.outdoorScore ?? 0;
-        if (score < scoreFilter[0] || score > scoreFilter[1]) return false;
-        return true;
-      })
-      .sort((a, b) => {
-        let cmp = 0;
-        switch (sortBy) {
-          case "name":
-            cmp = (a.name || a.address).localeCompare(b.name || b.address, "da");
-            break;
-          case "status":
-            cmp = (STATUS_ORDER[a.outreachStatus] ?? 99) - (STATUS_ORDER[b.outreachStatus] ?? 99);
-            break;
-          case "score":
-            cmp = (b.outdoorScore ?? 0) - (a.outdoorScore ?? 0);
-            break;
-          case "owner":
-            cmp = (a.ownerCompanyName || "zzz").localeCompare(b.ownerCompanyName || "zzz", "da");
-            break;
-        }
-        return sortAsc ? cmp : -cmp;
-      });
-  }, [properties, propertyFilter, statusFilter, cityFilter, scoreFilter, sortBy, sortAsc]);
+    try {
+      const q = propertyFilter?.toLowerCase();
+      return safeProperties
+        .filter((p) => {
+          if (q) {
+            const matches = p.name?.toLowerCase().includes(q) ||
+              p.address?.toLowerCase().includes(q) ||
+              p.ownerCompanyName?.toLowerCase().includes(q) ||
+              p.city?.toLowerCase().includes(q);
+            if (!matches) return false;
+          }
+          if (statusFilter) {
+            const filterKey = STATUS_TO_FILTER[p.outreachStatus] || "unknown";
+            if (filterKey !== statusFilter) return false;
+          }
+          if (cityFilter && p.city !== cityFilter) return false;
+          const score = p.outdoorScore ?? 0;
+          if (score < scoreFilter[0] || score > scoreFilter[1]) return false;
+          return true;
+        })
+        .sort((a, b) => {
+          let cmp = 0;
+          switch (sortBy) {
+            case "name":
+              cmp = (a.name || a.address || "").localeCompare(b.name || b.address || "", "da");
+              break;
+            case "status":
+              cmp = (STATUS_ORDER[a.outreachStatus] ?? 99) - (STATUS_ORDER[b.outreachStatus] ?? 99);
+              break;
+            case "score":
+              cmp = (b.outdoorScore ?? 0) - (a.outdoorScore ?? 0);
+              break;
+            case "owner":
+              cmp = (a.ownerCompanyName || "zzz").localeCompare(b.ownerCompanyName || "zzz", "da");
+              break;
+          }
+          return sortAsc ? cmp : -cmp;
+        });
+    } catch {
+      return [];
+    }
+  }, [safeProperties, propertyFilter, statusFilter, cityFilter, scoreFilter, sortBy, sortAsc]);
 
-  // ── Current Research Context (memoized) ──
-  const currentResearchProperty = useMemo(
-    () => researchRunning && researchRunning !== "all" ? properties.find(p => p.id === researchRunning) : null,
-    [researchRunning, properties]
-  );
+  const currentResearchProperty = useMemo(() => {
+    try {
+      return researchRunning && researchRunning !== "all" ? safeProperties.find(p => p.id === researchRunning) ?? null : null;
+    } catch {
+      return null;
+    }
+  }, [researchRunning, safeProperties]);
 
-  const researchSummary = useMemo(() => ({
-    oisOwner: researchEvents.find(e => e.phase === "ois_owner_set" || e.message?.includes("OIS officiel ejer"))?.message?.replace(/.*?:\s*/, "") || null,
-    cvrCompany: researchEvents.find(e => e.phase === "cvr" && e.message?.includes("CVR fundet"))?.message || null,
-    contactsFound: researchEvents.filter(e => e.phase === "contact_create").length,
-    emailsFound: researchEvents.filter(e => e.phase === "email_hunt_found" || e.message?.includes("Email fundet")).length,
-    totalSearches: researchEvents.filter(e => e.phase === "search_query").length,
-    currentStep: researchEvents.length > 0 ? researchEvents[researchEvents.length - 1].message : null,
-  }), [researchEvents]);
+  const safeResearchEvents = researchEvents ?? [];
+  const researchSummary = useMemo(() => {
+    try {
+      return {
+        oisOwner: safeResearchEvents.find(e => e?.phase === "ois_owner_set" || e?.message?.includes("OIS officiel ejer"))?.message?.replace(/.*?:\s*/, "") ?? null,
+        cvrCompany: safeResearchEvents.find(e => e?.phase === "cvr" && e?.message?.includes("CVR fundet"))?.message ?? null,
+        contactsFound: safeResearchEvents.filter(e => e?.phase === "contact_create").length,
+        emailsFound: safeResearchEvents.filter(e => e?.phase === "email_hunt_found" || e?.message?.includes("Email fundet")).length,
+        totalSearches: safeResearchEvents.filter(e => e?.phase === "search_query").length,
+        currentStep: safeResearchEvents.length > 0 ? safeResearchEvents[safeResearchEvents.length - 1]?.message ?? null : null,
+      };
+    } catch {
+      return { oisOwner: null, cvrCompany: null, contactsFound: 0, emailsFound: 0, totalSearches: 0, currentStep: null };
+    }
+  }, [safeResearchEvents]);
 
   // Single return path only (no early return) to avoid React #310 "more hooks than previous render"
   return (
