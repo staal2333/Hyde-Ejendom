@@ -687,6 +687,8 @@ export default function OOHPanel({ initialFrame, initialClient, onToast }: OOHPa
   const [presTemplates, setPresTemplates] = useState<PresentationTemplate[]>([]);
   const [activePresTemplate, setActivePresTemplate] = useState<PresentationTemplate | null>(null);
   const [presEditorOpen, setPresEditorOpen] = useState(false);
+  const presSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const presSavePendingRef = useRef<{ id: string; pages: PresentationTemplate["pages"] } | null>(null);
   const [presGenerating, setPresGenerating] = useState(false);
   const [presCreativeId, setPresCreativeId] = useState<string | null>(null);
   // Per-placement creative overrides for Oplæg: frameId -> { placementIdx -> creativeId }
@@ -791,6 +793,8 @@ export default function OOHPanel({ initialFrame, initialClient, onToast }: OOHPa
       .finally(() => setInitialLoading(false));
   }, [fetchFrames, fetchCreatives, fetchProposals, fetchNetworks, fetchPresTemplates]);
   useEffect(() => { const t = setTimeout(fetchCreatives, 300); return () => clearTimeout(t); }, [creativeSearch, fetchCreatives]);
+
+  useEffect(() => () => { if (presSaveTimeoutRef.current) clearTimeout(presSaveTimeoutRef.current); }, []);
 
   // ── Save frame placement ──────────────────────────────
   const saveFramePlacement = async (frame: Frame) => {
@@ -2394,22 +2398,55 @@ export default function OOHPanel({ initialFrame, initialClient, onToast }: OOHPa
             pdfUrl={activePresTemplate.pdfFileUrl}
             pages={activePresTemplate.pages}
             frames={frames as import("@/lib/ooh/types").Frame[]}
-            onPagesChange={async (newPages) => {
+            templateName={activePresTemplate.name}
+            onNameChange={async (newName) => {
+              const updated = { ...activePresTemplate, name: newName.trim(), updatedAt: new Date().toISOString() };
+              setActivePresTemplate(updated);
+              setPresTemplates(prev => prev.map(t => t.id === updated.id ? updated : t));
+              try {
+                const res = await fetch("/api/ooh/presentation-templates", {
+                  method: "PUT",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ id: updated.id, name: updated.name, pages: updated.pages }),
+                });
+                if (!res.ok) {
+                  const data = await res.json().catch(() => ({}));
+                  toast(data?.error || "Kunne ikke gemme navn", "error");
+                }
+              } catch (err) {
+                console.error("[OOH] Template name save failed", err);
+                toast("Kunne ikke gemme navn", "error");
+              }
+            }}
+            onPagesChange={(newPages) => {
               const updated = { ...activePresTemplate, pages: newPages };
               setActivePresTemplate(updated);
 
-              // Save to backend
-              try {
-                await fetch("/api/ooh/presentation-templates", {
-                  method: "PUT",
-                  headers: { "Content-Type": "application/json" },
-                  body: JSON.stringify({ id: updated.id, pages: newPages }),
-                });
-                setPresTemplates(prev => prev.map(t => t.id === updated.id ? updated : t));
-              } catch (err) {
-                console.error("[OOH] Template save failed", err);
-                toast("Kunne ikke gemme skabelon-ændringer", "error");
-              }
+              // Debounce save to avoid request storm (e.g. on every drag)
+              presSavePendingRef.current = { id: updated.id, pages: newPages };
+              if (presSaveTimeoutRef.current) clearTimeout(presSaveTimeoutRef.current);
+              presSaveTimeoutRef.current = setTimeout(async () => {
+                presSaveTimeoutRef.current = null;
+                const pending = presSavePendingRef.current;
+                presSavePendingRef.current = null;
+                if (!pending) return;
+                try {
+                  const res = await fetch("/api/ooh/presentation-templates", {
+                    method: "PUT",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ id: pending.id, pages: pending.pages }),
+                  });
+                  if (res.ok) {
+                    setPresTemplates(prev => prev.map(t => t.id === pending.id ? { ...t, pages: pending.pages, updatedAt: new Date().toISOString() } : t));
+                  } else {
+                    const data = await res.json().catch(() => ({}));
+                    toast(data?.error || "Kunne ikke gemme skabelon-ændringer", "error");
+                  }
+                } catch (err) {
+                  console.error("[OOH] Template save failed", err);
+                  toast("Kunne ikke gemme skabelon-ændringer", "error");
+                }
+              }, 800);
             }}
             onClose={() => { setPresEditorOpen(false); fetchPresTemplates(); }}
           />

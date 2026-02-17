@@ -990,11 +990,17 @@ function DashboardContent() {
               </svg>
             </div>
             <div className="flex-1 min-w-0">
-              <span className="text-red-700 text-xs font-semibold">{error}</span>
-              <p className="text-[10px] text-red-500/80 mt-0.5">Tjek API-noegler under Indstillinger</p>
+              <span className="text-red-700 text-xs font-semibold">
+                {/HUBSPOT_ACCESS_TOKEN|Missing required environment variable/i.test(error)
+                  ? "HubSpot API-nøgle er ikke konfigureret"
+                  : error}
+              </span>
+              <p className="text-[10px] text-red-500/80 mt-0.5">Tjek API-nøgler under Indstillinger</p>
             </div>
+            <button onClick={() => { setActiveTab("settings"); setError(null); }}
+              className="px-3 py-1.5 bg-red-100 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-200 shrink-0">Åbn Indstillinger</button>
             <button onClick={() => { setError(null); fetchData(); }}
-              className="px-3 py-1.5 bg-red-100 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-200 shrink-0">Prøv igen</button>
+              className="px-3 py-1.5 bg-white border border-red-200 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-50 shrink-0">Prøv igen</button>
             <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-100 shrink-0">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>

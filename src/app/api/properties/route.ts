@@ -43,14 +43,12 @@ export async function GET() {
     });
   } catch (error) {
     console.error("[API] Failed to fetch ejendomme:", error);
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Unknown error",
-        properties: [],
-        total: 0,
-      },
-      { status: 500 }
-    );
+    // Return 200 with empty list so the app loads when HubSpot env is missing (e.g. on Vercel)
+    return NextResponse.json({
+      error: error instanceof Error ? error.message : "Unknown error",
+      properties: [],
+      total: 0,
+    });
   }
 }
 

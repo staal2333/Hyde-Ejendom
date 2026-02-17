@@ -20,7 +20,8 @@ export async function GET() {
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("[presentation-templates]", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    // Return 200 with empty array so OOH panel loads when Supabase/env is missing (e.g. Vercel)
+    return NextResponse.json([]);
   }
 }
 
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("[presentation-templates]", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: msg });
   }
 }
 
@@ -71,7 +72,7 @@ export async function PUT(req: NextRequest) {
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("[presentation-templates]", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: msg });
   }
 }
 
@@ -87,6 +88,6 @@ export async function DELETE(req: NextRequest) {
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
     console.error("[presentation-templates]", msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    return NextResponse.json({ error: msg });
   }
 }

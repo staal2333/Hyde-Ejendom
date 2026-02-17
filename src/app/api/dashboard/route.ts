@@ -82,21 +82,26 @@ export async function GET() {
     });
   } catch (error) {
     console.error("[API] Dashboard stats failed:", error);
-    return NextResponse.json(
-      {
-        error: error instanceof Error ? error.message : "Unknown error",
-        totalProperties: 0,
-        pendingResearch: 0,
-        researchDone: 0,
-        readyToSend: 0,
-        mailsSent: 0,
-        byStatus: {},
-        recentRuns: [],
-        lastRunAt: null,
-        staging: { new: 0, researching: 0, researched: 0, approved: 0, rejected: 0, pushed: 0, awaitingAction: 0, total: 0 },
-        analytics: { emailQueue: { queued: 0, sent: 0, failed: 0, sentThisHour: 0, rateLimitPerHour: 200 }, ooh: { totalSent: 0, opened: 0, clicked: 0, replied: 0, meetings: 0, sold: 0 }, funnel: { discovered: 0, staged: 0, approved: 0, inHubSpot: 0, ready: 0, sent: 0 } },
+    // Return 200 with fallback so the app loads on Vercel when HubSpot/Supabase env is missing
+    const msg = error instanceof Error ? error.message : "Unknown error";
+    return NextResponse.json({
+      error: msg,
+      totalProperties: 0,
+      pendingResearch: 0,
+      researchInProgress: 0,
+      researchDone: 0,
+      readyToSend: 0,
+      mailsSent: 0,
+      errors: 0,
+      byStatus: {},
+      recentRuns: [],
+      lastRunAt: null,
+      staging: { new: 0, researching: 0, researched: 0, approved: 0, rejected: 0, pushed: 0, awaitingAction: 0, total: 0 },
+      analytics: {
+        emailQueue: { queued: 0, sent: 0, failed: 0, sentThisHour: 0, rateLimitPerHour: 200 },
+        ooh: { totalSent: 0, opened: 0, clicked: 0, replied: 0, meetings: 0, sold: 0 },
+        funnel: { discovered: 0, staged: 0, approved: 0, inHubSpot: 0, ready: 0, sent: 0 },
       },
-      { status: 500 }
-    );
+    });
   }
 }

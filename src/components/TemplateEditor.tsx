@@ -49,6 +49,9 @@ interface TemplateEditorProps {
   frames: Frame[];
   onPagesChange: (pages: PresentationPage[]) => void;
   onClose?: () => void;
+  /** Template display name; when set, shown in toolbar and editable */
+  templateName?: string;
+  onNameChange?: (name: string) => void;
 }
 
 interface DragState {
@@ -65,7 +68,7 @@ interface DragState {
 
 /* ---------- Component ---------- */
 
-export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, onClose }: TemplateEditorProps) {
+export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, onClose, templateName, onNameChange }: TemplateEditorProps) {
   const [pageImages, setPageImages] = useState<string[]>([]);
   const [pageDims, setPageDims] = useState<{ w: number; h: number; pdfW: number; pdfH: number }[]>([]);
   const [activePageIdx, setActivePageIdx] = useState(0);
@@ -75,8 +78,11 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
   const [editingLabel, setEditingLabel] = useState<string | null>(null);
   const [dragState, setDragState] = useState<DragState | null>(null);
   const [saveFlash, setSaveFlash] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState("");
 
   const containerRef = useRef<HTMLDivElement>(null);
+  const canvasWrapperRef = useRef<HTMLDivElement>(null);
 
   // ── Undo/Redo ─────────────────────────────────────────
   const historyRef = useRef<{ past: PresentationPage[][]; future: PresentationPage[][] }>({ past: [], future: [] });
@@ -314,12 +320,13 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
   useEffect(() => {
     if (!dragState || !dim) return;
 
-    const sx = dim.pdfW / dim.w;
-    const sy = dim.pdfH / dim.h;
-
     const onMove = (e: MouseEvent) => {
-      const dx = (e.clientX - dragState.startX) * sx;
-      const dy = (e.clientY - dragState.startY) * sy;
+      // Use actual displayed size so placement is correct at any zoom level
+      const rect = canvasWrapperRef.current?.getBoundingClientRect();
+      const scaleX = rect ? dim.pdfW / rect.width : dim.pdfW / dim.w;
+      const scaleY = rect ? dim.pdfH / rect.height : dim.pdfH / dim.h;
+      const dx = (e.clientX - dragState.startX) * scaleX;
+      const dy = (e.clientY - dragState.startY) * scaleY;
       const o = dragState.origSlot;
 
       if (dragState.type === "move") {
@@ -410,6 +417,22 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
       <div className="flex items-center justify-between px-4 py-2.5 bg-white border-b border-slate-200 shrink-0">
         <div className="flex items-center gap-3">
           <h3 className="text-sm font-bold text-slate-900">Template Editor</h3>
+          {templateName != null && onNameChange ? (
+            editingName ? (
+              <input
+                value={nameInput}
+                onChange={e => setNameInput(e.target.value)}
+                onBlur={() => { const v = nameInput.trim(); if (v) onNameChange(v); setEditingName(false); }}
+                onKeyDown={e => { if (e.key === "Enter") { const v = nameInput.trim(); if (v) onNameChange(v); setEditingName(false); } if (e.key === "Escape") setEditingName(false); }}
+                className="text-sm font-semibold text-slate-800 border border-violet-300 rounded-md px-2 py-0.5 w-48"
+                autoFocus
+              />
+            ) : (
+              <button type="button" onClick={() => { setNameInput(templateName); setEditingName(true); }} className="text-sm font-semibold text-slate-800 hover:text-violet-600 hover:underline truncate max-w-[200px]" title="Klik for at ændre filnavn">
+                {templateName}
+              </button>
+            )
+          ) : null}
           <span className="text-[11px] text-slate-400 bg-slate-100 px-2 py-0.5 rounded-md">Side {activePageIdx + 1}/{pageImages.length}</span>
           {currentSlots.length > 0 && (
             <span className="text-[11px] text-violet-600 bg-violet-50 px-2 py-0.5 rounded-md font-semibold">{currentSlots.length} plads{currentSlots.length !== 1 ? "er" : ""}</span>
@@ -468,6 +491,7 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
         <div className="flex-1 overflow-auto bg-slate-100/80 flex items-start justify-center p-4" ref={containerRef}>
           {pageImages[activePageIdx] && dim && (
             <div
+              ref={canvasWrapperRef}
               className="relative shadow-2xl rounded-lg overflow-visible bg-white"
               style={{ width: dim.w, height: dim.h }}
               onClick={() => setSelectedSlotId(null)}
@@ -495,16 +519,16 @@ export default function TemplateEditor({ pdfUrl, pages, frames, onPagesChange, o
                         e.preventDefault();
                         e.stopPropagation();
                         setSelectedSlotId(ts.id);
-                        // Simple move drag for text slots
                         const startX = e.clientX;
                         const startY = e.clientY;
                         const origX = ts.x;
                         const origY = ts.y;
-                        const sx = dim!.pdfW / dim!.w;
-                        const sy = dim!.pdfH / dim!.h;
                         const onMove = (ev: MouseEvent) => {
-                          const dx = (ev.clientX - startX) * sx;
-                          const dy = (ev.clientY - startY) * sy;
+                          const rect = canvasWrapperRef.current?.getBoundingClientRect();
+                          const scaleX = rect ? dim!.pdfW / rect.width : dim!.pdfW / dim!.w;
+                          const scaleY = rect ? dim!.pdfH / rect.height : dim!.pdfH / dim!.h;
+                          const dx = (ev.clientX - startX) * scaleX;
+                          const dy = (ev.clientY - startY) * scaleY;
                           updateTextSlot(ts.id, {
                             x: Math.max(0, Math.min(dim!.pdfW - ts.width, origX + dx)),
                             y: Math.max(0, Math.min(dim!.pdfH - ts.height, origY + dy)),
