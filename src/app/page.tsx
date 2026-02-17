@@ -1140,7 +1140,20 @@ function DashboardContent() {
           )}
 
           {/* ═══ SCAFFOLDING TAB ═══ */}
-          {activeTab === "scaffolding" && (
+          {activeTab === "scaffolding" && scaffoldRunning && (
+            /* Under scan: vis kun progress – mount ikke den tunge ScaffoldingTab (undgår React #310) */
+            <div className="animate-fade-in space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-lg font-bold text-slate-800">Scanner stilladser</h2>
+                <button onClick={stopScaffolding} className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold rounded-lg">
+                  Stop
+                </button>
+              </div>
+              <ProgressBar pct={scaffoldPct} running={true} phase="Henter tilladelser..." />
+              <LogPanel logRef={scaffoldLogRef} events={scaffoldEvents} running={true} maxHeight="400px" />
+            </div>
+          )}
+          {activeTab === "scaffolding" && !scaffoldRunning && (
             <ScaffoldingTab
               scaffoldCity={scaffoldCity}
               setScaffoldCity={setScaffoldCity}
