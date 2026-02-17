@@ -323,6 +323,8 @@ export interface DiscoverTabProps {
   setDiscoverMinScore: (v: number) => void;
   discoverMinTraffic: number;
   setDiscoverMinTraffic: (v: number) => void;
+  discoverMaxCandidates: number;
+  setDiscoverMaxCandidates: (v: number) => void;
   discoveryRunning: boolean;
   discoveryResult: DiscoveryResultData | null;
   progressEvents: ProgressEvent[];
@@ -380,6 +382,8 @@ export function DiscoverTab({
   setDiscoverMinScore,
   discoverMinTraffic,
   setDiscoverMinTraffic,
+  discoverMaxCandidates,
+  setDiscoverMaxCandidates,
   discoveryRunning,
   discoveryResult,
   progressEvents,
@@ -447,7 +451,7 @@ export function DiscoverTab({
 
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-5">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
-          <div className="md:col-span-4">
+          <div className="md:col-span-3">
             <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
               Vejnavn
             </label>
@@ -542,6 +546,22 @@ export function DiscoverTab({
                     ? "Middel: Typiske bystroeget og mellembygader"
                     : "Hoejt: Kun hovedveje og stoerre stroeget med mange forbipasserende"}
             </p>
+          </div>
+          <div className="md:col-span-1">
+            <label className="block text-xs font-semibold text-slate-700 mb-2 uppercase tracking-wide">
+              Maks.
+            </label>
+            <select
+              value={discoverMaxCandidates}
+              onChange={(e) => setDiscoverMaxCandidates(Number(e.target.value))}
+              className="w-full px-3 py-3 border border-slate-200 rounded-xl text-sm bg-slate-50/50 focus:bg-white focus:border-indigo-300"
+            >
+              <option value={25}>25</option>
+              <option value={50}>50</option>
+              <option value={100}>100</option>
+              <option value={200}>200</option>
+              <option value={0}>Alle</option>
+            </select>
           </div>
           <div className="md:col-span-2 flex gap-2">
             {discoveryRunning ? (

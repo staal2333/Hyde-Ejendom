@@ -30,10 +30,14 @@ interface Props {
   onClose: () => void;
   city?: string;
   onComplete?: () => void;
+  onMinimizeToBackground?: () => void;
+  onRunningChange?: (running: boolean) => void;
 }
 
+type SourceType = "scaffolding" | "discovery" | "manual";
+
 const STEP_LABELS: Record<WizardStep, { title: string; desc: string; icon: string }> = {
-  1: { title: "Scan", desc: "Find aktive stilladser", icon: "M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607Z" },
+  1: { title: "Start", desc: "Find eller importer leads", icon: "M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607Z" },
   2: { title: "Vælg", desc: "Vælg de bedste lokationer", icon: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
   3: { title: "Stage & Research", desc: "Stage og undersøg ejendomme", icon: "M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v16.5c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9zm3.75 11.625a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" },
   4: { title: "Godkend", desc: "Push til HubSpot CRM", icon: "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" },
@@ -42,16 +46,22 @@ const STEP_LABELS: Record<WizardStep, { title: string; desc: string; icon: strin
 };
 
 // ── Component ──────────────────────────────────────────────────
-export default function FullCircleWizard({ isOpen, onClose, city = "København", onComplete }: Props) {
+export default function FullCircleWizard({ isOpen, onClose, city = "København", onComplete, onMinimizeToBackground, onRunningChange }: Props) {
   const [step, setStep] = useState<WizardStep>(1);
   const [scanCity, setScanCity] = useState(city);
+  const [sourceType, setSourceType] = useState<SourceType | null>(null);
+  const minimizedRef = useRef(false);
 
-  // Step 1: Scan
+  // Step 1: Scan / Import
   const [scanning, setScanning] = useState(false);
   const [scanProgress, setScanProgress] = useState(0);
   const [scanLog, setScanLog] = useState<string[]>([]);
   const [permits, setPermits] = useState<ScaffoldPermit[]>([]);
   const scanAbortRef = useRef<AbortController | null>(null);
+  const [discoveryStreet, setDiscoveryStreet] = useState("");
+  const [discoveryRunning, setDiscoveryRunning] = useState(false);
+  const [discoveryMaxAddresses, setDiscoveryMaxAddresses] = useState(50);
+  const [manualAddressesText, setManualAddressesText] = useState("");
 
   // Step 2: Select
   const [selected, setSelected] = useState<Set<number>>(new Set());
@@ -86,18 +96,37 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
 
   useEffect(() => { logEndRef.current?.scrollIntoView({ behavior: "smooth" }); }, [scanLog, stageLog, researchLog, oohLog]);
 
-  // Reset wizard
+  const isRunning = scanning || discoveryRunning || staging || researching || approving || creatingOOH || sending;
+
   useEffect(() => {
-    if (isOpen) {
-      setStep(1); setScanning(false); setScanProgress(0); setScanLog([]);
-      setPermits([]); setSelected(new Set()); setStagingFailed(false);
-      setStaging(false); setStageProgress(0); setStageLog([]);
-      setStagedProps([]); setResearching(false); setResearchProgress(0);
-      setResearchLog([]); setApproving(false); setApproveResults([]);
-      setCreatingOOH(false); setOohLog([]); setOohProposalId(null);
-      setOohPdfUrl(null); setSending(false); setSendResult(null);
-      setScanCity(city);
+    onRunningChange?.(isRunning);
+  }, [isRunning, onRunningChange]);
+
+  const handleClose = useCallback(() => {
+    if (isRunning) {
+      minimizedRef.current = true;
+      onMinimizeToBackground?.();
     }
+    onClose();
+  }, [isRunning, onMinimizeToBackground, onClose]);
+
+  // Reset wizard only when opening fresh (not when resuming from background)
+  useEffect(() => {
+    if (!isOpen) return;
+    if (minimizedRef.current) {
+      minimizedRef.current = false;
+      return;
+    }
+    setStep(1); setSourceType(null);
+    setScanning(false); setScanProgress(0); setScanLog([]);
+    setPermits([]); setDiscoveryStreet(""); setDiscoveryRunning(false); setManualAddressesText("");
+    setSelected(new Set()); setStagingFailed(false);
+    setStaging(false); setStageProgress(0); setStageLog([]);
+    setStagedProps([]); setResearching(false); setResearchProgress(0);
+    setResearchLog([]); setApproving(false); setApproveResults([]);
+    setCreatingOOH(false); setOohLog([]); setOohProposalId(null);
+    setOohPdfUrl(null); setSending(false); setSendResult(null);
+    setScanCity(city);
   }, [isOpen, city]);
 
   // ── Step 1: Scan ────────────────────────────────────────────
@@ -182,15 +211,116 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
     }
   }, [scanCity]);
 
+  const runDiscovery = useCallback(async () => {
+    const street = discoveryStreet.trim();
+    if (!street) return;
+    setDiscoveryRunning(true); setScanLog([]); setScanProgress(0); setPermits([]);
+    setScanLog(l => [...l, `Scanner gade: ${street}, ${scanCity}...`]);
+    try {
+      const res = await fetch("/api/discover", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          street,
+          city: scanCity,
+          minScore: 5,
+          minTraffic: 5000,
+          maxCandidates: discoveryMaxAddresses > 0 ? discoveryMaxAddresses : undefined,
+        }),
+      });
+      if (!res.ok) { setScanLog(l => [...l, "Fejl: Kunne ikke starte discovery"]); setDiscoveryRunning(false); return; }
+      const reader = res.body?.getReader();
+      const decoder = new TextDecoder();
+      let buffer = "";
+      let lastCandidates: Array<{ address: string; outdoorScore: number; scoreReason?: string; estimatedDailyTraffic?: number }> = [];
+      while (reader) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n");
+        buffer = lines.pop() || "";
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.message) setScanLog(l => [...l, event.message]);
+            if (event.progress != null) setScanProgress(event.progress);
+            if (event.candidates?.length) lastCandidates = event.candidates;
+          } catch { /* skip */ }
+        }
+      }
+      const mapped: ScaffoldPermit[] = lastCandidates.map((c: { address: string; outdoorScore: number; scoreReason?: string; estimatedDailyTraffic?: number }) => ({
+        address: c.address,
+        score: c.outdoorScore,
+        scoreReason: c.scoreReason || "",
+        traffic: c.estimatedDailyTraffic ? `${(c.estimatedDailyTraffic / 1000).toFixed(0)}k/d` : "?",
+        trafficNum: c.estimatedDailyTraffic || 0,
+        type: "Discovery",
+        category: "Discovery",
+        startDate: "-",
+        endDate: "-",
+        createdDate: "-",
+        applicant: "",
+        contractor: "",
+        lat: 0,
+        lng: 0,
+        durationWeeks: 0,
+        description: "",
+        facadeArea: "",
+        sagsnr: "",
+        contactPerson: "",
+        contactEmail: "",
+        postalCode: "",
+        city: scanCity,
+      }));
+      setPermits(mapped.sort((a, b) => b.score - a.score));
+      setScanLog(l => [...l, `✓ Fandt ${mapped.length} kandidater fra Discovery`]);
+    } catch (e) {
+      setScanLog(l => [...l, `Fejl: ${e instanceof Error ? e.message : "Ukendt"}`]);
+    } finally {
+      setDiscoveryRunning(false);
+    }
+  }, [discoveryStreet, scanCity, discoveryMaxAddresses]);
+
+  const importManualAddresses = useCallback(() => {
+    const lines = manualAddressesText.split(/\n/).map(s => s.trim()).filter(Boolean);
+    const mapped: ScaffoldPermit[] = lines.map((address, i) => ({
+      address,
+      score: 5,
+      scoreReason: "Manuel adresse",
+      traffic: "?",
+      trafficNum: 0,
+      type: "Manuel",
+      category: "Manuel",
+      startDate: "-",
+      endDate: "-",
+      createdDate: "-",
+      applicant: "",
+      contractor: "",
+      lat: 0,
+      lng: 0,
+      durationWeeks: 0,
+      description: "",
+      facadeArea: "",
+      sagsnr: "",
+      contactPerson: "",
+      contactEmail: "",
+      postalCode: "",
+      city: scanCity,
+    }));
+    setPermits(mapped);
+    setScanLog([`Importeret ${mapped.length} adresser`]);
+  }, [manualAddressesText, scanCity]);
+
   // Auto-select top-scoring permits when scan completes
   useEffect(() => {
-    if (permits.length > 0 && !scanning) {
+    if (permits.length > 0 && !scanning && !discoveryRunning) {
       const top = new Set<number>();
       permits.forEach((p, i) => { if (p.score >= 7) top.add(i); });
       if (top.size === 0) permits.slice(0, 5).forEach((_, i) => top.add(i));
       setSelected(top);
     }
-  }, [permits, scanning]);
+  }, [permits, scanning, discoveryRunning]);
 
   // ── Step 3: Stage + Research ────────────────────────────────
   const runStageAndResearch = useCallback(async () => {
@@ -218,8 +348,8 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
             outdoorScore: p.score,
             outdoorNotes: `${p.type} - ${p.category}. ${p.applicant || p.contractor || ""}. Score: ${p.score}/10.`,
             dailyTraffic: p.trafficNum,
-            trafficSource: "WFS",
-            source: "discovery",
+            trafficSource: p.type === "Discovery" ? "discovery" : p.type === "Manuel" ? "manual" : "WFS",
+            source: p.type === "Discovery" ? "discovery" : p.type === "Manuel" ? "manual" : "scaffolding",
           }),
         });
         const data = await res.json();
@@ -254,8 +384,8 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
         outdoorScore: p.score,
         outdoorNotes: `${p.type} - ${p.category}. ${p.applicant || p.contractor || ""}`,
         dailyTraffic: p.trafficNum,
-        trafficSource: "WFS",
-        source: "discovery",
+        trafficSource: p.type === "Discovery" ? "discovery" : p.type === "Manuel" ? "manual" : "WFS",
+        source: p.type === "Discovery" ? "discovery" : p.type === "Manuel" ? "manual" : "scaffolding",
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString(),
       }));
@@ -357,14 +487,14 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
           const res = await fetch("/api/scaffold-to-pipeline", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
+              body: JSON.stringify({
               address: sp.address,
               city: sp.city || scanCity,
               postalCode: originalPermit?.postalCode || "",
               score: sp.outdoorScore,
-              source: "scaffolding",
+              source: originalPermit?.type === "Discovery" ? "discovery" : originalPermit?.type === "Manuel" ? "manual" : "scaffolding",
               category: sp.outdoorNotes || "",
-              applicant: "",
+              applicant: originalPermit?.applicant || "",
             }),
           });
           const data = await res.json();
@@ -535,7 +665,7 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
 
   // ── Render ──────────────────────────────────────────────────
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={onClose}>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm" onClick={handleClose}>
       <div className="w-full max-w-4xl max-h-[90vh] bg-white rounded-2xl shadow-2xl overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
 
         {/* ── Header ── */}
@@ -549,10 +679,10 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
               </div>
               <div>
                 <h2 className="text-lg font-bold">Full Circle Pipeline</h2>
-                <p className="text-sm text-white/70">Scan → Vælg → Research → Godkend → Oplæg → Send</p>
+                <p className="text-sm text-white/70">Start fra stilladser, discovery eller egne adresser → Vælg → Research → Godkend → Oplæg → Send</p>
               </div>
             </div>
-            <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-lg transition-colors">
+            <button onClick={handleClose} className="p-2 hover:bg-white/20 rounded-lg transition-colors">
               <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>
@@ -595,78 +725,171 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
         {/* ── Body ── */}
         <div className="flex-1 overflow-y-auto p-6">
 
-          {/* ── STEP 1: SCAN ── */}
+          {/* ── STEP 1: START (vælg kilde → scan/importer) ── */}
           {step === 1 && (
             <div className="space-y-4 animate-fade-in">
-              <div className="flex items-center gap-3 mb-2">
-                <svg className="w-6 h-6 text-violet-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d={STEP_LABELS[1].icon} /></svg>
-                <div>
-                  <h3 className="text-sm font-bold text-slate-900">Scan efter aktive stilladser</h3>
-                  <p className="text-xs text-slate-500">Henter aktive stillads-tilladelser og stilladsreklamer fra kommunale GIS-systemer</p>
-                </div>
-              </div>
+              {sourceType === null ? (
+                <>
+                  <div className="flex items-center gap-3 mb-4">
+                    <svg className="w-6 h-6 text-violet-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d={STEP_LABELS[1].icon} /></svg>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">Hvad vil du starte med?</h3>
+                      <p className="text-xs text-slate-500">Pipeline kan starte fra stilladser, discovery, eller egne adresser</p>
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <button type="button" onClick={() => setSourceType("scaffolding")} className="p-5 rounded-xl border-2 border-slate-200 hover:border-violet-400 hover:bg-violet-50/50 text-left transition-all group">
+                      <div className="w-10 h-10 rounded-lg bg-cyan-100 text-cyan-600 flex items-center justify-center mb-3 group-hover:bg-cyan-200">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18" /></svg>
+                      </div>
+                      <div className="text-sm font-bold text-slate-800">Stilladser</div>
+                      <p className="text-xs text-slate-500 mt-0.5">Scan kommunale stillads-tilladelser og stilladsreklamer</p>
+                    </button>
+                    <button type="button" onClick={() => setSourceType("discovery")} className="p-5 rounded-xl border-2 border-slate-200 hover:border-blue-400 hover:bg-blue-50/50 text-left transition-all group">
+                      <div className="w-10 h-10 rounded-lg bg-blue-100 text-blue-600 flex items-center justify-center mb-3 group-hover:bg-blue-200">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607Z" /></svg>
+                      </div>
+                      <div className="text-sm font-bold text-slate-800">Discovery</div>
+                      <p className="text-xs text-slate-500 mt-0.5">Scan en gade for udendørs potentiale (BBR + AI)</p>
+                    </button>
+                    <button type="button" onClick={() => setSourceType("manual")} className="p-5 rounded-xl border-2 border-slate-200 hover:border-emerald-400 hover:bg-emerald-50/50 text-left transition-all group">
+                      <div className="w-10 h-10 rounded-lg bg-emerald-100 text-emerald-600 flex items-center justify-center mb-3 group-hover:bg-emerald-200">
+                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 9.75h8.25m-8.25 0V4.5m0 0V3m0 11.25h8.25m-8.25 0v-.75m0 0h-3" /></svg>
+                      </div>
+                      <div className="text-sm font-bold text-slate-800">Manuelle adresser</div>
+                      <p className="text-xs text-slate-500 mt-0.5">Indsæt adresser direkte (én per linje)</p>
+                    </button>
+                  </div>
+                </>
+              ) : (
+                <>
+                  <div className="flex items-center gap-3 mb-2">
+                    <button type="button" onClick={() => { setSourceType(null); setPermits([]); setScanLog([]); setSelected(new Set()); }} className="p-1.5 rounded-lg hover:bg-slate-100 text-slate-500">
+                      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M10.5 19.5L3 12m0 0l7.5-7.5M3 12h18" /></svg>
+                    </button>
+                    <svg className="w-6 h-6 text-violet-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d={STEP_LABELS[1].icon} /></svg>
+                    <div>
+                      <h3 className="text-sm font-bold text-slate-900">
+                        {sourceType === "scaffolding" && "Scan efter aktive stilladser"}
+                        {sourceType === "discovery" && "Discovery: scan en gade"}
+                        {sourceType === "manual" && "Indsæt adresser"}
+                      </h3>
+                      <p className="text-xs text-slate-500">
+                        {sourceType === "scaffolding" && "Henter stillads-tilladelser fra kommunale GIS-systemer"}
+                        {sourceType === "discovery" && "Henter bygninger på gaden og AI-vurderer udendørs potentiale"}
+                        {sourceType === "manual" && "Én adresse per linje — de går videre til vælg → research → pipeline"}
+                      </p>
+                    </div>
+                  </div>
 
-              <div className="flex items-end gap-3">
-                <div className="w-48">
-                  <label className="block text-xs font-semibold text-slate-600 mb-1">By</label>
-                  <select value={scanCity} onChange={e => setScanCity(e.target.value)}
-                    className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
-                    <option value="København">København</option>
-                    <option value="Aarhus">Aarhus</option>
-                    <option value="Odense">Odense</option>
-                    <option value="Aalborg">Aalborg</option>
-                  </select>
-                </div>
-                <button onClick={runScan} disabled={scanning}
-                  className="px-5 py-2 bg-gradient-to-r from-violet-500 to-purple-600 text-white text-sm font-semibold rounded-lg hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center gap-2">
-                  {scanning ? (
-                    <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />Scanner...</>
-                  ) : (
-                    <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d={STEP_LABELS[1].icon} /></svg>Start scan</>
+                  {sourceType === "scaffolding" && (
+                    <div className="flex items-end gap-3">
+                      <div className="w-48">
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">By</label>
+                        <select value={scanCity} onChange={e => setScanCity(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
+                          <option value="København">København</option>
+                          <option value="Aarhus">Aarhus</option>
+                          <option value="Odense">Odense</option>
+                          <option value="Aalborg">Aalborg</option>
+                        </select>
+                      </div>
+                      <button onClick={runScan} disabled={scanning} className="px-5 py-2 bg-gradient-to-r from-violet-500 to-purple-600 text-white text-sm font-semibold rounded-lg hover:shadow-lg disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center gap-2">
+                        {scanning ? (
+                          <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />Scanner...</>
+                        ) : (
+                          <><svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d={STEP_LABELS[1].icon} /></svg>Start scan</>
+                        )}
+                      </button>
+                    </div>
                   )}
-                </button>
-              </div>
 
-              {/* Progress */}
-              {(scanning || scanLog.length > 0) && (
-                <div className="space-y-2">
-                  <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
-                    <div className="bg-gradient-to-r from-violet-500 to-purple-600 h-full rounded-full transition-all" style={{ width: `${scanProgress}%` }} />
-                  </div>
-                  <div className="bg-slate-50 rounded-lg border border-slate-200 p-3 max-h-36 overflow-y-auto text-[11px] font-mono text-slate-600 space-y-0.5">
-                    {scanLog.map((msg, i) => <div key={i} className={msg.startsWith("✓") ? "text-emerald-600" : msg.startsWith("✗") ? "text-red-600" : ""}>{msg}</div>)}
-                    <div ref={logEndRef} />
-                  </div>
-                </div>
-              )}
+                  {sourceType === "discovery" && (
+                    <div className="flex flex-wrap items-end gap-3">
+                      <div className="w-48">
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Gade</label>
+                        <input type="text" value={discoveryStreet} onChange={e => setDiscoveryStreet(e.target.value)} placeholder="fx Nørregade" className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white" />
+                      </div>
+                      <div className="w-40">
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">By</label>
+                        <select value={scanCity} onChange={e => setScanCity(e.target.value)} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
+                          <option value="København">København</option>
+                          <option value="Aarhus">Aarhus</option>
+                          <option value="Odense">Odense</option>
+                          <option value="Aalborg">Aalborg</option>
+                        </select>
+                      </div>
+                      <div className="w-36">
+                        <label className="block text-xs font-semibold text-slate-600 mb-1">Maks. adresser</label>
+                        <select value={discoveryMaxAddresses} onChange={e => setDiscoveryMaxAddresses(Number(e.target.value))} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white">
+                          <option value={25}>Bedste 25</option>
+                          <option value={50}>Bedste 50</option>
+                          <option value={100}>Bedste 100</option>
+                          <option value={200}>Bedste 200</option>
+                          <option value={0}>Alle</option>
+                        </select>
+                      </div>
+                      <button onClick={runDiscovery} disabled={discoveryRunning} className="px-5 py-2 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 disabled:opacity-60 disabled:cursor-not-allowed transition-all flex items-center gap-2">
+                        {discoveryRunning ? (
+                          <><div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />Scanner...</>
+                        ) : (
+                          <>Start discovery</>
+                        )}
+                      </button>
+                    </div>
+                  )}
 
-              {/* Scan result summary */}
-              {permits.length > 0 && !scanning && (
-                <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
-                    <span className="text-sm font-bold text-emerald-800">Scan fuldført!</span>
-                  </div>
-                  <p className="text-xs text-emerald-700">
-                    Fandt <b>{permits.length}</b> aktive tilladelser. <b>{permits.filter(p => p.score >= 7).length}</b> med score &ge; 7.
-                    Klik <b>Næste</b> for at vælge hvilke der skal i pipeline.
-                  </p>
-                </div>
-              )}
-              {permits.length === 0 && !scanning && scanLog.length > 0 && (
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-                  <div className="flex items-center gap-2 mb-1">
-                    <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
-                    <span className="text-sm font-bold text-amber-800">Ingen tilladelser fundet</span>
-                  </div>
-                  <p className="text-xs text-amber-700">
-                    Kommunale GIS-systemer returnerede ingen aktive stilladser for {scanCity}. Dette kan skyldes at API&apos;en er midlertidigt nede.
-                    Prøv igen om lidt eller vælg en anden by.
-                  </p>
-                  <button onClick={runScan} className="mt-2 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-100 rounded-lg hover:bg-amber-200">
-                    Prøv igen
-                  </button>
-                </div>
+                  {sourceType === "manual" && (
+                    <div className="space-y-3">
+                      <textarea value={manualAddressesText} onChange={e => setManualAddressesText(e.target.value)} placeholder="Indsæt adresser, én per linje&#10;fx:&#10;Nørregade 1, 1165 København&#10;Vesterbrogade 42" rows={6} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white font-mono resize-y" />
+                      <div className="flex items-center gap-2">
+                        <select value={scanCity} onChange={e => setScanCity(e.target.value)} className="px-3 py-2 border border-slate-200 rounded-lg text-sm bg-white w-40">
+                          <option value="København">København</option>
+                          <option value="Aarhus">Aarhus</option>
+                          <option value="Odense">Odense</option>
+                          <option value="Aalborg">Aalborg</option>
+                        </select>
+                        <button onClick={importManualAddresses} disabled={!manualAddressesText.trim()} className="px-5 py-2 bg-emerald-600 text-white text-sm font-semibold rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed">Importer</button>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Progress / log (shared) */}
+                  {(scanning || discoveryRunning || scanLog.length > 0) && (
+                    <div className="space-y-2">
+                      <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                        <div className="bg-gradient-to-r from-violet-500 to-purple-600 h-full rounded-full transition-all" style={{ width: `${scanProgress}%` }} />
+                      </div>
+                      <div className="bg-slate-50 rounded-lg border border-slate-200 p-3 max-h-36 overflow-y-auto text-[11px] font-mono text-slate-600 space-y-0.5">
+                        {scanLog.map((msg, i) => <div key={i} className={msg.startsWith("✓") ? "text-emerald-600" : msg.startsWith("✗") ? "text-red-600" : ""}>{msg}</div>)}
+                        <div ref={logEndRef} />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Result summary */}
+                  {permits.length > 0 && !scanning && !discoveryRunning && (
+                    <div className="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <svg className="w-4 h-4 text-emerald-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                        <span className="text-sm font-bold text-emerald-800">Klar!</span>
+                      </div>
+                      <p className="text-xs text-emerald-700">
+                        <b>{permits.length}</b> {permits.length === 1 ? "lead" : "leads"}. <b>{permits.filter(p => p.score >= 7).length}</b> med score &ge; 7.
+                        Klik <b>Næste</b> for at vælge hvilke der skal i pipeline.
+                      </p>
+                    </div>
+                  )}
+                  {permits.length === 0 && !scanning && !discoveryRunning && scanLog.length > 0 && sourceType === "scaffolding" && (
+                    <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
+                      <div className="flex items-center gap-2 mb-1">
+                        <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" /></svg>
+                        <span className="text-sm font-bold text-amber-800">Ingen stilladser fundet</span>
+                      </div>
+                      <p className="text-xs text-amber-700">Prøv igen eller vælg en anden by.</p>
+                      <button onClick={runScan} className="mt-2 px-3 py-1.5 text-xs font-semibold text-amber-700 bg-amber-100 rounded-lg hover:bg-amber-200">Prøv igen</button>
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
@@ -722,8 +945,14 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
                               {p.createdDate && p.createdDate !== "?" && <div className="text-[9px] text-slate-400">Oprettet {p.createdDate}</div>}
                             </td>
                             <td className="px-3 py-2 text-center">
-                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold ${p.type === "Stilladsreklamer" ? "bg-violet-100 text-violet-700" : "bg-indigo-100 text-indigo-700"}`}>
-                                {p.type === "Stilladsreklamer" ? "Reklame" : "Stillads"}
+                              <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[9px] font-semibold ${
+                                p.type === "Stilladsreklamer" ? "bg-violet-100 text-violet-700" :
+                                p.type === "Stilladser" ? "bg-indigo-100 text-indigo-700" :
+                                p.type === "Discovery" ? "bg-blue-100 text-blue-700" :
+                                p.type === "Manuel" ? "bg-emerald-100 text-emerald-700" :
+                                "bg-slate-100 text-slate-700"
+                              }`}>
+                                {p.type === "Stilladsreklamer" ? "Reklame" : p.type === "Stilladser" ? "Stillads" : p.type}
                               </span>
                             </td>
                             <td className="px-3 py-2 text-center">
@@ -998,8 +1227,15 @@ export default function FullCircleWizard({ isOpen, onClose, city = "København",
 
         {/* ── Footer ── */}
         <div className="border-t border-slate-200 px-6 py-4 bg-slate-50 flex items-center justify-between">
-          <div className="text-xs text-slate-400">
-            Trin {step} af 6
+          <div className="text-xs text-slate-400 flex items-center gap-3">
+            <span>Trin {step} af 6</span>
+            {isRunning && (
+              <button type="button" onClick={handleClose}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-100 text-amber-800 text-xs font-medium hover:bg-amber-200">
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>
+                Kør i baggrunden
+              </button>
+            )}
           </div>
           <div className="flex items-center gap-3">
             {step > 1 && (

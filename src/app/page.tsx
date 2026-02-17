@@ -331,6 +331,7 @@ function DashboardContent() {
   const [discoverCity, setDiscoverCity] = useState("København");
   const [discoverMinScore, setDiscoverMinScore] = useState(6);
   const [discoverMinTraffic, setDiscoverMinTraffic] = useState(10000);
+  const [discoverMaxCandidates, setDiscoverMaxCandidates] = useState(50);
   const [discoveryRunning, setDiscoveryRunning] = useState(false);
   const [discoveryResult, setDiscoveryResult] = useState<DiscoveryResultData | null>(null);
   const [progressEvents, setProgressEvents] = useState<ProgressEvent[]>([]);
@@ -361,6 +362,7 @@ function DashboardContent() {
   const [scaffoldSelectedIdx, setScaffoldSelectedIdx] = useState<number | null>(null);
   const scaffoldLogRef = useRef<HTMLDivElement>(null);
   const [fullCircleOpen, setFullCircleOpen] = useState(false);
+  const [fullCircleRunningInBackground, setFullCircleRunningInBackground] = useState(false);
 
   // Research
   const [researchRunning, setResearchRunning] = useState<string | null>(null);
@@ -422,6 +424,10 @@ function DashboardContent() {
   useEffect(() => {
     if (agentLogRef.current) agentLogRef.current.scrollTop = agentLogRef.current.scrollHeight;
   }, [agentEvents]);
+
+  useEffect(() => {
+    if (fullCircleOpen) setFullCircleRunningInBackground(false);
+  }, [fullCircleOpen]);
 
   // ── Property Feedback ──
   const submitFeedback = useCallback(async (propertyId: string, feedback: string, note?: string) => {
@@ -527,7 +533,13 @@ function DashboardContent() {
 
     await consumeSSE(
       "/api/discover", "POST",
-      { street: discoverStreet.trim(), city: discoverCity.trim(), minScore: discoverMinScore, minTraffic: discoverMinTraffic },
+      {
+        street: discoverStreet.trim(),
+        city: discoverCity.trim(),
+        minScore: discoverMinScore,
+        minTraffic: discoverMinTraffic,
+        maxCandidates: discoverMaxCandidates > 0 ? discoverMaxCandidates : undefined,
+      },
       setProgressEvents, setProgressPct, setCurrentPhase,
       (pe) => {
         if (pe.candidates) setDiscoveryResult((prev) => ({ ...(prev || emptyDiscovery()), candidates: pe.candidates! }));
@@ -1076,6 +1088,8 @@ function DashboardContent() {
               setDiscoverMinScore={setDiscoverMinScore}
               discoverMinTraffic={discoverMinTraffic}
               setDiscoverMinTraffic={setDiscoverMinTraffic}
+              discoverMaxCandidates={discoverMaxCandidates}
+              setDiscoverMaxCandidates={setDiscoverMaxCandidates}
               discoveryRunning={discoveryRunning}
               discoveryResult={discoveryResult}
               progressEvents={progressEvents}
@@ -1236,9 +1250,29 @@ function DashboardContent() {
       <FullCircleWizard
         isOpen={fullCircleOpen}
         onClose={() => setFullCircleOpen(false)}
+        onMinimizeToBackground={() => setFullCircleRunningInBackground(true)}
+        onRunningChange={(running) => { if (!running) setFullCircleRunningInBackground(false); }}
         city={scaffoldCity}
         onComplete={() => { fetchData(); addToast("Full Circle Pipeline afsluttet!", "success"); }}
       />
+
+      {/* ─── Full Circle kører i baggrunden ─── */}
+      {fullCircleRunningInBackground && (
+        <div className="fixed bottom-6 left-6 z-50 pointer-events-auto">
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border bg-violet-50/95 border-violet-200/80 text-violet-800">
+            <div className="flex items-center gap-2">
+              <div className="animate-spin rounded-full h-4 w-4 border-2 border-violet-300 border-t-violet-600" />
+              <span className="text-sm font-medium">Full Circle kører i baggrunden</span>
+            </div>
+            <button
+              onClick={() => setFullCircleOpen(true)}
+              className="px-3 py-1.5 rounded-lg bg-violet-600 text-white text-sm font-semibold hover:bg-violet-700"
+            >
+              Åbn
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* ─── Toast Notifications ─── */}
       <div className="fixed bottom-6 right-6 z-50 space-y-2 pointer-events-none">

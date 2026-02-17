@@ -13,12 +13,14 @@ import type { DiscoveryProgress } from "@/lib/discovery";
 /**
  * POST /api/discover
  * Streams Server-Sent Events with live progress during the scan.
- * Body: { street, city?, minScore?, minTraffic? }
+ * Body: { street, city?, minScore?, minTraffic?, maxCandidates? }
+ * maxCandidates: return only the top N by score (e.g. 50); 0 or omit = all.
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { street, city, minScore, minTraffic } = body;
+    const { street, city, minScore, minTraffic, maxCandidates: rawMax } = body;
+    const maxCandidates = typeof rawMax === "number" && rawMax > 0 ? Math.min(500, Math.round(rawMax)) : 0;
 
     if (!street) {
       return NextResponse.json(
@@ -55,12 +57,16 @@ export async function POST(request: NextRequest) {
           );
 
           if (!cancelled) {
+            const candidates = maxCandidates > 0 && result.candidates.length > maxCandidates
+              ? result.candidates.slice(0, maxCandidates)
+              : result.candidates;
+            const resultLimited = maxCandidates > 0 ? { ...result, candidates } : result;
             send({
               phase: "complete",
               message: "Scanning afsluttet",
               progress: 100,
-              result,
-              candidates: result.candidates,
+              result: resultLimited,
+              candidates,
             });
           }
         } catch (error) {
