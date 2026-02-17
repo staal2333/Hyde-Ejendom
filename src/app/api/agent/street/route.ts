@@ -152,7 +152,8 @@ export async function POST(req: NextRequest) {
                 progress: propPct + Math.round((event.progress || 0) / newProperties.length * 0.6),
               });
             },
-            isCancelled
+            isCancelled,
+            { skipEmailDraft: true }
           );
 
           if (run.status === "completed") {
@@ -185,14 +186,14 @@ export async function POST(req: NextRequest) {
         // ══════════════════════════════════════════════════
         send({
           phase: "agent_done",
-          message: `Agent færdig! ${researchCompleted} researched i staging, ${emailDraftsGenerated} email-udkast klar – godkend i Staging Queue`,
+          message: `Agent færdig! ${researchCompleted} researched i staging – godkend i Staging og generer mail-udkast (intet push til HubSpot endnu)`,
           detail: [
             `Gade: ${street}, ${city}`,
             `Bygninger fundet: ${totalCandidates}`,
             `Nye ejendomme: ${createdCount}`,
             `Research fuldført: ${researchCompleted}`,
             `Research fejlet: ${researchFailed}`,
-            `Email-udkast klar: ${emailDraftsGenerated}`,
+            "Godkend i Staging → generer mail-udkast → push til HubSpot når du er klar",
           ].join("\n"),
           progress: 100,
           agentPhase: "done",
@@ -202,7 +203,7 @@ export async function POST(req: NextRequest) {
             alreadyExists: discoveryResult.alreadyExists,
             researchCompleted,
             researchFailed,
-            emailDraftsGenerated,
+            emailDraftsGenerated: 0,
           },
         });
       } catch (error) {

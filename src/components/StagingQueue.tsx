@@ -98,6 +98,7 @@ export default function StagingQueue() {
   const [search, setSearch] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [approving, setApproving] = useState(false);
+  const [generatingDraft, setGeneratingDraft] = useState(false);
   const [rejecting, setRejecting] = useState(false);
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [toasts, setToasts] = useState<Toast[]>([]);
@@ -268,31 +269,67 @@ export default function StagingQueue() {
     addToast(`Batch research færdig: ${newProps.length} ejendomme`, "success");
   }, [properties, handleResearch, addToast]);
 
-  // ── Approve ──
+  // ── Generate draft (researched → approved, internal only; no HubSpot) ──
+  const handleGenerateDraft = useCallback(async (ids?: string[]) => {
+    const toUse = ids || Array.from(selected);
+    const propsToUse = properties.filter(p => toUse.includes(p.id));
+    const researchedNoDraft = propsToUse.filter(p => p.stage === "researched" && !p.emailDraftSubject);
+    if (researchedNoDraft.length === 0) {
+      addToast("Ingen researched ejendomme uden mail-udkast valgt", "info");
+      return;
+    }
+    setGeneratingDraft(true);
+    try {
+      const res = await fetch("/api/staged-properties/generate-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: researchedNoDraft.map(p => p.id) }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSelected(prev => new Set([...prev].filter(id => !researchedNoDraft.some(p => p.id === id))));
+        addToast(`${data.generated} mail-udkast genereret (stadig internt)`, "success");
+        await fetchProperties();
+      } else {
+        addToast("Generering af mail-udkast fejlede", "error", data.error);
+      }
+    } catch (e) {
+      addToast("Generering fejlede", "error", (e as Error).message);
+    } finally {
+      setGeneratingDraft(false);
+    }
+  }, [selected, properties, addToast, fetchProperties]);
+
+  // ── Push to HubSpot (approved/researched with draft only) ──
   const handleApprove = useCallback(async (ids?: string[]) => {
     const toApprove = ids || Array.from(selected);
-    if (toApprove.length === 0) return;
+    const propsToApprove = properties.filter(p => toApprove.includes(p.id));
+    const canPush = propsToApprove.filter(p => p.stage === "approved" || (p.stage === "researched" && p.emailDraftSubject));
+    if (canPush.length === 0) {
+      addToast("Vælg ejendomme med mail-udkast (godkend først & generer mail)", "info");
+      return;
+    }
     setApproving(true);
     try {
       const res = await fetch("/api/staged-properties/approve", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: toApprove }),
+        body: JSON.stringify({ ids: canPush.map(p => p.id) }),
       });
       const data = await res.json();
       if (data.ok) {
         setSelected(new Set());
-        addToast(`${data.approved} ejendom${data.approved !== 1 ? "me" : ""} godkendt → HubSpot`, "success");
+        addToast(`${data.approved} ejendom${data.approved !== 1 ? "me" : ""} pushed til HubSpot`, "success");
         await fetchProperties();
       } else {
-        addToast("Godkendelse fejlede", "error", data.error);
+        addToast("Push til HubSpot fejlede", "error", data.error);
       }
     } catch (e) {
-      addToast("Godkendelse fejlede", "error", (e as Error).message);
+      addToast("Push fejlede", "error", (e as Error).message);
     } finally {
       setApproving(false);
     }
-  }, [selected, addToast, fetchProperties]);
+  }, [selected, properties, addToast, fetchProperties]);
 
   // ── Reject ──
   const handleReject = useCallback(async (ids?: string[]) => {
@@ -400,7 +437,8 @@ export default function StagingQueue() {
               <p className="text-[11px] text-amber-300/50 mt-0.5">
                 {counts.new > 0 && `${counts.new} nye`}
                 {counts.researching > 0 && ` · ${counts.researching} researcher`}
-                {counts.researched > 0 && ` · ${counts.researched} klar til godkendelse`}
+                {counts.researched > 0 && ` · ${counts.researched} klar til godkendelse & mail-udkast`}
+                {counts.approved > 0 && ` · ${counts.approved} klar til push til HubSpot`}
               </p>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">
@@ -417,10 +455,10 @@ export default function StagingQueue() {
               {counts.researched > 0 && (
                 <button
                   onClick={() => setFilter("researched")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-500/20 text-green-300 text-xs font-medium hover:bg-green-500/30 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/20 text-indigo-300 text-xs font-medium hover:bg-indigo-500/30 transition-colors"
                 >
-                  <Ic d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" className="w-3.5 h-3.5" />
-                  Godkend ventende ({counts.researched})
+                  <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-3.5 h-3.5" />
+                  Godkend & generer mail ({counts.researched})
                 </button>
               )}
             </div>
@@ -475,34 +513,51 @@ export default function StagingQueue() {
         </div>
 
         {/* Bulk actions */}
-        {selected.size > 0 && (
-          <div className="flex items-center gap-2 ml-auto animate-fade-in">
-            <span className="text-xs text-slate-500 tabular-nums">{selected.size} valgt</span>
-            <button
-              onClick={() => handleApprove()}
-              disabled={approving}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-500 transition-colors disabled:opacity-50 shadow-sm"
-            >
-              <Ic d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" className="w-3.5 h-3.5" />
-              {approving ? "Godkender..." : "Godkend"}
-            </button>
-            <button
-              onClick={() => handleReject()}
-              disabled={rejecting}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/70 text-white text-xs font-semibold hover:bg-red-500 transition-colors disabled:opacity-50 shadow-sm"
-            >
-              <Ic d="M6 18L18 6M6 6l12 12" className="w-3.5 h-3.5" />
-              {rejecting ? "Afviser..." : "Afvis"}
-            </button>
-            <button
-              onClick={() => setSelected(new Set())}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/[0.06] transition-colors"
-              title="Ryd valg"
-            >
-              <Ic d="M6 18L18 6M6 6l12 12" className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        )}
+        {selected.size > 0 && (() => {
+          const selectedProps = properties.filter(p => selected.has(p.id));
+          const researchedNoDraft = selectedProps.filter(p => p.stage === "researched" && !p.emailDraftSubject);
+          const canPushHubSpot = selectedProps.filter(p => p.stage === "approved" || (p.stage === "researched" && p.emailDraftSubject));
+          return (
+            <div className="flex items-center gap-2 ml-auto animate-fade-in">
+              <span className="text-xs text-slate-500 tabular-nums">{selected.size} valgt</span>
+              {researchedNoDraft.length > 0 && (
+                <button
+                  onClick={() => handleGenerateDraft()}
+                  disabled={generatingDraft}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition-colors disabled:opacity-50 shadow-sm"
+                >
+                  <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-3.5 h-3.5" />
+                  {generatingDraft ? "Genererer..." : `Godkend & generer mail (${researchedNoDraft.length})`}
+                </button>
+              )}
+              {canPushHubSpot.length > 0 && (
+                <button
+                  onClick={() => handleApprove()}
+                  disabled={approving}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-500 transition-colors disabled:opacity-50 shadow-sm"
+                >
+                  <Ic d="M4.5 12.75l6 6 9-13.5" className="w-3.5 h-3.5" />
+                  {approving ? "Pusher..." : `Push til HubSpot (${canPushHubSpot.length})`}
+                </button>
+              )}
+              <button
+                onClick={() => handleReject()}
+                disabled={rejecting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/70 text-white text-xs font-semibold hover:bg-red-500 transition-colors disabled:opacity-50 shadow-sm"
+              >
+                <Ic d="M6 18L18 6M6 6l12 12" className="w-3.5 h-3.5" />
+                {rejecting ? "Afviser..." : "Afvis"}
+              </button>
+              <button
+                onClick={() => setSelected(new Set())}
+                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/[0.06] transition-colors"
+                title="Ryd valg"
+              >
+                <Ic d="M6 18L18 6M6 6l12 12" className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          );
+        })()}
       </div>
 
       {/* ── Content ── */}
@@ -680,14 +735,24 @@ export default function StagingQueue() {
                         <Ic d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5" className="w-4 h-4" />
                       </button>
                     )}
-                    {(prop.stage === "new" || prop.stage === "researched") && !rp && (
+                    {prop.stage === "researched" && !prop.emailDraftSubject && !rp && (
+                      <button
+                        onClick={() => handleGenerateDraft([prop.id])}
+                        disabled={generatingDraft}
+                        className="p-1.5 rounded-lg text-indigo-400/60 hover:text-indigo-400 hover:bg-indigo-500/10 transition-all opacity-0 group-hover:opacity-100"
+                        title="Godkend & generer mail-udkast"
+                      >
+                        <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-4 h-4" />
+                      </button>
+                    )}
+                    {(prop.stage === "approved" || (prop.stage === "researched" && prop.emailDraftSubject)) && !rp && (
                       <button
                         onClick={() => handleApprove([prop.id])}
                         disabled={approving}
                         className="p-1.5 rounded-lg text-green-400/60 hover:text-green-400 hover:bg-green-500/10 transition-all opacity-0 group-hover:opacity-100"
-                        title="Godkend → HubSpot"
+                        title="Push til HubSpot"
                       >
-                        <Ic d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" className="w-4 h-4" />
+                        <Ic d="M4.5 12.75l6 6 9-13.5" className="w-4 h-4" />
                       </button>
                     )}
                     <span className="text-[10px] text-slate-600 tabular-nums w-14 text-right hidden lg:block">
@@ -806,25 +871,35 @@ export default function StagingQueue() {
                               Kør research
                             </button>
                           )}
+                          {prop.stage === "researched" && !prop.emailDraftSubject && !rp && (
+                            <button
+                              onClick={() => handleGenerateDraft([prop.id])}
+                              disabled={generatingDraft}
+                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition-colors disabled:opacity-50 shadow-sm"
+                            >
+                              <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-3.5 h-3.5" />
+                              Godkend & generer mail
+                            </button>
+                          )}
+                          {(prop.stage === "approved" || (prop.stage === "researched" && prop.emailDraftSubject)) && !rp && (
+                            <button
+                              onClick={() => handleApprove([prop.id])}
+                              disabled={approving}
+                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-500 transition-colors disabled:opacity-50 shadow-sm"
+                            >
+                              <Ic d="M4.5 12.75l6 6 9-13.5" className="w-3.5 h-3.5" />
+                              Push til HubSpot
+                            </button>
+                          )}
                           {prop.stage !== "pushed" && prop.stage !== "rejected" && !rp && (
-                            <>
-                              <button
-                                onClick={() => handleApprove([prop.id])}
-                                disabled={approving}
-                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-500 transition-colors disabled:opacity-50 shadow-sm"
-                              >
-                                <Ic d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" className="w-3.5 h-3.5" />
-                                Godkend → HubSpot
-                              </button>
-                              <button
-                                onClick={() => handleReject([prop.id])}
-                                disabled={rejecting}
-                                className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-red-500/15 text-red-400 text-xs font-medium hover:bg-red-500/25 transition-colors disabled:opacity-50"
-                              >
-                                <Ic d="M6 18L18 6M6 6l12 12" className="w-3.5 h-3.5" />
-                                Afvis
-                              </button>
-                            </>
+                            <button
+                              onClick={() => handleReject([prop.id])}
+                              disabled={rejecting}
+                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-red-500/15 text-red-400 text-xs font-medium hover:bg-red-500/25 transition-colors disabled:opacity-50"
+                            >
+                              <Ic d="M6 18L18 6M6 6l12 12" className="w-3.5 h-3.5" />
+                              Afvis
+                            </button>
                           )}
                           {prop.stage === "pushed" && prop.hubspotId && (
                             <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-medium">

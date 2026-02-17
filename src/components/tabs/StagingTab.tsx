@@ -29,7 +29,7 @@ export function StagingTab() {
         <div>
           <h1 className="text-2xl font-bold text-white tracking-tight">Staging Queue</h1>
           <p className="text-sm text-slate-400 mt-0.5">
-            Gennemgå og godkend ejendomme inden de pushes til HubSpot
+            Gennemgå research → godkend & generer mail-udkast (internt) → push til HubSpot når du er klar
           </p>
         </div>
       </div>

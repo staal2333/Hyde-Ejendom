@@ -126,9 +126,10 @@ export function StreetAgentTab({
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
             </svg>
             <p className="text-xs text-amber-800 leading-relaxed">
-              <span className="font-semibold">Fuld automatisering:</span> Agenten finder alle bygninger pa vejen, opretter dem i HubSpot,
-              koerer dyb research (OIS/CVR/web), og genererer personlige email-udkast. Du godkender mails under{" "}
-              <button onClick={() => setActiveTab("outreach")} className="underline font-semibold hover:text-amber-900">Outreach-fanen</button>.
+              <span className="font-semibold">Kun research (intet push til HubSpot endnu):</span> Agenten finder bygninger, gemmer dem internt i staging,
+              og koerer dyb research (OIS/CVR/web). Du godkender i{" "}
+              <button onClick={() => setActiveTab("staging")} className="underline font-semibold hover:text-amber-900">Staging</button>
+              {" "}og genererer mail-udkast der – push til HubSpot sker først når du trykker &quot;Push til HubSpot&quot;.
             </p>
           </div>
         </div>

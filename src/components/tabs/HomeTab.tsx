@@ -181,6 +181,67 @@ export function HomeTab({
         </button>
       )}
 
+      {/* I dag – Hvad skal jeg gøre i dag? */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
+        <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+          <span className="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center">
+            <svg className="w-4 h-4 text-brand-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+            </svg>
+          </span>
+          I dag – hvad skal jeg gøre?
+        </h2>
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <button
+            onClick={() => setActiveTab("staging")}
+            className="flex items-center gap-3 rounded-xl border border-slate-200/80 p-4 text-left hover:bg-amber-50/50 hover:border-amber-200 transition-all group"
+          >
+            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
+              <span className="text-lg font-bold text-amber-700">{dashboard?.staging?.awaitingAction ?? 0}</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-slate-900">I Staging</p>
+              <p className="text-[11px] text-slate-500">Godkend & generer mail</p>
+            </div>
+            <svg className="w-4 h-4 text-slate-300 group-hover:text-amber-500 group-hover:translate-x-0.5 transition-all" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+          </button>
+          <button
+            onClick={() => { setActiveTab("outreach"); setStatusFilter("ready"); }}
+            className="flex items-center gap-3 rounded-xl border border-slate-200/80 p-4 text-left hover:bg-emerald-50/50 hover:border-emerald-200 transition-all group"
+          >
+            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
+              <span className="text-lg font-bold text-emerald-700">{dashboard?.readyToSend ?? 0}</span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-slate-900">Klar til mail</p>
+              <p className="text-[11px] text-slate-500">Send første mail</p>
+            </div>
+            <svg className="w-4 h-4 text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+          </button>
+          <button
+            onClick={() => setActiveTab("scaffolding")}
+            className="flex items-center gap-3 rounded-xl border border-slate-200/80 p-4 text-left hover:bg-cyan-50/50 hover:border-cyan-200 transition-all group"
+          >
+            <div className="w-10 h-10 rounded-xl bg-cyan-100 flex items-center justify-center flex-shrink-0">
+              <span className="text-lg font-bold text-cyan-700">
+                {typeof scaffoldPeriodCounts?.daily === "number" ? scaffoldPeriodCounts.daily : "—"}
+              </span>
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-sm font-semibold text-slate-900">Nye stilladser</p>
+              <p className="text-[11px] text-slate-500">Fra seneste scan</p>
+            </div>
+            <svg className="w-4 h-4 text-slate-300 group-hover:text-cyan-500 group-hover:translate-x-0.5 transition-all" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
       {/* Visual Pipeline */}
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-6 mb-6">
         <div className="flex items-center justify-between mb-5">

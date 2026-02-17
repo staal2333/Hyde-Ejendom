@@ -1,5 +1,6 @@
 "use client";
 
+import { useState, useMemo } from "react";
 import type { RefObject } from "react";
 import type { OOHInitialFrame, TabId } from "../../contexts/DashboardContext";
 import ScaffoldingMap from "../ScaffoldingMapDynamic";
@@ -135,6 +136,8 @@ export function ScaffoldingTab({
   ProgressBar,
   LogPanel,
 }: ScaffoldingTabProps) {
+  const [scaffoldDateFilter, setScaffoldDateFilter] = useState<"all" | "today" | "7d" | "30d">("all");
+
   if (!scaffoldReport || scaffoldRunning) {
     return (
       <div className="animate-fade-in">
@@ -262,7 +265,24 @@ export function ScaffoldingTab({
     if (created >= now - 7 * dayMs) reportWeekly++;
     if (created >= now - 30 * dayMs) reportMonthly++;
   });
-  const filtered = scaffoldReport.topPermits.filter((p) => scaffoldFilter.has(p.type));
+
+  const dateFiltered = useMemo(() => {
+    if (scaffoldDateFilter === "all") return scaffoldReport.topPermits;
+    const now = Date.now();
+    const dayMs = 86400000;
+    const todayStartMs = new Date();
+    todayStartMs.setHours(0, 0, 0, 0);
+    const todayMs = todayStartMs.getTime();
+    return scaffoldReport.topPermits.filter((p) => {
+      const c = p.createdDate && p.createdDate !== "?" ? new Date(p.createdDate).getTime() : 0;
+      if (scaffoldDateFilter === "today") return c >= todayMs;
+      if (scaffoldDateFilter === "7d") return c >= now - 7 * dayMs;
+      if (scaffoldDateFilter === "30d") return c >= now - 30 * dayMs;
+      return true;
+    });
+  }, [scaffoldReport.topPermits, scaffoldDateFilter]);
+
+  const filtered = dateFiltered.filter((p) => scaffoldFilter.has(p.type));
   const sorted = [...filtered].sort((a, b) => {
     const dir = scaffoldSort.dir === "asc" ? 1 : -1;
     switch (scaffoldSort.col) {
@@ -288,7 +308,7 @@ export function ScaffoldingTab({
         return dir * (a.score - b.score);
     }
   });
-  const mapPermits: MapPermit[] = scaffoldReport.topPermits
+  const mapPermits: MapPermit[] = dateFiltered
     .filter((p) => p.lat && p.lng)
     .map((p) => ({
       address: p.address,
@@ -587,15 +607,65 @@ export function ScaffoldingTab({
             </div>
           );
         })()}
-        <div className="flex items-center gap-3 text-[11px] text-slate-500 mb-4">
+        <div className="flex flex-wrap items-center gap-3 text-[11px] text-slate-500 mb-4">
+          <span className="inline-flex items-center gap-1.5">
+            <span className="text-slate-400 font-medium">Oprettet:</span>
+            {(["all", "today", "7d", "30d"] as const).map((df) => (
+              <button
+                key={df}
+                onClick={() => setScaffoldDateFilter(df)}
+                className={`px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                  scaffoldDateFilter === df ? "bg-brand-100 text-brand-700" : "bg-slate-100 text-slate-500 hover:bg-slate-200 hover:text-slate-700"
+                }`}
+              >
+                {df === "all" ? "Alle" : df === "today" ? "I dag" : df === "7d" ? "7 dage" : "30 dage"}
+              </button>
+            ))}
+          </span>
+          <span className="text-slate-300">|</span>
           <span>
-            Viser <b className="text-slate-700">{filtered.length}</b> af {scaffoldReport.topPermits.length}
+            Viser <b className="text-slate-700">{filtered.length}</b> af {dateFiltered.length}
+            {scaffoldDateFilter !== "all" && ` (${scaffoldReport.topPermits.length} total)`}
           </span>
           <span className="text-slate-300">|</span>
           <span>{mapPermits.filter((p) => scaffoldFilter.has(p.type)).length} med koordinater</span>
           <span className="text-slate-300">|</span>
           <span>Kilde: kbhkort.kk.dk (kun aktive)</span>
           <div className="flex-1" />
+          <button
+            type="button"
+            onClick={() => {
+              const BOM = "\uFEFF";
+              const headers = ["Adresse", "Type", "Kategori", "Score", "Trafik", "Oprettet", "Start", "Slut", "Uger", "Entrepr.", "Beskrivelse"];
+              const rows = sorted.map((p) => [
+                p.address,
+                p.type,
+                p.category,
+                String(p.score),
+                p.traffic || "",
+                p.createdDate || "",
+                p.startDate || "",
+                p.endDate || "",
+                String(p.durationWeeks || ""),
+                p.applicant || p.contractor || "",
+                (p.description || "").replace(/\r?\n/g, " "),
+              ]);
+              const csv = BOM + [headers.join(";"), ...rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(";"))].join("\r\n");
+              const blob = new Blob([csv], { type: "text/csv;charset=utf-8" });
+              const url = URL.createObjectURL(blob);
+              const a = document.createElement("a");
+              a.href = url;
+              a.download = `stilladser-${scaffoldCity.replace(/\s/g, "-")}-${new Date().toISOString().slice(0, 10)}.csv`;
+              a.click();
+              URL.revokeObjectURL(url);
+            }}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-slate-100 text-slate-700 text-xs font-medium hover:bg-slate-200 transition-colors"
+          >
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3" />
+            </svg>
+            Export CSV
+          </button>
           <div className="inline-flex bg-slate-100 rounded-lg p-0.5">
             {(["split", "map", "table"] as const).map((v) => (
               <button
@@ -616,8 +686,24 @@ export function ScaffoldingTab({
                 <ScaffoldingMap
                   permits={mapPermits}
                   activeCategories={scaffoldFilter}
-                  selectedIdx={scaffoldSelectedIdx}
-                  onSelect={setScaffoldSelectedIdx}
+                  selectedIdx={
+                    scaffoldSelectedIdx != null && scaffoldReport.topPermits[scaffoldSelectedIdx]
+                      ? (() => {
+                          const addr = scaffoldReport.topPermits[scaffoldSelectedIdx].address;
+                          const idx = mapPermits.findIndex((m) => m.address === addr);
+                          return idx >= 0 ? idx : null;
+                        })()
+                      : null
+                  }
+                  onSelect={(idx) => {
+                    if (idx == null) {
+                      setScaffoldSelectedIdx(null);
+                      return;
+                    }
+                    const permit = mapPermits[idx];
+                    const origIdx = permit ? scaffoldReport.topPermits.findIndex((p) => p.address === permit.address) : -1;
+                    setScaffoldSelectedIdx(origIdx >= 0 ? origIdx : null);
+                  }}
                   height={scaffoldView === "map" ? 600 : 520}
                 />
                 <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2 px-1">

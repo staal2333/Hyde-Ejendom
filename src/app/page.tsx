@@ -1,6 +1,27 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+
+// ─── Keyboard shortcuts (1–9, 0 = settings) ─────────────────
+function useTabShortcuts(setActiveTab: (id: TabId) => void) {
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target.closest("input, textarea, select, [contenteditable='true']")) return;
+      const key = e.key;
+      if (key.length !== 1) return;
+      const n = key === "0" ? 9 : parseInt(key, 10) - 1;
+      if (n < 0 || n > 9) return;
+      const tab = TABS[n];
+      if (tab) {
+        setActiveTab(tab.id);
+        e.preventDefault();
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, [setActiveTab]);
+}
 import dynamic from "next/dynamic";
 import type { OOHPanelProps } from "../components/OOHPanel";
 import { DashboardProvider, useDashboard } from "../contexts/DashboardContext";
@@ -302,6 +323,8 @@ function DashboardContent() {
     oohInitialClient,
     setOohInitialClient,
   } = useDashboard();
+
+  useTabShortcuts(setActiveTab);
 
   // Discovery
   const [discoverStreet, setDiscoverStreet] = useState("");
@@ -950,6 +973,9 @@ function DashboardContent() {
               </div>
             ))}
           </div>
+          <p className="text-[9px] text-slate-500/80 px-3 pt-1.5 border-t border-white/[0.04] mt-2 pt-2">
+            Tast <kbd className="px-1 py-0.5 rounded bg-white/10 font-mono text-[8px]">1</kbd>–<kbd className="px-1 py-0.5 rounded bg-white/10 font-mono text-[8px]">9</kbd> eller <kbd className="px-1 py-0.5 rounded bg-white/10 font-mono text-[8px]">0</kbd> for at skifte fane
+          </p>
         </div>
       </aside>
 
@@ -968,7 +994,7 @@ function DashboardContent() {
               <p className="text-[10px] text-red-500/80 mt-0.5">Tjek API-noegler under Indstillinger</p>
             </div>
             <button onClick={() => { setError(null); fetchData(); }}
-              className="px-3 py-1.5 bg-red-100 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-200 shrink-0">Proev igen</button>
+              className="px-3 py-1.5 bg-red-100 text-red-700 text-xs font-semibold rounded-lg hover:bg-red-200 shrink-0">Prøv igen</button>
             <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 p-1 rounded-lg hover:bg-red-100 shrink-0">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
@@ -1052,6 +1078,9 @@ function DashboardContent() {
               progressLogRef={progressLogRef}
               triggerDiscovery={triggerDiscovery}
               stopDiscovery={stopDiscovery}
+              setActiveTab={setActiveTab}
+              addToast={addToast}
+              fetchData={fetchData}
               ProgressBar={ProgressBar}
               LogPanel={LogPanel}
             />

@@ -57,12 +57,22 @@ export async function GET() {
 /**
  * POST /api/properties
  * Create a single ejendom from an address string.
- * Body: { address: string, city?: string, postalCode?: string, startResearch?: boolean }
+ * Body: { address, city?, postalCode?, startResearch?, outdoorScore?, dailyTraffic?, trafficSource?, outdoorNotes?, source? }
  */
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { address, city, postalCode, startResearch } = body;
+    const {
+      address,
+      city,
+      postalCode,
+      startResearch,
+      outdoorScore,
+      dailyTraffic,
+      trafficSource,
+      outdoorNotes,
+      source: bodySource,
+    } = body;
 
     if (!address || typeof address !== "string" || address.trim().length < 3) {
       return NextResponse.json(
@@ -74,16 +84,13 @@ export async function POST(request: NextRequest) {
     const trimmedAddress = address.trim();
 
     // Parse address components if not provided separately
-    // Handles formats like "Jagtvej 43, 2200 København" or just "Jagtvej 43"
     let parsedCity = city?.trim() || "";
     let parsedPostal = postalCode?.trim() || "";
 
     if (!parsedCity || !parsedPostal) {
-      // Try to parse from a full address string with comma
       const parts = trimmedAddress.split(",").map(s => s.trim());
       if (parts.length >= 2) {
         const afterComma = parts[1];
-        // Try to extract postal code (4 digits) and city
         const postalMatch = afterComma.match(/^(\d{4})\s+(.+)$/);
         if (postalMatch) {
           if (!parsedPostal) parsedPostal = postalMatch[1];
@@ -94,10 +101,7 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    // The actual street address (first part before comma, or the full string)
     const streetAddress = trimmedAddress.split(",")[0].trim();
-
-    // Check for duplicates in staging
     const exists = await stagedExistsByAddress(streetAddress);
     if (exists) {
       return NextResponse.json(
@@ -106,13 +110,17 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Create in staging (NOT HubSpot directly)
+    const source = bodySource === "discovery" ? "discovery" : "manual";
     const staged = await insertStagedProperty({
       name: streetAddress,
       address: streetAddress,
       postalCode: parsedPostal,
       city: parsedCity,
-      source: "manual",
+      outdoorScore: outdoorScore != null ? Number(outdoorScore) : undefined,
+      dailyTraffic: dailyTraffic != null ? Number(dailyTraffic) : undefined,
+      trafficSource: trafficSource ?? undefined,
+      outdoorNotes: outdoorNotes ?? undefined,
+      source,
     });
 
     return NextResponse.json({

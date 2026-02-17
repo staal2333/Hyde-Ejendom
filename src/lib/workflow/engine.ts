@@ -890,11 +890,18 @@ export function getAllRawResearch() {
  * Process a staged property through the research pipeline.
  * Research results are written back to Supabase staging, NOT HubSpot.
  */
+export interface ProcessStagedOptions {
+  /** When true, only run research and mark as "researched"; do not generate email draft. User approves in Staging, then draft is generated. */
+  skipEmailDraft?: boolean;
+}
+
 export async function processStagedProperty(
   staged: StagedProperty,
   onProgress?: WorkflowProgressCallback,
-  isCancelled?: () => boolean
+  isCancelled?: () => boolean,
+  options?: ProcessStagedOptions
 ): Promise<WorkflowRunLog> {
+  const skipEmailDraft = options?.skipEmailDraft === true;
   const emit = onProgress || (() => {});
   const checkCancelled = isCancelled || (() => false);
 
@@ -1070,43 +1077,45 @@ export async function processStagedProperty(
     });
     completeStep(step4);
 
-    // ── Step 5: Generate email draft (store in staging) ──
-    const step5 = startStep("generate_email_draft", "AI genererer mailudkast");
-    run.steps.push(step5);
+    // ── Step 5: Generate email draft (store in staging) – skipped when skipEmailDraft (e.g. Gade-Agent: user approves after research, then draft in Staging) ──
+    if (!skipEmailDraft) {
+      const step5 = startStep("generate_email_draft", "AI genererer mailudkast");
+      run.steps.push(step5);
 
-    if (bestContact && bestContact.email) {
-      emit({
-        phase: "email_start",
-        step: "generate_email_draft",
-        message: `Skriver mail til ${bestContact.fullName || "kontaktperson"}...`,
-        progress: 82,
-      });
+      if (bestContact && bestContact.email) {
+        emit({
+          phase: "email_start",
+          step: "generate_email_draft",
+          message: `Skriver mail til ${bestContact.fullName || "kontaktperson"}...`,
+          progress: 82,
+        });
 
-      const draft = await generateEmailDraft(property, bestContact, analysis);
+        const draft = await generateEmailDraft(property, bestContact, analysis);
 
-      await updateStagedProperty(staged.id, {
-        emailDraftSubject: draft.subject,
-        emailDraftBody: draft.bodyText,
-        emailDraftNote: draft.shortInternalNote,
-      });
+        await updateStagedProperty(staged.id, {
+          emailDraftSubject: draft.subject,
+          emailDraftBody: draft.bodyText,
+          emailDraftNote: draft.shortInternalNote,
+        });
 
-      emit({
-        phase: "email_done",
-        step: "generate_email_draft",
-        message: `Mailudkast gemt i staging: "${draft.subject}"`,
-        progress: 90,
-      });
-    } else {
-      step5.details = "Ingen kontaktperson med email fundet";
-      step5.status = "skipped";
-    }
-    completeStep(step5);
+        emit({
+          phase: "email_done",
+          step: "generate_email_draft",
+          message: `Mailudkast gemt i staging: "${draft.subject}"`,
+          progress: 90,
+        });
+      } else {
+        step5.details = "Ingen kontaktperson med email fundet";
+        step5.status = "skipped";
+      }
+      completeStep(step5);
 
-    if (checkCancelled()) {
-      run.status = "failed";
-      run.error = "Stoppet af bruger";
-      run.completedAt = new Date().toISOString();
-      return run;
+      if (checkCancelled()) {
+        run.status = "failed";
+        run.error = "Stoppet af bruger";
+        run.completedAt = new Date().toISOString();
+        return run;
+      }
     }
 
     // ── Step 6: Mark as researched in staging ──
@@ -1121,7 +1130,9 @@ export async function processStagedProperty(
     emit({
       phase: "staging_researched",
       step: "mark_researched",
-      message: `Ejendom markeret som "researched" – afventer godkendelse i staging queue`,
+      message: skipEmailDraft
+        ? "Ejendom markeret som \"researched\" – godkend i Staging, derefter genereres mail-udkast (intet push til HubSpot endnu)"
+        : "Ejendom markeret som \"researched\" – afventer godkendelse i staging queue",
       progress: 96,
     });
     completeStep(step6);

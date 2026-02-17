@@ -114,7 +114,28 @@ export default function ScaffoldingMap({
     mapRef.current = map;
 
     return () => {
-      map.remove();
+      // Stop any zoom/pan animations so Leaflet doesn't fire transition-end after unmount
+      const m = mapRef.current;
+      if (m) {
+        try {
+          (m as unknown as { _stop?: () => void })._stop?.();
+        } catch {
+          // ignore
+        }
+        markersRef.current.forEach((marker) => {
+          try {
+            marker.remove();
+          } catch {
+            // ignore
+          }
+        });
+        markersRef.current = [];
+        try {
+          m.remove();
+        } catch {
+          // ignore if already removed
+        }
+      }
       mapRef.current = null;
     };
   }, []);
@@ -122,10 +143,17 @@ export default function ScaffoldingMap({
   /* Update markers when data/filter changes */
   useEffect(() => {
     const map = mapRef.current;
-    if (!map) return;
+    const container = containerRef.current;
+    if (!map || !container || !document.contains(container)) return;
 
     // Clear old
-    markersRef.current.forEach((m) => m.remove());
+    markersRef.current.forEach((m) => {
+      try {
+        m.remove();
+      } catch {
+        // ignore if already removed
+      }
+    });
     markersRef.current = [];
 
     const visible = permits.filter(
@@ -182,20 +210,42 @@ export default function ScaffoldingMap({
       markersRef.current.push(marker);
     });
 
-    // Fit bounds
+    // Fit bounds (no animation to avoid Leaflet callbacks after unmount)
     if (bounds.length > 1) {
-      map.fitBounds(L.latLngBounds(bounds as L.LatLngTuple[]), { padding: [40, 40], maxZoom: 15 });
+      try {
+        if (document.contains(containerRef.current!)) {
+          map.fitBounds(L.latLngBounds(bounds as L.LatLngTuple[]), {
+            padding: [40, 40],
+            maxZoom: 15,
+            animate: false,
+          });
+        }
+      } catch {
+        // map may be removed
+      }
     } else if (bounds.length === 1) {
-      map.setView(bounds[0] as L.LatLngTuple, 15);
+      try {
+        if (document.contains(containerRef.current!)) {
+          map.setView(bounds[0] as L.LatLngTuple, 15, { animate: false });
+        }
+      } catch {
+        // map may be removed
+      }
     }
   }, [permits, activeCategories, selectedIdx, onSelect]);
 
   /* Pan to selected marker */
   useEffect(() => {
-    if (selectedIdx === null || !mapRef.current) return;
+    const map = mapRef.current;
+    const container = containerRef.current;
+    if (selectedIdx === null || !map || !container || !document.contains(container)) return;
     const p = permits[selectedIdx];
     if (p?.lat && p?.lng) {
-      mapRef.current.panTo([p.lat, p.lng], { animate: true });
+      try {
+        map.panTo([p.lat, p.lng], { animate: false });
+      } catch {
+        // map may be removed
+      }
     }
   }, [selectedIdx, permits]);
 

@@ -1,6 +1,8 @@
 "use client";
 
+import { useState, useCallback } from "react";
 import type { RefObject } from "react";
+import type { TabId } from "@/contexts/DashboardContext";
 import EmptyState from "../ui/EmptyState";
 
 // Mirror of page types for discovery (avoids importing from app/page)
@@ -143,16 +145,77 @@ function ScoreRing({ score }: { score: number }) {
 function CandidateTable({
   candidates,
   minScore,
+  onAddToStaging,
+  onAddSelected,
+  adding,
 }: {
   candidates: ScoredCandidateData[];
   minScore: number;
+  onAddToStaging?: (c: ScoredCandidateData) => void;
+  onAddSelected?: (list: ScoredCandidateData[]) => void;
+  adding?: boolean;
 }) {
-  const filtered = candidates.filter((c) => c.outdoorScore >= minScore).slice(0, 40);
+  const filtered = candidates.filter((c) => c.outdoorScore >= minScore).slice(0, 100);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+
+  const toggle = (i: number) => {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(i)) next.delete(i);
+      else next.add(i);
+      return next;
+    });
+  };
+  const selectAll = () => {
+    if (selected.size === filtered.length) setSelected(new Set());
+    else setSelected(new Set(filtered.map((_, i) => i)));
+  };
+  const selectedList = filtered.filter((_, i) => selected.has(i));
+  const canAdd = (onAddToStaging || onAddSelected) && !adding;
+
   return (
     <div className="overflow-x-auto">
+      {onAddSelected && filtered.length > 0 && (
+        <div className="px-6 py-3 border-b border-slate-100 flex items-center justify-between gap-4 bg-slate-50/50">
+          <label className="flex items-center gap-2 cursor-pointer text-sm text-slate-600">
+            <input
+              type="checkbox"
+              checked={selected.size === filtered.length && filtered.length > 0}
+              onChange={selectAll}
+              className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+            />
+            Vælg alle ({filtered.length})
+          </label>
+          <button
+            type="button"
+            onClick={() => onAddSelected(selectedList)}
+            disabled={selectedList.length === 0 || adding}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold bg-brand-600 text-white hover:bg-brand-700 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {adding ? (
+              <>
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
+                Tilføjer...
+              </>
+            ) : (
+              <>
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                </svg>
+                Tilføj valgte til Staging ({selectedList.length})
+              </>
+            )}
+          </button>
+        </div>
+      )}
       <table className="w-full">
         <thead>
           <tr className="border-b border-slate-100">
+            {onAddSelected && (
+              <th className="px-4 py-3.5 w-10 text-center text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                <span className="sr-only">Vælg</span>
+              </th>
+            )}
             <th className="px-6 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">
               Adresse
             </th>
@@ -168,11 +231,26 @@ function CandidateTable({
             <th className="px-4 py-3.5 text-left text-[10px] font-bold text-slate-400 uppercase tracking-wider">
               AI Vurdering
             </th>
+            {onAddToStaging && (
+              <th className="px-4 py-3.5 text-right text-[10px] font-bold text-slate-400 uppercase tracking-wider w-28">
+                Handling
+              </th>
+            )}
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-50">
           {filtered.map((c, i) => (
             <tr key={i} className="group hover:bg-brand-50/30 transition-colors">
+              {onAddSelected && (
+                <td className="px-4 py-4 text-center">
+                  <input
+                    type="checkbox"
+                    checked={selected.has(i)}
+                    onChange={() => toggle(i)}
+                    className="rounded border-slate-300 text-brand-600 focus:ring-brand-500"
+                  />
+                </td>
+              )}
               <td className="px-6 py-4">
                 <div className="font-semibold text-sm text-slate-900">{c.address}</div>
                 <div className="text-[11px] text-slate-400 mt-0.5">
@@ -213,6 +291,21 @@ function CandidateTable({
               <td className="px-4 py-4">
                 <p className="text-[12px] text-slate-500 leading-relaxed max-w-xs">{c.scoreReason}</p>
               </td>
+              {onAddToStaging && (
+                <td className="px-4 py-4 text-right">
+                  <button
+                    type="button"
+                    onClick={() => onAddToStaging(c)}
+                    disabled={!canAdd}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-slate-100 text-slate-700 hover:bg-brand-100 hover:text-brand-700 disabled:opacity-50"
+                  >
+                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                      <path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" />
+                    </svg>
+                    Tilføj til Staging
+                  </button>
+                </td>
+              )}
             </tr>
           ))}
         </tbody>
@@ -238,6 +331,9 @@ export interface DiscoverTabProps {
   progressLogRef: RefObject<HTMLDivElement | null>;
   triggerDiscovery: () => void;
   stopDiscovery: () => void;
+  setActiveTab?: (tab: TabId) => void;
+  addToast?: (message: string, type: "success" | "error" | "info") => void;
+  fetchData?: () => Promise<void>;
   ProgressBar: React.ComponentType<{ pct: number; running: boolean; phase: string }>;
   LogPanel: React.ComponentType<{
     logRef: RefObject<HTMLDivElement | null>;
@@ -245,6 +341,34 @@ export interface DiscoverTabProps {
     running: boolean;
     maxHeight?: string;
   }>;
+}
+
+async function addCandidateToStaging(
+  c: ScoredCandidateData,
+  addToast?: (msg: string, type: "success" | "error" | "info") => void,
+  silent?: boolean
+): Promise<boolean> {
+  const res = await fetch("/api/properties", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      address: c.address,
+      postalCode: c.postalCode,
+      city: c.city,
+      outdoorScore: c.outdoorScore,
+      dailyTraffic: c.estimatedDailyTraffic,
+      trafficSource: c.trafficSource,
+      outdoorNotes: c.scoreReason,
+      source: "discovery",
+    }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    if (!silent) addToast?.(data?.error || "Kunne ikke tilføje", "error");
+    return false;
+  }
+  if (!silent) addToast?.(`Tilføjet til Staging: ${c.address}`, "success");
+  return true;
 }
 
 export function DiscoverTab({
@@ -264,9 +388,52 @@ export function DiscoverTab({
   progressLogRef,
   triggerDiscovery,
   stopDiscovery,
+  setActiveTab,
+  addToast,
+  fetchData,
   ProgressBar,
   LogPanel,
 }: DiscoverTabProps) {
+  const [adding, setAdding] = useState(false);
+
+  const handleAddOne = useCallback(
+    async (c: ScoredCandidateData) => {
+      if (!addToast) return;
+      setAdding(true);
+      const ok = await addCandidateToStaging(c, addToast);
+      setAdding(false);
+      if (ok) {
+        await fetchData?.();
+        setActiveTab?.("staging" as TabId);
+      }
+    },
+    [addToast, fetchData, setActiveTab]
+  );
+
+  const handleAddSelected = useCallback(
+    async (list: ScoredCandidateData[]) => {
+      if (list.length === 0 || !addToast) return;
+      setAdding(true);
+      let added = 0;
+      for (const c of list) {
+        const ok = await addCandidateToStaging(c, addToast, true);
+        if (ok) added++;
+      }
+      setAdding(false);
+      addToast(
+        added === list.length
+          ? `${added} ejendomme tilføjet til Staging`
+          : `${added} af ${list.length} tilføjet (nogle fandtes allerede)`,
+        added > 0 ? "success" : "info"
+      );
+      if (added > 0) {
+        await fetchData?.();
+        setActiveTab?.("staging" as TabId);
+      }
+    },
+    [addToast, fetchData, setActiveTab]
+  );
+
   return (
     <div className="animate-fade-in">
       <div className="flex items-center justify-between mb-6">
@@ -489,6 +656,25 @@ export function DiscoverTab({
               )}
             </div>
 
+            <div className="mb-4 p-4 rounded-xl bg-brand-50 border border-brand-200/60">
+              <p className="text-sm font-semibold text-brand-900 mb-1">Næste skridt</p>
+              <p className="text-xs text-brand-700 leading-relaxed">
+                Vælg ejendomme nedenfor og brug <strong>Tilføj til Staging</strong>. I Staging får de research og
+                email-udkast, som du godkender før de sendes. Eller brug{" "}
+                {setActiveTab && (
+                  <button
+                    type="button"
+                    onClick={() => setActiveTab("street_agent" as TabId)}
+                    className="underline font-semibold hover:text-brand-900"
+                  >
+                    Gade-Agent
+                  </button>
+                )}
+                {!setActiveTab && "Gade-Agent"}
+                {" "}for fuld automatisering af hele vejen (scan → research → mail).
+              </p>
+            </div>
+
             <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] overflow-hidden">
               <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
                 <div className="flex items-center gap-3">
@@ -524,6 +710,9 @@ export function DiscoverTab({
               <CandidateTable
                 candidates={discoveryResult.candidates}
                 minScore={discoverMinScore}
+                onAddToStaging={addToast ? handleAddOne : undefined}
+                onAddSelected={addToast ? handleAddSelected : undefined}
+                adding={adding}
               />
             </div>
           </div>
