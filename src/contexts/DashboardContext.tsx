@@ -170,6 +170,30 @@ export interface DashboardContextValue {
 
 const DashboardContext = createContext<DashboardContextValue | null>(null);
 
+// Safe default so consumers never throw (avoids React #310 when context is briefly null e.g. hydration)
+const DEFAULT_DASHBOARD_VALUE: DashboardContextValue = {
+  activeTab: "home",
+  setActiveTab: () => {},
+  dashboard: null,
+  properties: [],
+  loading: true,
+  error: null,
+  setError: () => {},
+  fetchDashboard: () => Promise.resolve(),
+  fetchProperties: () => Promise.resolve(),
+  fetchData: () => Promise.resolve(),
+  systemHealth: null,
+  toasts: [],
+  addToast: () => {},
+  removeToast: () => {},
+  scaffoldPeriodCounts: null,
+  setScaffoldPeriodCounts: () => {},
+  oohInitialFrame: undefined,
+  setOohInitialFrame: () => {},
+  oohInitialClient: undefined,
+  setOohInitialClient: () => {},
+};
+
 // ─── Provider ────────────────────────────────────────────────
 
 export function DashboardProvider({ children }: { children: ReactNode }) {
@@ -311,6 +335,6 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
 
 export function useDashboard(): DashboardContextValue {
   const ctx = useContext(DashboardContext);
-  if (!ctx) throw new Error("useDashboard must be used within DashboardProvider");
-  return ctx;
+  // Never throw: return safe default so hook count is always the same (avoids React #310 on hydration/404)
+  return ctx ?? DEFAULT_DASHBOARD_VALUE;
 }

@@ -144,7 +144,7 @@ export function SettingsTab() {
           </div>
           <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">API Integrationer</h3>
         </div>
-        <p className="text-xs text-slate-500 mb-4">Status for konfigurerede API-forbindelser. Saet env vars i <code className="bg-slate-100 px-1 rounded text-[9px]">.env.local</code></p>
+        <p className="text-xs text-slate-500 mb-4">Status for konfigurerede API-forbindelser. Lokalt: <code className="bg-slate-100 px-1 rounded text-[9px]">.env.local</code> — på Vercel: Project Settings → Environment Variables.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
           {[
             { name: "HubSpot CRM", envKey: "HUBSPOT_ACCESS_TOKEN", desc: "Ejendomme, kontakter, pipeline", check: "hubspot" },

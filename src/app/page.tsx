@@ -22,7 +22,6 @@ function useTabShortcuts(setActiveTab: (id: TabId) => void) {
     return () => window.removeEventListener("keydown", onKeyDown);
   }, [setActiveTab]);
 }
-import dynamic from "next/dynamic";
 import type { OOHPanelProps } from "../components/OOHPanel";
 import { DashboardProvider, useDashboard } from "../contexts/DashboardContext";
 import type { TabId } from "../contexts/DashboardContext";
@@ -37,8 +36,7 @@ import { StreetAgentTab } from "../components/tabs/StreetAgentTab";
 import { OutreachTab } from "../components/tabs/OutreachTab";
 import { SettingsTab } from "../components/tabs/SettingsTab";
 import { ProgressBar, LogPanel, ResultStat, PipelineStat, PropertyCard } from "@/components/dashboard";
-
-const FullCircleWizard = dynamic(() => import("../components/FullCircleWizard"), { ssr: false });
+import FullCircleWizard from "../components/FullCircleWizard";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -845,28 +843,27 @@ function DashboardContent() {
     currentStep: researchEvents.length > 0 ? researchEvents[researchEvents.length - 1].message : null,
   }), [researchEvents]);
 
-  // ── Loading State ──
-  if (loading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center" style={{ background: "var(--background)" }}>
-        <div className="text-center animate-fade-in">
-          <div className="relative w-14 h-14 mx-auto mb-5">
-            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 animate-pulse" />
-            <div className="absolute inset-0 rounded-2xl flex items-center justify-center">
-              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75" />
-              </svg>
-            </div>
-          </div>
-          <p className="text-sm font-semibold text-slate-700">Ejendom AI</p>
-          <p className="text-xs text-slate-400 mt-1">Forbinder til systemer...</p>
-        </div>
-      </div>
-    );
-  }
-
+  // Single return path only (no early return) to avoid React #310 "more hooks than previous render"
   return (
-    <div className="min-h-screen flex" style={{ background: "var(--background)" }}>
+    <div className="min-h-screen flex relative" style={{ background: "var(--background)" }}>
+      {/* Loading overlay when context is still loading */}
+      {loading && (
+        <div className="absolute inset-0 z-[100] flex items-center justify-center bg-slate-50" style={{ background: "var(--background)" }}>
+          <div className="text-center animate-fade-in">
+            <div className="relative w-14 h-14 mx-auto mb-5">
+              <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 animate-pulse" />
+              <div className="absolute inset-0 rounded-2xl flex items-center justify-center">
+                <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75" />
+                </svg>
+              </div>
+            </div>
+            <p className="text-sm font-semibold text-slate-700">Ejendom AI</p>
+            <p className="text-xs text-slate-400 mt-1">Forbinder til systemer...</p>
+          </div>
+        </div>
+      )}
+      <div className={`flex-1 flex min-h-screen min-w-0 ${loading ? "invisible" : ""}`}>
       {/* ─── Sidebar ─── */}
       <aside className="w-[240px] gradient-sidebar text-white flex-shrink-0 flex flex-col">
         {/* Brand */}
@@ -1301,6 +1298,7 @@ function DashboardContent() {
             </button>
           </div>
         ))}
+      </div>
       </div>
     </div>
   );
