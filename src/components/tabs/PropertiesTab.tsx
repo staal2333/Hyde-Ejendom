@@ -1,7 +1,13 @@
 "use client";
 
+import dynamic from "next/dynamic";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { PropertyItem, TabId, DashboardData, OOHInitialFrame, OOHInitialClient } from "@/contexts/DashboardContext";
 import EmptyState from "../ui/EmptyState";
+import { PropertyEditModal } from "../PropertyEditModal";
+import type { PropertyMapPoint } from "../PropertiesMap";
+
+const PropertiesMap = dynamic(() => import("../PropertiesMap"), { ssr: false });
 
 type SortKey = "name" | "status" | "score" | "owner";
 
@@ -38,7 +44,10 @@ export interface PropertiesTabProps {
   triggerResearch: (propertyId?: string) => void;
   stopResearch: () => void;
   submitFeedback: (propertyId: string, feedback: string, note?: string) => void;
-  sendSingleEmail: (propertyId: string) => void;
+  sendSingleEmail: (propertyId: string, opts?: { attachmentUrl?: string; attachmentFile?: { filename: string; content: string }; subject?: string; body?: string; to?: string }) => Promise<boolean>;
+  markPropertyReady: (propertyId: string) => Promise<void>;
+  markReadyLoading: string | null;
+  exportCSV: (which: "ready" | "sent") => void;
   addToast: (message: string, type: "success" | "error" | "info", detail?: string) => void;
   fetchData: () => Promise<void>;
   setActiveTab: (tab: TabId) => void;
@@ -54,6 +63,9 @@ export interface PropertiesTabProps {
     researchRunning: boolean;
     onFeedback?: (feedback: string) => void;
     onCreateProposal?: () => void;
+    onMarkReady?: () => void;
+    markReadyLoading?: boolean;
+    onEdit?: () => void;
   }>;
 }
 
@@ -84,6 +96,9 @@ export function PropertiesTab({
   stopResearch,
   submitFeedback,
   sendSingleEmail,
+  markPropertyReady,
+  markReadyLoading,
+  exportCSV,
   addToast,
   fetchData,
   setActiveTab,
@@ -93,6 +108,56 @@ export function PropertiesTab({
   PipelineStat,
   PropertyCard,
 }: PropertiesTabProps) {
+  const [viewMode, setViewMode] = useState<"list" | "map">("list");
+  const [mapPoints, setMapPoints] = useState<PropertyMapPoint[]>([]);
+  const [mapLoading, setMapLoading] = useState(false);
+  const [selectedMapId, setSelectedMapId] = useState<string | null>(null);
+  const [editProperty, setEditProperty] = useState<PropertyItem | null>(null);
+  const geocodeCache = useRef<Record<string, { lat: number; lng: number }>>({});
+  const filterKey = useMemo(
+    () => filteredProperties.map((p) => p.id).join(","),
+    [filteredProperties]
+  );
+
+  useEffect(() => {
+    if (viewMode !== "map" || filteredProperties.length === 0) {
+      setMapPoints([]);
+      return;
+    }
+    let cancelled = false;
+    setMapLoading(true);
+    const run = async () => {
+      const points: PropertyMapPoint[] = [];
+      for (const p of filteredProperties) {
+        const key = [p.address, p.postalCode, p.city].filter(Boolean).join(" ").trim();
+        if (!key || key.length < 3) continue;
+        const cached = geocodeCache.current[key];
+        if (cached) {
+          points.push({ id: p.id, lat: cached.lat, lng: cached.lng, property: p });
+          continue;
+        }
+        try {
+          const params = new URLSearchParams({ address: p.address || "", postalCode: p.postalCode || "", city: p.city || "" });
+          const res = await fetch(`/api/properties/geocode?${params}`);
+          if (cancelled) return;
+          if (res.ok) {
+            const data = await res.json();
+            geocodeCache.current[key] = { lat: data.lat, lng: data.lng };
+            points.push({ id: p.id, lat: data.lat, lng: data.lng, property: p });
+          }
+        } catch {
+          // skip failed
+        }
+      }
+      if (!cancelled) {
+        setMapPoints(points);
+        setMapLoading(false);
+      }
+    };
+    run();
+    return () => { cancelled = true; };
+  }, [viewMode, filterKey, filteredProperties]);
+
   return (
     <div className="animate-fade-in">
       <div className="flex items-center justify-between mb-5">
@@ -101,6 +166,20 @@ export function PropertiesTab({
           <p className="text-xs text-slate-500 mt-0.5">{properties.length} ejendomme i pipeline</p>
         </div>
         <div className="flex items-center gap-2">
+          <div className="relative group">
+            <button type="button" className="inline-flex items-center gap-2 px-3 py-2 border border-slate-200 text-slate-600 text-xs font-semibold rounded-xl hover:bg-slate-50 transition-colors">
+              Export CSV
+              <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" /></svg>
+            </button>
+            <div className="absolute right-0 top-full mt-1 py-1 bg-white border border-slate-200 rounded-xl shadow-lg opacity-0 invisible group-hover:opacity-100 group-hover:visible transition-all z-10 min-w-[140px]">
+              <button type="button" onClick={() => exportCSV("ready")} className="w-full px-4 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 rounded-lg">
+                Klar til udsendelse
+              </button>
+              <button type="button" onClick={() => exportCSV("sent")} className="w-full px-4 py-2 text-left text-xs font-medium text-slate-700 hover:bg-slate-50 rounded-lg">
+                Sendt
+              </button>
+            </div>
+          </div>
           {researchRunning ? (
             <button onClick={stopResearch}
               className="inline-flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-xl shadow-sm transition-colors">
@@ -141,6 +220,51 @@ export function PropertiesTab({
           </button>
         </div>
       </div>
+
+      <div className="flex items-center gap-2 mb-4">
+        <span className="text-[10px] font-semibold text-slate-500 uppercase">Visning</span>
+        <div className="flex rounded-lg border border-slate-200 p-0.5 bg-slate-50">
+          <button
+            type="button"
+            onClick={() => setViewMode("list")}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${viewMode === "list" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+          >
+            Liste
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewMode("map")}
+            className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-colors ${viewMode === "map" ? "bg-white text-slate-800 shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+          >
+            Kort
+          </button>
+        </div>
+      </div>
+
+      {viewMode === "map" && (
+        <div className="mb-6">
+          {mapLoading && mapPoints.length === 0 ? (
+            <div className="h-[420px] rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-500 text-sm">
+              Indlæser kort…
+            </div>
+          ) : mapPoints.length > 0 ? (
+            <PropertiesMap
+              points={mapPoints}
+              selectedId={selectedMapId}
+              onSelect={setSelectedMapId}
+              onOpenDetail={(id) => {
+                setExpandedProperty(id);
+                setSelectedMapId(id);
+              }}
+              height={420}
+            />
+          ) : (
+            <div className="h-[320px] rounded-2xl border border-slate-200 bg-slate-50 flex items-center justify-center text-slate-500 text-sm">
+              Ingen adresser med koordinater for de filtrerede ejendomme.
+            </div>
+          )}
+        </div>
+      )}
 
       {properties.filter(p => p.outreachStatus === "KLAR_TIL_UDSENDELSE").length > 0 && (
         <div className="mb-6 bg-gradient-to-r from-emerald-50 to-green-50 border border-emerald-200/60 rounded-2xl p-5">
@@ -280,6 +404,9 @@ export function PropertiesTab({
               onResearch={() => triggerResearch(p.id)}
               researchRunning={researchRunning === p.id}
               onFeedback={(fb) => submitFeedback(p.id, fb)}
+              onMarkReady={() => markPropertyReady(p.id)}
+              markReadyLoading={markReadyLoading === p.id}
+              onEdit={() => setEditProperty(p)}
               onCreateProposal={() => {
                 setOohInitialClient({
                   company: p.ownerCompanyName || p.name || "",
@@ -299,6 +426,13 @@ export function PropertiesTab({
           ))
         )}
       </div>
+
+      <PropertyEditModal
+        property={editProperty}
+        onClose={() => setEditProperty(null)}
+        onSaved={fetchData}
+        addToast={addToast}
+      />
     </div>
   );
 }

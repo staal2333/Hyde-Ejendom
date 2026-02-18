@@ -771,38 +771,35 @@ export async function processProperty(
     const step8 = startStep("update_status_ready", "Opdater endelig status (quality gate)");
     run.steps.push(step8);
 
-    // QUALITY GATE: Only KLAR_TIL_UDSENDELSE if quality + confidence criteria are met
-    let finalStatus: "KLAR_TIL_UDSENDELSE" | "RESEARCH_DONE_CONTACT_PENDING";
-    let gateReason: string;
-
-    if (!bestContact || !bestContact.email) {
-      finalStatus = "RESEARCH_DONE_CONTACT_PENDING";
-      gateReason = "Ingen kontakt med email fundet";
-    } else if (analysis.dataQuality === "low") {
-      finalStatus = "RESEARCH_DONE_CONTACT_PENDING";
-      gateReason = `Lav datakvalitet (${analysis.dataQualityReason}) – kræver manuel review`;
-    } else if (bestContact.confidence < 0.7 && analysis.dataQuality !== "high") {
-      finalStatus = "RESEARCH_DONE_CONTACT_PENDING";
-      gateReason = `Kontakt confidence ${Math.round(bestContact.confidence * 100)}% < 70% og kvalitet er ikke "high" – kræver manuel review`;
-    } else if (bestContact.relevance === "indirect" && bestContact.confidence < 0.8) {
-      finalStatus = "RESEARCH_DONE_CONTACT_PENDING";
-      gateReason = `Kontakt er "indirect" med confidence ${Math.round(bestContact.confidence * 100)}% – kræver godkendelse`;
-    } else {
-      // ALL GATES PASSED
-      finalStatus = "KLAR_TIL_UDSENDELSE";
-      gateReason = `Kvalitet: ${analysis.dataQuality}, Kontakt: ${bestContact.fullName} (${Math.round(bestContact.confidence * 100)}%, ${bestContact.relevance})`;
-    }
+    // QUALITY GATE: Research never sets KLAR_TIL_UDSENDELSE – user chooses "Push til pipeline" in UI
+    const gateReason: string =
+      !bestContact || !bestContact.email
+        ? "Ingen kontakt med email fundet"
+        : analysis.dataQuality === "low"
+          ? `Lav datakvalitet (${analysis.dataQualityReason}) – kræver manuel review`
+          : bestContact.confidence < 0.7 && analysis.dataQuality !== "high"
+            ? `Kontakt confidence ${Math.round(bestContact.confidence * 100)}% < 70% og kvalitet er ikke "high" – kræver manuel review`
+            : bestContact.relevance === "indirect" && bestContact.confidence < 0.8
+              ? `Kontakt er "indirect" med confidence ${Math.round(bestContact.confidence * 100)}% – kræver godkendelse`
+              : `Kvalitet: ${analysis.dataQuality}, Kontakt: ${bestContact.fullName} (${Math.round(bestContact.confidence * 100)}%, ${bestContact.relevance})`;
+    const gatesPassed =
+      bestContact?.email &&
+      analysis.dataQuality !== "low" &&
+      (bestContact.confidence >= 0.7 || analysis.dataQuality === "high") &&
+      (bestContact.relevance !== "indirect" || bestContact.confidence >= 0.8);
 
     emit({
       phase: "quality_gate",
       step: "update_status_ready",
-      message: finalStatus === "KLAR_TIL_UDSENDELSE"
-        ? `✅ Quality gate PASSED → ${finalStatus}`
-        : `⏸️ Quality gate: ${finalStatus}`,
+      message: gatesPassed
+        ? "✅ Research færdig – vælg «Push til pipeline» i Ejendomme når du er klar"
+        : `⏸️ Research færdig (review anbefales): ${gateReason}`,
       detail: gateReason,
       progress: 96,
     });
 
+    // Always RESEARCH_DONE_CONTACT_PENDING; user explicitly marks "Klar" via UI
+    const finalStatus = "RESEARCH_DONE_CONTACT_PENDING";
     if (!safeMode) {
       await updateEjendomResearch(property.id, {
         outreachStatus: finalStatus,
@@ -1122,10 +1119,22 @@ export async function processStagedProperty(
     const step6 = startStep("mark_researched", "Marker som researched i staging");
     run.steps.push(step6);
 
-    await updateStagedProperty(staged.id, {
-      stage: "researched",
-      researchCompletedAt: new Date().toISOString(),
-    });
+    try {
+      await updateStagedProperty(staged.id, {
+        stage: "researched",
+        researchCompletedAt: new Date().toISOString(),
+      });
+    } catch (updateErr) {
+      logger.warn(`Staged update failed (research data ok): ${staged.address}`, {
+        service: "workflow",
+        error: { message: updateErr instanceof Error ? updateErr.message : String(updateErr) },
+      });
+      emit({
+        phase: "staging_update_warning",
+        message: "Research færdig, men staging-tabel opdatering fejlede – tjek Staging-fanen",
+        progress: 97,
+      });
+    }
 
     emit({
       phase: "staging_researched",
@@ -1138,7 +1147,9 @@ export async function processStagedProperty(
     completeStep(step6);
 
     // ── Store raw research data ──
-    storeRawResearch(staged.id, researchData, corrections);
+    try {
+      storeRawResearch(staged.id, researchData, corrections);
+    } catch { /* non-fatal */ }
 
     // ── Done ──
     run.status = "completed";

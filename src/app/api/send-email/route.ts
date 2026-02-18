@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     }
 
     // Single mode
-    const { propertyId, attachmentUrl } = body;
+    const { propertyId, attachmentUrl, attachmentFile, subject, body: emailBody, to } = body;
     if (!propertyId) {
       return NextResponse.json(
         { error: "propertyId is required" },
@@ -36,9 +36,16 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // Optionally fetch and attach a proposal PDF
+    // PDF attachment: from drag-and-drop (base64) or from URL
     let attachments: { filename: string; mimeType: string; content: string }[] | undefined;
-    if (attachmentUrl && typeof attachmentUrl === "string") {
+    if (attachmentFile && typeof attachmentFile === "object" && attachmentFile.filename && attachmentFile.content) {
+      const name = typeof attachmentFile.filename === "string" ? attachmentFile.filename : "attachment.pdf";
+      attachments = [{
+        filename: name.endsWith(".pdf") ? name : `${name}.pdf`,
+        mimeType: "application/pdf",
+        content: String(attachmentFile.content),
+      }];
+    } else if (attachmentUrl && typeof attachmentUrl === "string") {
       try {
         const pdfRes = await fetch(attachmentUrl.startsWith("/") ? `${process.env.NEXT_PUBLIC_BASE_URL || "http://localhost:3000"}${attachmentUrl}` : attachmentUrl);
         if (pdfRes.ok) {
@@ -54,7 +61,12 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    const result = await enqueueEmail(propertyId, attachments ? { attachments } : undefined);
+    const result = await enqueueEmail(propertyId, {
+      ...(attachments ? { attachments } : {}),
+      ...(typeof subject === "string" && subject.trim() ? { subject: subject.trim() } : {}),
+      ...(typeof emailBody === "string" ? { body: emailBody } : {}),
+      ...(typeof to === "string" && to.trim() ? { to: to.trim() } : {}),
+    });
     return NextResponse.json({
       ...result,
       stats: getQueueStats(),

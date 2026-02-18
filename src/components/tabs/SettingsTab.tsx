@@ -1,9 +1,70 @@
 "use client";
 
+import { useState, useEffect, useCallback } from "react";
 import { useDashboard } from "@/contexts/DashboardContext";
+
+const AUTONOMY_KEY = "ejendom_ai_autonomy";
+const RULES_KEY = "ejendom_ai_auto_rules";
+
+const RULE_IDS = ["new-high-score", "retry-contact-pending", "retry-errors"] as const;
+type RuleId = (typeof RULE_IDS)[number];
+
+function loadAutonomy(): number {
+  if (typeof window === "undefined") return 0;
+  try {
+    const v = localStorage.getItem(AUTONOMY_KEY);
+    if (v === null) return 0;
+    const n = parseInt(v, 10);
+    return n >= 0 && n <= 3 ? n : 0;
+  } catch {
+    return 0;
+  }
+}
+
+function loadRules(): Record<RuleId, boolean> {
+  if (typeof window === "undefined") return { "new-high-score": false, "retry-contact-pending": false, "retry-errors": false };
+  try {
+    const raw = localStorage.getItem(RULES_KEY);
+    if (!raw) return { "new-high-score": false, "retry-contact-pending": false, "retry-errors": false };
+    const o = JSON.parse(raw) as Record<string, boolean>;
+    return {
+      "new-high-score": !!o["new-high-score"],
+      "retry-contact-pending": !!o["retry-contact-pending"],
+      "retry-errors": !!o["retry-errors"],
+    };
+  } catch {
+    return { "new-high-score": false, "retry-contact-pending": false, "retry-errors": false };
+  }
+}
 
 export function SettingsTab() {
   const { systemHealth, addToast } = useDashboard();
+  const [autonomyLevel, setAutonomyLevel] = useState(0);
+  const [rules, setRules] = useState<Record<RuleId, boolean>>(loadRules);
+
+  useEffect(() => {
+    setAutonomyLevel(loadAutonomy());
+    setRules(loadRules());
+  }, []);
+
+  const setAutonomy = useCallback((level: number) => {
+    setAutonomyLevel(level);
+    try {
+      localStorage.setItem(AUTONOMY_KEY, String(level));
+    } catch {}
+    addToast(`Autonomi sat til niveau ${level}`, "success");
+  }, [addToast]);
+
+  const toggleRule = useCallback((id: RuleId) => {
+    setRules((prev) => {
+      const next = { ...prev, [id]: !prev[id] };
+      try {
+        localStorage.setItem(RULES_KEY, JSON.stringify(next));
+      } catch {}
+      addToast(next[id] ? `Regel "${id}" aktiveret` : `Regel "${id}" deaktiveret`, "info");
+      return next;
+    });
+  }, [addToast]);
 
   return (
     <div className="animate-fade-in space-y-6">
@@ -28,17 +89,21 @@ export function SettingsTab() {
             { level: 2, label: "Auto + foerste mail", desc: "Research + foerste mail sendes automatisk. Du godkender opfoelgning.", color: "border-violet-200 bg-violet-50 text-violet-700" },
             { level: 3, label: "Fuld automat", desc: "Alt inkl. opfoelgning koeres automatisk. Kun manuelt close/reopen.", color: "border-emerald-200 bg-emerald-50 text-emerald-700" },
           ] as const).map((opt) => (
-            <div key={opt.level}
-              className={`p-4 rounded-xl border-2 cursor-pointer transition-all ${opt.color} ${opt.level === 0 ? "ring-2 ring-brand-300 ring-offset-2" : "hover:shadow-md opacity-70"}`}>
+            <button
+              key={opt.level}
+              type="button"
+              onClick={() => setAutonomy(opt.level)}
+              className={`p-4 rounded-xl border-2 cursor-pointer transition-all text-left ${opt.color} ${autonomyLevel === opt.level ? "ring-2 ring-brand-300 ring-offset-2" : "hover:shadow-md opacity-80 hover:opacity-100"}`}
+            >
               <div className="flex items-center justify-between mb-1">
                 <span className="text-xs font-bold uppercase">{opt.label}</span>
                 <span className="text-lg font-bold">{opt.level}</span>
               </div>
               <p className="text-[10px] leading-snug">{opt.desc}</p>
-            </div>
+            </button>
           ))}
         </div>
-        <p className="text-[10px] text-slate-400 mt-3">Autonomi-niveau er sat til 0 (Kun forslag). Du kan skrue op efterhaanden som du stoler mere paa systemet.</p>
+        <p className="text-[10px] text-slate-400 mt-3">Valgt niveau: {autonomyLevel}. Ændringen er gemt lokalt.</p>
       </div>
 
       {/* Auto-Research Rules */}
@@ -49,29 +114,35 @@ export function SettingsTab() {
           </div>
           <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Auto-Research Regler</h3>
         </div>
-        <p className="text-xs text-slate-500 mb-4">Definer regler for automatisk research af nye ejendomme. Reglerne koeres som cron-job.</p>
+        <p className="text-xs text-slate-500 mb-4">Definer regler for automatisk research af nye ejendomme. Reglerne koeres som cron-job. Valg gemmes lokalt.</p>
         <div className="space-y-3">
           {[
-            { id: "new-high-score", label: "Nye ejendomme med score >= 7 og trafik >= 15K", active: false, detail: "Koerer automatisk research paa nye ejendomme der scorer hoejt" },
-            { id: "retry-contact-pending", label: "Genforsog research for ejendomme uden kontakt (max 72t)", active: false, detail: "Proever igen for ejendomme hvor kontakt mangler" },
-            { id: "retry-errors", label: "Genforsog fejlede research-jobs", active: false, detail: "Automatisk retry paa ejendomme med fejl-status" },
-          ].map((rule) => (
-            <div key={rule.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50/50">
-              <div className="flex-1 min-w-0">
-                <div className="text-xs font-semibold text-slate-700">{rule.label}</div>
-                <div className="text-[10px] text-slate-400 mt-0.5">{rule.detail}</div>
-              </div>
-              <div className="flex items-center gap-2 ml-3">
-                <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md ${rule.active ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}`}>
-                  {rule.active ? "Aktiv" : "Inaktiv"}
-                </span>
-                <div className={`w-8 h-4.5 rounded-full relative cursor-pointer transition-colors ${rule.active ? "bg-emerald-500" : "bg-slate-300"}`}
-                  onClick={() => addToast("Auto-research regler kan aktiveres naar autonomi-niveau >= 1", "info")}>
-                  <div className={`absolute top-0.5 w-3.5 h-3.5 bg-white rounded-full shadow transition-transform ${rule.active ? "left-4" : "left-0.5"}`} />
+            { id: "new-high-score" as RuleId, label: "Nye ejendomme med score >= 7 og trafik >= 15K", detail: "Koerer automatisk research paa nye ejendomme der scorer hoejt" },
+            { id: "retry-contact-pending" as RuleId, label: "Genforsog research for ejendomme uden kontakt (max 72t)", detail: "Proever igen for ejendomme hvor kontakt mangler" },
+            { id: "retry-errors" as RuleId, label: "Genforsog fejlede research-jobs", detail: "Automatisk retry paa ejendomme med fejl-status" },
+          ].map((rule) => {
+            const active = rules[rule.id];
+            return (
+              <div key={rule.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50/50">
+                <div className="flex-1 min-w-0">
+                  <div className="text-xs font-semibold text-slate-700">{rule.label}</div>
+                  <div className="text-[10px] text-slate-400 mt-0.5">{rule.detail}</div>
+                </div>
+                <div className="flex items-center gap-2 ml-3">
+                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md ${active ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}`}>
+                    {active ? "Aktiv" : "Inaktiv"}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => toggleRule(rule.id)}
+                    className={`w-8 h-4.5 rounded-full relative cursor-pointer transition-colors flex-shrink-0 ${active ? "bg-emerald-500" : "bg-slate-300"}`}
+                  >
+                    <div className={`absolute top-0.5 w-3.5 h-3.5 bg-white rounded-full shadow transition-transform ${active ? "left-4" : "left-0.5"}`} />
+                  </button>
                 </div>
               </div>
-            </div>
-          ))}
+            );
+          })}
         </div>
         <div className="mt-3 p-3 bg-amber-50 border border-amber-200/60 rounded-xl">
           <p className="text-[10px] text-amber-700">

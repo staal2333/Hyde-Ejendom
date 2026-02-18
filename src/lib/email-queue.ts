@@ -5,6 +5,7 @@
 
 import { sendEmail, type SendEmailResult } from "./email-sender";
 import { fetchEjendomById, updateEjendom } from "./hubspot";
+import { recordThreadProperty } from "./mail-threads";
 import { config } from "./config";
 import { logger } from "./logger";
 
@@ -67,7 +68,15 @@ function resetHourlyCounterIfNeeded() {
  */
 export async function enqueueEmail(
   propertyId: string,
-  options?: { attachments?: { filename: string; mimeType: string; content: string }[] }
+  options?: {
+    attachments?: { filename: string; mimeType: string; content: string }[];
+    /** Override draft subject (e.g. from user edit in UI) */
+    subject?: string;
+    /** Override draft body (e.g. from user edit in UI) */
+    body?: string;
+    /** Override recipient email (e.g. from user edit in UI); mail is sent to this address */
+    to?: string;
+  }
 ): Promise<{
   success: boolean;
   position?: number;
@@ -78,8 +87,9 @@ export async function enqueueEmail(
     // Fetch property to get email draft
     const property = await fetchEjendomById(propertyId);
 
-    if (!property.contactEmail) {
-      return { success: false, error: "Ingen kontakt-email på ejendommen" };
+    const recipientEmail = (options?.to?.trim() || property.contactEmail)?.trim();
+    if (!recipientEmail) {
+      return { success: false, error: "Ingen kontakt-email på ejendommen – indtast modtager i redigeringen" };
     }
     if (!property.emailDraftSubject || !property.emailDraftBody) {
       return { success: false, error: "Intet email-udkast på ejendommen" };
@@ -98,12 +108,15 @@ export async function enqueueEmail(
       return { success: true, position: pos, queueId: existing.id };
     }
 
+    const subject = (options?.subject?.trim() || property.emailDraftSubject) ?? "";
+    const body = (options?.body != null ? options.body : property.emailDraftBody) ?? "";
+    const to = (options?.to?.trim() || property.contactEmail) ?? "";
     const queuedEmail: QueuedEmail = {
       id: `eq_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`,
       propertyId,
-      to: property.contactEmail,
-      subject: property.emailDraftSubject,
-      body: property.emailDraftBody,
+      to,
+      subject,
+      body,
       contactName: property.contactPerson || undefined,
       attachments: options?.attachments,
       status: "queued",
@@ -254,6 +267,10 @@ async function processNext() {
       item.sentAt = new Date().toISOString();
       item.messageId = result.messageId;
       hourlyCounter++;
+
+      if (result.threadId) {
+        recordThreadProperty(result.threadId, item.propertyId);
+      }
 
       // Update HubSpot: mark as sent
       try {

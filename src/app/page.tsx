@@ -23,8 +23,10 @@ function useTabShortcuts(setActiveTab: (id: TabId) => void) {
   }, [setActiveTab]);
 }
 import type { OOHPanelProps } from "../components/OOHPanel";
+import { AuthProvider, useAuth } from "../contexts/AuthContext";
 import { DashboardProvider, useDashboard } from "../contexts/DashboardContext";
 import type { TabId } from "../contexts/DashboardContext";
+import PinGate from "../components/PinGate";
 import { ScaffoldingTab } from "../components/tabs/ScaffoldingTab";
 import { HomeTab } from "../components/tabs/HomeTab";
 import { DiscoverTab } from "../components/tabs/DiscoverTab";
@@ -35,6 +37,7 @@ import { ResearchTab } from "../components/tabs/ResearchTab";
 import { StreetAgentTab } from "../components/tabs/StreetAgentTab";
 import { OutreachTab } from "../components/tabs/OutreachTab";
 import { SettingsTab } from "../components/tabs/SettingsTab";
+import { LeadSourcingTab } from "../components/tabs/LeadSourcingTab";
 import { ProgressBar, LogPanel, ResultStat, PipelineStat, PropertyCard } from "@/components/dashboard";
 import FullCircleWizard from "../components/FullCircleWizard";
 
@@ -248,6 +251,7 @@ const PIPELINE_TABS: { id: TabId; label: string; icon: string; desc: string }[] 
   { id: "staging", label: "Staging", desc: "Godkend leads", icon: "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" },
   { id: "properties", label: "Ejendomme", desc: "Pipeline", icon: "M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75" },
   { id: "research", label: "Research", desc: "Live agent", icon: "M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" },
+  { id: "lead_sourcing", label: "Lead Sourcing", desc: "Nye kunder & kontakter", icon: "M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" },
 ];
 
 // Outreach section tabs
@@ -380,13 +384,52 @@ function useFilteredDashboardData(
 
 export default function Page() {
   return (
-    <DashboardProvider>
-      <DashboardContent />
-    </DashboardProvider>
+    <AuthProvider>
+      <AuthGate />
+    </AuthProvider>
+  );
+}
+
+function AuthGate() {
+  const [mounted, setMounted] = useState(false);
+  const { isAuthenticated, refreshActivity } = useAuth();
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Same initial output on server and client to avoid hydration mismatch (auth is client-only).
+  if (!mounted) {
+    return (
+      <div className="min-h-screen w-full flex items-center justify-center bg-slate-50" style={{ background: "var(--background)" }}>
+        <div className="text-center animate-fade-in">
+          <div className="relative w-14 h-14 mx-auto mb-5">
+            <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 animate-pulse" />
+            <div className="absolute inset-0 rounded-2xl flex items-center justify-center">
+              <svg className="w-6 h-6 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75" />
+              </svg>
+            </div>
+          </div>
+          <p className="text-sm font-semibold text-slate-700">Ejendom AI</p>
+          <p className="text-xs text-slate-400 mt-1">Indlæser...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) return <PinGate />;
+  return (
+    <div className="min-h-screen w-full flex" onMouseDown={refreshActivity} onKeyDown={refreshActivity} onTouchStart={refreshActivity}>
+      <DashboardProvider>
+        <DashboardContent />
+      </DashboardProvider>
+    </div>
   );
 }
 
 function DashboardContent() {
+  const { logout } = useAuth();
   const {
     activeTab,
     setActiveTab,
@@ -452,6 +495,7 @@ function DashboardContent() {
 
   // Research
   const [researchRunning, setResearchRunning] = useState<string | null>(null);
+  const [markReadyLoading, setMarkReadyLoading] = useState<string | null>(null);
   const [researchEvents, setResearchEvents] = useState<ProgressEvent[]>([]);
   const [researchPct, setResearchPct] = useState(0);
   const researchLogRef = useRef<HTMLDivElement>(null);
@@ -475,8 +519,6 @@ function DashboardContent() {
   const [outreachLoading, setOutreachLoading] = useState(false);
   const [readyToSend, setReadyToSend] = useState<PropertyItem[]>([]);
   const [selectedForSend, setSelectedForSend] = useState<Set<string>>(new Set());
-  const [emailPreview, setEmailPreview] = useState<{ propertyId: string; to: string; subject: string; body: string; contactName?: string; attachmentUrl?: string } | null>(null);
-  const [editingEmail, setEditingEmail] = useState<{ subject: string; body: string; attachmentUrl?: string } | null>(null);
 
   // Abort controllers
   const discoveryAbortRef = useRef<AbortController | null>(null);
@@ -738,7 +780,11 @@ function DashboardContent() {
           addToast("Research faerdig!", "success", pe.message);
         }
       },
-      () => { setResearchRunning(null); researchAbortRef.current = null; },
+      () => {
+        setResearchPct((p) => (p < 100 ? 100 : p));
+        setResearchRunning(null);
+        researchAbortRef.current = null;
+      },
       controller.signal
     );
   };
@@ -747,6 +793,52 @@ function DashboardContent() {
     researchAbortRef.current?.abort();
     researchAbortRef.current = null;
     addToast("Research stoppet", "info");
+  };
+
+  const markPropertyReady = async (propertyId: string) => {
+    setMarkReadyLoading(propertyId);
+    try {
+      const res = await fetch("/api/properties/mark-ready", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ propertyId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kunne ikke opdatere");
+      addToast("Ejendom markeret klar til udsendelse", "success");
+      await fetchData();
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : "Fejl ved markering", "error");
+    } finally {
+      setMarkReadyLoading(null);
+    }
+  };
+
+  const exportCSV = (which: "ready" | "sent") => {
+    const status = which === "ready" ? "KLAR_TIL_UDSENDELSE" : "FOERSTE_MAIL_SENDT";
+    const list = properties.filter((p) => p.outreachStatus === status);
+    const headers = ["Adresse", "Postnr", "By", "Status", "Score", "Ejer", "Kontakt", "Email", "Emne"];
+    const escape = (s: string | number) => (String(s ?? "").includes(",") || String(s).includes('"') || String(s).includes("\n") ? `"${String(s).replace(/"/g, '""')}"` : String(s ?? ""));
+    const rows = list.map((p) => [
+      p.address ?? p.name ?? "",
+      p.postalCode ?? "",
+      p.city ?? "",
+      p.outreachStatus ?? "",
+      p.outdoorScore ?? "",
+      p.ownerCompanyName ?? "",
+      p.primaryContact?.name ?? p.contactPerson ?? "",
+      p.primaryContact?.email ?? p.contactEmail ?? "",
+      p.emailDraftSubject ?? "",
+    ].map(escape).join(","));
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `ejendomme-${which === "ready" ? "klar" : "sendt"}-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    addToast(`${list.length} ejendomme eksporteret`, "success");
   };
 
   // ── Street Agent ──
@@ -820,22 +912,29 @@ function DashboardContent() {
     }
   };
 
-  const sendSingleEmail = async (propertyId: string, attachmentUrl?: string) => {
+  const sendSingleEmail = async (
+    propertyId: string,
+    opts?: { attachmentUrl?: string; attachmentFile?: { filename: string; content: string }; subject?: string; body?: string; to?: string }
+  ): Promise<boolean> => {
     try {
+      const body = opts ? { propertyId, ...opts } : { propertyId };
       const res = await fetch("/api/send-email", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ propertyId, attachmentUrl }),
+        body: JSON.stringify(body),
       });
       const data = await res.json();
       if (data.success) {
-        addToast(attachmentUrl ? "Email med proposal-PDF sat i koe" : "Email sat i koe", "success");
+        const hasPdf = opts?.attachmentUrl || opts?.attachmentFile;
+        addToast(hasPdf ? "Email med PDF sat i koe" : "Email sat i koe", "success");
         await fetchOutreachData();
-      } else {
-        addToast(data.error || "Fejl", "error");
+        return true;
       }
+      addToast(data.error || "Fejl", "error");
+      return false;
     } catch {
       addToast("Fejl ved afsendelse", "error");
+      return false;
     }
   };
 
@@ -881,7 +980,7 @@ function DashboardContent() {
 
   // Single return path only (no early return) to avoid React #310
   return (
-    <div className="min-h-screen flex relative" style={{ background: "var(--background)" }}>
+    <div className="min-h-screen w-full flex flex-col relative" style={{ background: "var(--background)" }}>
       {/* Loading overlay when context is still loading */}
       {loading && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center bg-slate-50" style={{ background: "var(--background)" }}>
@@ -899,7 +998,7 @@ function DashboardContent() {
           </div>
         </div>
       )}
-      <div className={`flex-1 flex min-h-screen min-w-0 ${loading ? "invisible" : ""}`}>
+      <div className={`flex-1 flex min-h-0 min-w-0 w-full ${loading ? "invisible" : ""}`}>
       {/* ─── Sidebar ─── */}
       <aside className="w-[240px] gradient-sidebar text-white flex-shrink-0 flex flex-col">
         {/* Brand */}
@@ -1018,6 +1117,13 @@ function DashboardContent() {
               </div>
             ))}
           </div>
+          <button
+            type="button"
+            onClick={logout}
+            className="w-full mt-2 px-3 py-2 rounded-xl text-[10px] font-semibold text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] border border-white/[0.06] transition"
+          >
+            Log ud
+          </button>
           <p className="text-[9px] text-slate-500/80 px-3 pt-1.5 border-t border-white/[0.04] mt-2 pt-2">
             Tast <kbd className="px-1 py-0.5 rounded bg-white/10 font-mono text-[8px]">1</kbd>–<kbd className="px-1 py-0.5 rounded bg-white/10 font-mono text-[8px]">9</kbd> eller <kbd className="px-1 py-0.5 rounded bg-white/10 font-mono text-[8px]">0</kbd> for at skifte fane
           </p>
@@ -1025,7 +1131,7 @@ function DashboardContent() {
       </aside>
 
       {/* ─── Main Content ─── */}
-      <main className="flex-1 overflow-y-auto scroll-slim">
+      <main className="flex-1 min-w-0 w-full overflow-y-auto scroll-slim">
         {/* Error Banner */}
         {error && (
           <div className="mx-6 mt-4 p-3.5 bg-red-50 border border-red-200/40 rounded-xl flex items-center gap-3 text-sm animate-fade-in">
@@ -1094,7 +1200,7 @@ function DashboardContent() {
           </div>
         )}
 
-        <div className="p-6">
+        <div className="p-6 w-full max-w-full">
           {/* ═══ DASHBOARD / HOME ═══ */}
           {activeTab === "home" && (
             <HomeTab
@@ -1213,6 +1319,9 @@ function DashboardContent() {
               stopResearch={stopResearch}
               submitFeedback={submitFeedback}
               sendSingleEmail={sendSingleEmail}
+              markPropertyReady={markPropertyReady}
+              markReadyLoading={markReadyLoading}
+              exportCSV={exportCSV}
               addToast={addToast}
               fetchData={fetchData}
               setActiveTab={setActiveTab}
@@ -1269,13 +1378,10 @@ function DashboardContent() {
               readyToSend={readyToSend}
               selectedForSend={selectedForSend}
               setSelectedForSend={setSelectedForSend}
-              emailPreview={emailPreview}
-              setEmailPreview={setEmailPreview}
-              editingEmail={editingEmail}
-              setEditingEmail={setEditingEmail}
               sendSingleEmail={sendSingleEmail}
               sendBatchEmails={sendBatchEmails}
               ResultStat={ResultStat}
+              addToast={addToast}
             />
           )}
 
@@ -1288,6 +1394,7 @@ function DashboardContent() {
             />
           )}
 
+          {activeTab === "lead_sourcing" && <LeadSourcingTab />}
           {activeTab === "settings" && <SettingsTab />}
         </div>
       </main>

@@ -1,6 +1,10 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import type { PropertyItem } from "@/contexts/DashboardContext";
+import { EmailComposeModal, type EmailDraft } from "@/components/EmailComposeModal";
+
+export type ReplyCategory = "positive_interest" | "rejection" | "question" | "meeting_request" | "unclear";
 
 export interface OutreachData {
   stats: { queued: number; sending: number; sent: number; failed: number; totalProcessed?: number; rateLimitPerHour?: number; isProcessing?: boolean; sentThisHour: number };
@@ -15,13 +19,10 @@ export interface OutreachTabProps {
   readyToSend: PropertyItem[];
   selectedForSend: Set<string>;
   setSelectedForSend: React.Dispatch<React.SetStateAction<Set<string>>>;
-  emailPreview: { propertyId: string; to: string; subject: string; body: string; contactName?: string; attachmentUrl?: string } | null;
-  setEmailPreview: React.Dispatch<React.SetStateAction<{ propertyId: string; to: string; subject: string; body: string; contactName?: string; attachmentUrl?: string } | null>>;
-  editingEmail: { subject: string; body: string; attachmentUrl?: string } | null;
-  setEditingEmail: React.Dispatch<React.SetStateAction<{ subject: string; body: string; attachmentUrl?: string } | null>>;
-  sendSingleEmail: (propertyId: string, attachmentUrl?: string) => void;
+  sendSingleEmail: (propertyId: string, opts?: { attachmentUrl?: string; attachmentFile?: { filename: string; content: string }; subject?: string; body?: string; to?: string }) => Promise<boolean>;
   sendBatchEmails: () => void;
   ResultStat: React.ComponentType<{ label: string; value: number; icon: string; color?: string }>;
+  addToast: (message: string, type: "success" | "error" | "info") => void;
 }
 
 export function OutreachTab({
@@ -31,14 +32,174 @@ export function OutreachTab({
   readyToSend,
   selectedForSend,
   setSelectedForSend,
-  emailPreview,
-  setEmailPreview,
-  editingEmail,
-  setEditingEmail,
   sendSingleEmail,
   sendBatchEmails,
   ResultStat,
+  addToast,
 }: OutreachTabProps) {
+  const [inboxThreads, setInboxThreads] = useState<{ id: string; subject?: string; snippet?: string; propertyId: string | null }[]>([]);
+  const [inboxLoading, setInboxLoading] = useState(false);
+  const [replyPanel, setReplyPanel] = useState<{
+    threadId: string;
+    propertyId: string;
+    to: string;
+    contactName?: string;
+    messages: { from: string; date: string; bodyPlain: string; snippet: string }[];
+    subject: string;
+  } | null>(null);
+  const [replyDraft, setReplyDraft] = useState<{ subject: string; body: string; category?: ReplyCategory } | null>(null);
+  const [replyDraftLoading, setReplyDraftLoading] = useState(false);
+  const [replySending, setReplySending] = useState(false);
+  const [statusUpdating, setStatusUpdating] = useState(false);
+  const [followUpCandidates, setFollowUpCandidates] = useState<{ propertyId: string; sentAt: string }[]>([]);
+  const [followUpLoading, setFollowUpLoading] = useState(false);
+
+  // Compose modal: state lives here; modal owns form fields
+  const [compose, setCompose] = useState<{
+    propertyId: string;
+    to: string;
+    subject: string;
+    body: string;
+    contactName?: string;
+  } | null>(null);
+  const [composeSending, setComposeSending] = useState(false);
+
+  const fetchInbox = async () => {
+    setInboxLoading(true);
+    try {
+      const res = await fetch("/api/mail/inbox");
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.threads) {
+        setInboxThreads(data.threads);
+      }
+    } finally {
+      setInboxLoading(false);
+    }
+  };
+
+  // Auto-refresh inbox every 5 min when Outreach tab is mounted
+  useEffect(() => {
+    const t = setInterval(fetchInbox, 5 * 60 * 1000);
+    return () => clearInterval(t);
+  }, []);
+
+  const fetchFollowUpCandidates = async () => {
+    setFollowUpLoading(true);
+    try {
+      const res = await fetch("/api/mail/follow-up-candidates?days=7");
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.candidates) setFollowUpCandidates(data.candidates);
+    } finally {
+      setFollowUpLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchFollowUpCandidates();
+  }, []);
+
+  const openThread = async (threadId: string, propertyId: string | null) => {
+    if (!propertyId) return;
+    try {
+      const res = await fetch(`/api/mail/threads/${threadId}`);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.thread) {
+        addToast("Kunne ikke hente tråd", "error");
+        return;
+      }
+      const thread = data.thread as { id: string; subject: string; messages: { from: string; date: string; bodyPlain: string; snippet: string }[] };
+      const lastMsg = thread.messages[thread.messages.length - 1];
+      const to = lastMsg?.from?.match(/<([^>]+)>/)?.[1] || lastMsg?.from || "";
+      setReplyPanel({
+        threadId,
+        propertyId,
+        to,
+        messages: thread.messages,
+        subject: thread.subject || "",
+      });
+      setReplyDraft(null);
+    } catch {
+      addToast("Fejl ved indlæsning af tråd", "error");
+    }
+  };
+
+  const generateReplyDraft = async () => {
+    if (!replyPanel) return;
+    setReplyDraftLoading(true);
+    try {
+      const res = await fetch("/api/mail/reply-draft", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ threadId: replyPanel.threadId, propertyId: replyPanel.propertyId }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.subject != null) {
+        setReplyDraft({ subject: data.subject, body: data.body || "", category: data.category });
+      } else {
+        addToast(data.error || "Kunne ikke generere udkast", "error");
+      }
+    } catch {
+      addToast("Fejl ved generering af svar", "error");
+    } finally {
+      setReplyDraftLoading(false);
+    }
+  };
+
+  const updatePropertyStatus = async (propertyId: string, outreachStatus: string) => {
+    setStatusUpdating(true);
+    try {
+      const res = await fetch(`/api/properties/${propertyId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ outreach_status: outreachStatus }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok) {
+        addToast("Status opdateret", "success");
+        fetchOutreachData();
+        fetchFollowUpCandidates();
+      } else {
+        addToast(data.error || "Kunne ikke opdatere status", "error");
+      }
+    } catch {
+      addToast("Fejl ved opdatering", "error");
+    } finally {
+      setStatusUpdating(false);
+    }
+  };
+
+  const sendReply = async () => {
+    if (!replyPanel || !replyDraft) return;
+    setReplySending(true);
+    try {
+      const res = await fetch("/api/mail/send-reply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          threadId: replyPanel.threadId,
+          to: replyPanel.to,
+          subject: replyDraft.subject,
+          body: replyDraft.body,
+          propertyId: replyPanel.propertyId,
+          contactName: replyPanel.contactName,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.success) {
+        addToast("Svar sendt", "success");
+        setReplyPanel(null);
+        setReplyDraft(null);
+        fetchOutreachData();
+      } else {
+        addToast(data.error || "Kunne ikke sende svar", "error");
+      }
+    } catch {
+      addToast("Fejl ved afsendelse", "error");
+    } finally {
+      setReplySending(false);
+    }
+  };
+
   return (
     <div className="animate-fade-in">
       <div className="mb-6">
@@ -166,17 +327,18 @@ export function OutreachTab({
                   </div>
                 </div>
                 <div className="flex items-center gap-2 shrink-0">
-                  <button onClick={() => {
-                    setEmailPreview({
-                      propertyId: prop.id,
-                      to: prop.primaryContact?.email ?? prop.contactEmail ?? "",
-                      subject: prop.emailDraftSubject ?? "",
-                      body: prop.emailDraftBody ?? "",
-                      contactName: prop.primaryContact?.name ?? prop.contactPerson ?? undefined,
-                    });
-                    setEditingEmail({ subject: prop.emailDraftSubject ?? "", body: prop.emailDraftBody ?? "" });
-                  }}
-                    className="text-xs font-medium text-brand-600 hover:text-brand-700 px-3 py-1.5 rounded-lg hover:bg-brand-50">
+                  <button
+                    onClick={() =>
+                      setCompose({
+                        propertyId: prop.id,
+                        to: prop.primaryContact?.email ?? prop.contactEmail ?? "",
+                        subject: prop.emailDraftSubject ?? "",
+                        body: prop.emailDraftBody ?? "",
+                        contactName: prop.primaryContact?.name ?? prop.contactPerson ?? undefined,
+                      })
+                    }
+                    className="text-xs font-medium text-brand-600 hover:text-brand-700 px-3 py-1.5 rounded-lg hover:bg-brand-50"
+                  >
                     Se / Rediger
                   </button>
                   <button onClick={() => sendSingleEmail(prop.id)}
@@ -190,68 +352,47 @@ export function OutreachTab({
         )}
       </div>
 
-      {emailPreview && editingEmail && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-sm" onClick={() => setEmailPreview(null)}>
-          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full mx-4 max-h-[80vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
-            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
-              <h3 className="font-bold text-slate-900">Email-udkast</h3>
-              <button onClick={() => setEmailPreview(null)} className="text-slate-400 hover:text-slate-600">
-                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
-              </button>
-            </div>
-            <div className="p-6 space-y-4">
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">TIL</label>
-                <div className="text-sm text-slate-700 bg-slate-50 px-3 py-2 rounded-lg">{emailPreview.contactName ? `${emailPreview.contactName} <${emailPreview.to}>` : emailPreview.to}</div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">FRA</label>
-                <div className="text-sm text-slate-700 bg-slate-50 px-3 py-2 rounded-lg">mads.ejendomme@hydemedia.dk</div>
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">EMNE</label>
-                <input type="text" value={editingEmail.subject} onChange={(e) => setEditingEmail(prev => prev ? { ...prev, subject: e.target.value } : prev)}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-300" />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">INDHOLD</label>
-                <textarea value={editingEmail.body} onChange={(e) => setEditingEmail(prev => prev ? { ...prev, body: e.target.value } : prev)}
-                  rows={12}
-                  className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-300 resize-y" />
-              </div>
-              <div>
-                <label className="block text-xs font-semibold text-slate-500 mb-1">BILAG (valgfrit)</label>
-                <div className="flex items-center gap-3">
-                  <input
-                    type="text"
-                    placeholder="/api/ooh/generate-pdf?proposalId=... eller tomt"
-                    value={editingEmail.attachmentUrl || ""}
-                    onChange={(e) => setEditingEmail(prev => prev ? { ...prev, attachmentUrl: e.target.value || undefined } : prev)}
-                    className="flex-1 px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-300"
-                  />
-                  {editingEmail.attachmentUrl && (
-                    <span className="inline-flex items-center gap-1 px-2 py-1 bg-violet-50 text-violet-700 text-[10px] font-semibold rounded-lg border border-violet-200">
-                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M18.375 12.739l-7.693 7.693a4.5 4.5 0 01-6.364-6.364l10.94-10.94A3 3 0 1119.5 7.372L8.552 18.32m.009-.01l-.01.01m5.699-9.941l-7.81 7.81a1.5 1.5 0 002.112 2.13" /></svg>
-                      PDF vedhæftet
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-            <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3">
-              <button onClick={() => setEmailPreview(null)}
-                className="px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 rounded-lg">Annuller</button>
-              <button onClick={() => {
-                sendSingleEmail(emailPreview.propertyId, editingEmail.attachmentUrl);
-                setEmailPreview(null);
-              }}
-                className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors">
-                {editingEmail.attachmentUrl ? "Send med PDF" : "Godkend & Send"}
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      <EmailComposeModal
+        isOpen={!!compose}
+        propertyId={compose?.propertyId ?? ""}
+        initialDraft={{
+          to: compose?.to ?? "",
+          subject: compose?.subject ?? "",
+          body: compose?.body ?? "",
+        }}
+        contactName={compose?.contactName}
+        onClose={() => setCompose(null)}
+        sending={composeSending}
+        onFileError={(msg) => addToast(msg, "error")}
+        onSend={async (draft: EmailDraft) => {
+          if (!compose) return;
+          setComposeSending(true);
+          try {
+            if (draft.to.trim() !== compose.to.trim()) {
+              const res = await fetch(`/api/properties/${compose.propertyId}`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ mailadresse: draft.to.trim() }),
+              });
+              const data = await res.json().catch(() => ({}));
+              if (!res.ok) {
+                addToast(data.error || "Kunne ikke opdatere mailadresse", "error");
+                return;
+              }
+              addToast("Mailadresse opdateret i HubSpot", "success");
+            }
+            const ok = await sendSingleEmail(compose.propertyId, {
+              to: draft.to.trim(),
+              subject: draft.subject,
+              body: draft.body,
+              attachmentFile: draft.attachmentFile,
+            });
+            if (ok) setCompose(null);
+          } finally {
+            setComposeSending(false);
+          }
+        }}
+      />
 
       {outreachData && outreachData.items.length > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] overflow-hidden">
@@ -282,6 +423,168 @@ export function OutreachTab({
                 <span className="text-[10px] text-slate-400 shrink-0">{new Date(item.queuedAt).toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" })}</span>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* Opfølgning – ejendomme uden svar 7+ dage */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] overflow-hidden mt-6">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-amber-50 flex items-center justify-center">
+              <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+            </div>
+            <div>
+              <span className="font-bold text-sm text-slate-900">Opfølgning</span>
+              <span className="text-xs text-slate-400 ml-2">Første mail sendt for 7+ dage siden – ingen svar endnu</span>
+            </div>
+          </div>
+          <button onClick={fetchFollowUpCandidates} disabled={followUpLoading}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 disabled:opacity-50">
+            {followUpLoading ? <span className="animate-spin">↻</span> : "Opdater"}
+          </button>
+        </div>
+        <div className="p-4">
+          {followUpCandidates.length === 0 && !followUpLoading && (
+            <p className="text-sm text-slate-500">Ingen ejendomme der er klar til opfølgning lige nu.</p>
+          )}
+          {followUpCandidates.length > 0 && (
+            <p className="text-sm text-slate-700">
+              <strong>{followUpCandidates.length}</strong> ejendomme kan få opfølgning. Gå til <strong>Ejendomme</strong>-fanen og filter på &quot;Første mail sendt&quot; for at sende opfølgning.
+            </p>
+          )}
+        </div>
+      </div>
+
+      {/* Indbakke – svar på tilbagesvar */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] overflow-hidden mt-6">
+        <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-8 h-8 rounded-lg bg-indigo-50 flex items-center justify-center">
+              <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+              </svg>
+            </div>
+            <div>
+              <span className="font-bold text-sm text-slate-900">Indbakke – svar på tilbagesvar</span>
+              <span className="text-xs text-slate-400 ml-2">Tråde koblet til ejendomme</span>
+            </div>
+          </div>
+          <button onClick={fetchInbox} disabled={inboxLoading}
+            className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100 disabled:opacity-50">
+            {inboxLoading ? <span className="animate-spin">↻</span> : "Opdater indbakke"}
+          </button>
+        </div>
+        <div className="p-4 max-h-[280px] overflow-y-auto">
+          {inboxThreads.length === 0 && !inboxLoading && (
+            <p className="text-sm text-slate-500 text-center py-6">Klik &quot;Opdater indbakke&quot; for at hente tråde. Kun tråde med tilhørende ejendom vises.</p>
+          )}
+          {inboxThreads.filter((t) => t.propertyId).length === 0 && inboxThreads.length > 0 && !inboxLoading && (
+            <p className="text-sm text-slate-500 text-center py-6">Ingen tråde med koblet ejendom. Send mails fra Ejendomme/Outreach for at opbygge kobling.</p>
+          )}
+          <ul className="space-y-2">
+            {inboxThreads.filter((t) => t.propertyId).map((t) => (
+              <li key={t.id} className="flex items-center justify-between gap-3 py-2 px-3 rounded-xl hover:bg-slate-50 border border-slate-100">
+                <div className="flex-1 min-w-0">
+                  <p className="text-xs font-medium text-slate-800 truncate">{t.snippet || t.subject || t.id}</p>
+                  <p className="text-[10px] text-slate-400">Ejendom-ID: {t.propertyId}</p>
+                </div>
+                <button onClick={() => openThread(t.id, t.propertyId!)}
+                  className="shrink-0 px-3 py-1.5 text-xs font-semibold text-indigo-600 bg-indigo-50 rounded-lg hover:bg-indigo-100">
+                  Åbn og svar
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      {/* Reply panel modal */}
+      {replyPanel && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={(e) => { if (e.target === e.currentTarget) setReplyPanel(null); }}>
+          <div className="bg-white rounded-2xl shadow-2xl max-w-2xl w-full max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-slate-100 flex items-center justify-between">
+              <h3 className="font-bold text-slate-900">Svar på tilbagesvar</h3>
+              <button onClick={() => { setReplyPanel(null); setReplyDraft(null); }} className="text-slate-400 hover:text-slate-600">
+                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+            <div className="p-6 space-y-4">
+              <div className="rounded-xl bg-slate-50 border border-slate-100 p-4 max-h-[200px] overflow-y-auto space-y-3">
+                <p className="text-[10px] font-semibold text-slate-400 uppercase">Tråd</p>
+                {replyPanel.messages.map((m, i) => (
+                  <div key={i} className="text-sm">
+                    <p className="text-xs text-slate-500 mb-0.5">{m.from} · {m.date}</p>
+                    <p className="text-slate-700 whitespace-pre-wrap">{m.bodyPlain || m.snippet}</p>
+                  </div>
+                ))}
+              </div>
+              {!replyDraft ? (
+                <button onClick={generateReplyDraft} disabled={replyDraftLoading}
+                  className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-400 text-white text-sm font-semibold rounded-xl transition-colors">
+                  {replyDraftLoading ? "Genererer AI-udkast…" : "Generer svar-udkast (AI)"}
+                </button>
+              ) : (
+                <>
+                  {replyDraft.category && (
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className="text-xs font-semibold text-slate-500">Klassifikation:</span>
+                      <span className={`px-2.5 py-1 rounded-lg text-xs font-medium ${
+                        replyDraft.category === "rejection" ? "bg-red-100 text-red-800" :
+                        replyDraft.category === "positive_interest" || replyDraft.category === "meeting_request" ? "bg-emerald-100 text-emerald-800" :
+                        replyDraft.category === "question" ? "bg-amber-100 text-amber-800" :
+                        "bg-slate-100 text-slate-700"
+                      }`}>
+                        {replyDraft.category === "rejection" ? "Afvisning" :
+                         replyDraft.category === "positive_interest" ? "Interesse" :
+                         replyDraft.category === "meeting_request" ? "Mødeønsker" :
+                         replyDraft.category === "question" ? "Spørgsmål" : "Uklar"}
+                      </span>
+                      {(replyDraft.category === "rejection" || replyDraft.category === "positive_interest" || replyDraft.category === "meeting_request") && (
+                        <div className="flex gap-2 ml-2">
+                          {replyDraft.category === "rejection" && (
+                            <button onClick={() => replyPanel && updatePropertyStatus(replyPanel.propertyId, "LUKKET_TABT")}
+                              disabled={statusUpdating}
+                              className="px-3 py-1.5 text-xs font-semibold text-red-700 bg-red-50 rounded-lg hover:bg-red-100 disabled:opacity-50">
+                              Luk ejendom
+                            </button>
+                          )}
+                          {(replyDraft.category === "positive_interest" || replyDraft.category === "meeting_request") && (
+                            <button onClick={() => replyPanel && updatePropertyStatus(replyPanel.propertyId, "SVAR_MODTAGET")}
+                              disabled={statusUpdating}
+                              className="px-3 py-1.5 text-xs font-semibold text-emerald-700 bg-emerald-50 rounded-lg hover:bg-emerald-100 disabled:opacity-50">
+                              Markér som interesseret
+                            </button>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Emne</label>
+                    <input type="text" value={replyDraft.subject} onChange={(e) => setReplyDraft((p) => p ? { ...p, subject: e.target.value } : p)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-300" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-semibold text-slate-500 mb-1">Svar (rediger efter behov)</label>
+                    <textarea value={replyDraft.body} onChange={(e) => setReplyDraft((p) => p ? { ...p, body: e.target.value } : p)}
+                      rows={8} className="w-full px-3 py-2 border border-slate-200 rounded-lg text-sm focus:border-indigo-300 resize-y" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <button onClick={generateReplyDraft} disabled={replyDraftLoading}
+                      className="px-3 py-2 text-xs font-medium text-slate-600 border border-slate-200 rounded-lg hover:bg-slate-50">
+                      Genér udkast igen
+                    </button>
+                    <button onClick={sendReply} disabled={replySending}
+                      className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white text-sm font-semibold rounded-xl transition-colors">
+                      {replySending ? "Sender…" : "Godkend og send svar"}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         </div>
       )}

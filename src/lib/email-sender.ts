@@ -176,8 +176,11 @@ async function _sendEmailOnce(opts: SendEmailOptions): Promise<SendEmailResult> 
   const fromName = config.gmail.fromName;
   const fromEmail = config.gmail.fromEmail;
 
+  // Ensure body is always a string (plain text and HTML both need it)
+  const bodyText = typeof opts.body === "string" && opts.body.trim() ? opts.body : opts.body || "";
+
   // Build HTML body (simple: preserve line breaks)
-  let htmlBody = opts.body
+  let htmlBody = bodyText
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
@@ -214,6 +217,7 @@ async function _sendEmailOnce(opts: SendEmailOptions): Promise<SendEmailResult> 
       "",
       `--${mixedBoundary}`,
       `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+      "", // blank line before first alternative part (required by MIME)
     );
   } else {
     messageParts.push(
@@ -221,14 +225,14 @@ async function _sendEmailOnce(opts: SendEmailOptions): Promise<SendEmailResult> 
     );
   }
 
-  // Text part
+  // Text part (plain text so clients that prefer text see the body)
   messageParts.push(
     "",
     `--${altBoundary}`,
     `Content-Type: text/plain; charset="UTF-8"`,
     `Content-Transfer-Encoding: base64`,
     "",
-    Buffer.from(opts.body, "utf-8").toString("base64"),
+    Buffer.from(bodyText, "utf-8").toString("base64"),
   );
 
   // HTML part
@@ -285,6 +289,184 @@ async function _sendEmailOnce(opts: SendEmailOptions): Promise<SendEmailResult> 
   });
 
   return { success: true, messageId, threadId };
+}
+
+// ── Inbox & threads ─────────────────────────────────────────
+
+export interface ThreadMessage {
+  id: string;
+  from: string;
+  to: string;
+  subject: string;
+  date: string;
+  bodyPlain: string;
+  snippet: string;
+  messageId?: string; // RFC Message-ID header
+  inReplyTo?: string;
+  references?: string;
+}
+
+export interface MailThread {
+  id: string;
+  subject: string;
+  messages: ThreadMessage[];
+}
+
+/** List inbox threads (e.g. for reply workflow). */
+export async function listInboxThreads(maxResults = 50): Promise<{ id: string; subject?: string; snippet?: string }[]> {
+  const gmail = getGmailClient();
+  const res = await gmail.users.threads.list({
+    userId: "me",
+    labelIds: ["INBOX"],
+    maxResults,
+  });
+  const threads = res.data.threads || [];
+  return threads.map((t) => ({
+    id: t.id!,
+    subject: (t as { snippet?: string }).snippet,
+    snippet: (t as { snippet?: string }).snippet,
+  }));
+}
+
+/** Get full thread with decoded messages (for reply draft and In-Reply-To). */
+export async function getThreadWithMessages(threadId: string): Promise<MailThread | null> {
+  const gmail = getGmailClient();
+  const res = await gmail.users.threads.get({
+    userId: "me",
+    id: threadId,
+    format: "full",
+  });
+  const thread = res.data;
+  if (!thread?.messages?.length) return null;
+
+  const messages: ThreadMessage[] = [];
+  for (const msg of thread.messages!) {
+    const payload = msg.payload!;
+    const headers = (payload.headers || []).reduce(
+      (acc: Record<string, string>, h) => {
+        if (h.name && h.value) acc[h.name.toLowerCase()] = h.value;
+        return acc;
+      },
+      {}
+    );
+    let bodyPlain = "";
+    if (payload.body?.data) {
+      bodyPlain = Buffer.from(payload.body.data, "base64").toString("utf-8");
+    } else if (payload.parts?.length) {
+      const textPart = payload.parts.find(
+        (p) => p.mimeType === "text/plain" && p.body?.data
+      );
+      if (textPart?.body?.data) {
+        bodyPlain = Buffer.from(textPart.body.data, "base64").toString("utf-8");
+      }
+    }
+    messages.push({
+      id: msg.id!,
+      from: headers.from || "",
+      to: headers.to || "",
+      subject: headers.subject || "",
+      date: headers.date || "",
+      bodyPlain,
+      snippet: msg.snippet || "",
+      messageId: headers["message-id"],
+      inReplyTo: headers["in-reply-to"],
+      references: headers.references,
+    });
+  }
+  const firstSubject = messages[0]?.subject || "";
+  return { id: threadId, subject: firstSubject, messages };
+}
+
+/**
+ * Send a reply in an existing thread (sets In-Reply-To, References, threadId).
+ */
+export interface SendReplyOptions {
+  threadId: string;
+  to: string;
+  subject: string;
+  body: string;
+  propertyId: string;
+  contactName?: string;
+}
+
+export async function sendReply(opts: SendReplyOptions): Promise<SendEmailResult> {
+  if (!checkRateLimit()) {
+    const msg = `Rate limit exceeded (${config.emailRateLimitPerHour}/hour). Try again later.`;
+    logger.error(msg, { service: "email", propertyAddress: opts.propertyId });
+    return { success: false, error: msg };
+  }
+
+  const gmail = getGmailClient();
+  const thread = await getThreadWithMessages(opts.threadId);
+  if (!thread || thread.messages.length === 0) {
+    return { success: false, error: "Tråd ikke fundet eller tom" };
+  }
+
+  const lastMessage = thread.messages[thread.messages.length - 1];
+  const inReplyTo = lastMessage.messageId || "";
+  const references = [lastMessage.references, lastMessage.messageId].filter(Boolean).join(" ").trim() || inReplyTo;
+
+  const fromName = config.gmail.fromName;
+  const fromEmail = config.gmail.fromEmail;
+
+  let htmlBody = opts.body
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>\n");
+
+  const altBoundary = `alt_${Date.now()}`;
+  const messageParts: string[] = [
+    `From: ${fromName} <${fromEmail}>`,
+    `To: ${opts.contactName ? `${opts.contactName} <${opts.to}>` : opts.to}`,
+    `Subject: =?UTF-8?B?${Buffer.from(opts.subject, "utf-8").toString("base64")}?=`,
+    `In-Reply-To: ${inReplyTo}`,
+    `References: ${references}`,
+    `MIME-Version: 1.0`,
+    `X-EjendomAI-PropertyId: ${opts.propertyId}`,
+    `Content-Type: multipart/alternative; boundary="${altBoundary}"`,
+    "",
+    `--${altBoundary}`,
+    `Content-Type: text/plain; charset="UTF-8"`,
+    `Content-Transfer-Encoding: base64`,
+    "",
+    Buffer.from(opts.body, "utf-8").toString("base64"),
+    "",
+    `--${altBoundary}`,
+    `Content-Type: text/html; charset="UTF-8"`,
+    `Content-Transfer-Encoding: base64`,
+    "",
+    Buffer.from(
+      `<div style="font-family: Arial, sans-serif; font-size: 14px; line-height: 1.6;">${htmlBody}</div>`,
+      "utf-8"
+    ).toString("base64"),
+    "",
+    `--${altBoundary}--`,
+  ];
+
+  const rawMessage = messageParts.filter(Boolean).join("\r\n");
+  const encodedMessage = Buffer.from(rawMessage)
+    .toString("base64")
+    .replace(/\+/g, "-")
+    .replace(/\//g, "_")
+    .replace(/=+$/, "");
+
+  const response = await gmail.users.messages.send({
+    userId: "me",
+    requestBody: { raw: encodedMessage, threadId: opts.threadId },
+  });
+
+  logger.info(`Reply sent in thread ${opts.threadId} to ${opts.to}`, {
+    service: "email",
+    propertyAddress: opts.propertyId,
+    metadata: { messageId: response.data.id, threadId: opts.threadId },
+  });
+
+  return {
+    success: true,
+    messageId: response.data.id || undefined,
+    threadId: opts.threadId,
+  };
 }
 
 /**

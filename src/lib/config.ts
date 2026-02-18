@@ -71,6 +71,12 @@ Korte sætninger, konkret værdi, ingen buzzwords.`
     autoResearch: optionalEnv("CRON_SCAFFOLD_AUTO_RESEARCH", "true") === "true",
   },
 
+  // Meta Ad Library (for AI lead discovery – optional)
+  metaAdLibrary: {
+    accessToken: () => optionalEnv("META_AD_LIBRARY_ACCESS_TOKEN", ""),
+    apiVersion: optionalEnv("META_GRAPH_API_VERSION", "v22.0"),
+  },
+
   // Example emails for few-shot prompting
   exampleEmails: optionalEnv(
     "EXAMPLE_EMAILS",

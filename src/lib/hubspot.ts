@@ -397,6 +397,103 @@ export async function createFollowUpTask(
   }
 }
 
+// ─── Lead Sourcing: Contact blocklist (from Contacts, not Ejendomme) ───
+
+/**
+ * Fetch all contact email domains (and optional company IDs) for lead dedupe.
+ * Used to exclude companies we already have in CRM (via contacts).
+ */
+export async function getContactBlocklist(): Promise<{
+  domains: string[];
+  companyIds: string[];
+}> {
+  const domains = new Set<string>();
+  const companyIds = new Set<string>();
+  let after: string | undefined;
+
+  do {
+    const res = await fetch(
+      `${BASE_URL}/crm/v3/objects/contacts?limit=100${after ? `&after=${after}` : ""}&properties=email&properties=associatedcompanyid`,
+      { headers: getHeaders() }
+    );
+    if (!res.ok) break;
+    const json = await res.json() as { results?: { id: string; properties?: Record<string, string> }[]; paging?: { next?: { after: string } } };
+    const results = json.results || [];
+
+    for (const c of results) {
+      const email = c.properties?.email;
+      if (email && typeof email === "string" && email.includes("@")) {
+        const domain = email.split("@")[1]?.toLowerCase();
+        if (domain) domains.add(domain);
+      }
+      const compId = c.properties?.associatedcompanyid;
+      if (compId && typeof compId === "string") companyIds.add(compId);
+    }
+
+    after = json.paging?.next?.after;
+  } while (after);
+
+  return { domains: [...domains], companyIds: [...companyIds] };
+}
+
+/**
+ * Create a HubSpot Company (for lead sourcing).
+ */
+export async function createLeadCompany(properties: {
+  name: string;
+  domain?: string;
+  address?: string;
+  city?: string;
+  zip?: string;
+  phone?: string;
+  website?: string;
+  /** Custom property for CVR if you have it in HubSpot */
+  cvr?: string;
+}): Promise<string> {
+  const body: Record<string, string> = { name: properties.name };
+  if (properties.domain) body.domain = properties.domain;
+  if (properties.address) body.address = properties.address;
+  if (properties.city) body.city = properties.city;
+  if (properties.zip) body.zip = properties.zip;
+  if (properties.phone) body.phone = properties.phone;
+  if (properties.website) body.website = properties.website;
+  if (properties.cvr) body.cvr = properties.cvr;
+  const res = await hubspotPost("/crm/v3/objects/companies", { properties: body }) as { id: string };
+  return res.id;
+}
+
+/**
+ * Create a HubSpot Contact and optionally associate to a company.
+ */
+export async function createLeadContact(properties: {
+  email: string;
+  firstname?: string;
+  lastname?: string;
+  phone?: string;
+  jobtitle?: string;
+  companyId?: string;
+}): Promise<string> {
+  const props: Record<string, string> = {
+    email: properties.email,
+  };
+  if (properties.firstname) props.firstname = properties.firstname;
+  if (properties.lastname) props.lastname = properties.lastname;
+  if (properties.phone) props.phone = properties.phone;
+  if (properties.jobtitle) props.jobtitle = properties.jobtitle;
+  const res = await hubspotPost("/crm/v3/objects/contacts", { properties: props }) as { id: string };
+  const contactId = res.id;
+  if (properties.companyId) {
+    try {
+      await hubspotPost("/crm/v3/associations/contacts/companies/batch/create", {
+        inputs: [{ from: { id: contactId }, to: { id: properties.companyId }, type: "contact_to_company" }],
+      });
+    } catch (e) {
+      console.warn("Contact-company association failed:", e);
+    }
+  }
+  return contactId;
+}
+
 // ─── Dashboard Stats ────────────────────────────────────────
 
 export async function getDashboardStats(): Promise<{

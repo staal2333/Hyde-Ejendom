@@ -12,6 +12,9 @@ export function PropertyCard({
   researchRunning,
   onFeedback,
   onCreateProposal,
+  onMarkReady,
+  markReadyLoading,
+  onEdit,
 }: {
   property: PropertyItem;
   expanded: boolean;
@@ -20,6 +23,9 @@ export function PropertyCard({
   researchRunning: boolean;
   onFeedback?: (feedback: string) => void;
   onCreateProposal?: () => void;
+  onMarkReady?: () => void;
+  markReadyLoading?: boolean;
+  onEdit?: () => void;
 }) {
   const status = getStatusConfig(p.outreachStatus);
   const hasContact = p.primaryContact?.email;
@@ -62,9 +68,19 @@ export function PropertyCard({
                   {researchRunning ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-indigo-200 border-t-indigo-600" /> : "Re-research"}
                 </button>
               )}
+              {p.outreachStatus === "RESEARCH_DONE_CONTACT_PENDING" && onMarkReady && (
+                <button onClick={(e) => { e.stopPropagation(); onMarkReady(); }} disabled={markReadyLoading}
+                  className="text-[10px] px-3 py-1.5 bg-gradient-to-r from-green-600 to-emerald-600 text-white rounded-lg shadow-sm disabled:opacity-40 font-bold whitespace-nowrap">
+                  {markReadyLoading ? <div className="animate-spin rounded-full h-3 w-3 border-2 border-white/30 border-t-white" /> : "Push til pipeline"}
+                </button>
+              )}
               {onCreateProposal && (
                 <button onClick={(e) => { e.stopPropagation(); onCreateProposal(); }}
                   className="text-[10px] px-2.5 py-1.5 border border-violet-200 text-violet-600 rounded-lg hover:bg-violet-50 font-semibold whitespace-nowrap">OOH</button>
+              )}
+              {onEdit && (
+                <button onClick={(e) => { e.stopPropagation(); onEdit(); }}
+                  className="text-[10px] px-2.5 py-1.5 border border-slate-200 text-slate-600 rounded-lg hover:bg-slate-50 font-semibold whitespace-nowrap">Rediger</button>
               )}
               <svg className={`w-4 h-4 text-slate-300 transition-transform duration-200 ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="m19.5 8.25-7.5 7.5-7.5-7.5" />

@@ -37,7 +37,7 @@ export function HomeTab({
   } = useDashboard();
 
   return (
-    <div className="animate-fade-in">
+    <div className="animate-fade-in w-full max-w-full">
       {/* Header with mesh gradient */}
       <div className="relative mb-8 -mx-8 -mt-8 px-8 pt-8 pb-6 gradient-mesh">
         <div className="flex items-end justify-between">
@@ -179,6 +179,37 @@ export function HomeTab({
             <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
           </svg>
         </button>
+      )}
+
+      {/* Funnel */}
+      {dashboard?.analytics?.funnel && (
+        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
+          <h2 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
+            <span className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+              <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+              </svg>
+            </span>
+            Funnel
+          </h2>
+          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+            {[
+              { key: "discovered", label: "Fundet", value: dashboard.analytics.funnel.discovered, color: "bg-slate-100 text-slate-700" },
+              { key: "staged", label: "Staging", value: dashboard.analytics.funnel.staged, color: "bg-amber-100 text-amber-700" },
+              { key: "inHubSpot", label: "HubSpot", value: dashboard.analytics.funnel.inHubSpot, color: "bg-blue-100 text-blue-700" },
+              { key: "ready", label: "Klar", value: dashboard.analytics.funnel.ready, color: "bg-emerald-100 text-emerald-700" },
+              { key: "sent", label: "Sendt", value: dashboard.analytics.funnel.sent, color: "bg-violet-100 text-violet-700" },
+            ].map((step, i) => (
+              <div key={step.key} className="flex items-center gap-1.5">
+                {i > 0 && <span className="text-slate-300 hidden sm:inline">→</span>}
+                <span className={`px-2.5 py-1 rounded-lg text-xs font-bold tabular-nums ${step.color}`}>
+                  {step.label}: {step.value}
+                </span>
+              </div>
+            ))}
+          </div>
+          <p className="text-[10px] text-slate-400 mt-2">Sendt = antal med første mail sendt (hele tiden)</p>
+        </div>
       )}
 
       {/* I dag – Hvad skal jeg gøre i dag? */}
