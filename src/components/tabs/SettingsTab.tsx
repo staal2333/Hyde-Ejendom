@@ -68,10 +68,7 @@ export function SettingsTab() {
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div className="mb-2">
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Indstillinger</h1>
-        <p className="text-xs text-slate-500 mt-0.5">Konfigurer autonomi, regler og system-status</p>
-      </div>
+      <p className="text-xs text-slate-500 mb-4">Autonomi, regler og API-status.</p>
 
       {/* Autonomy Level */}
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5">

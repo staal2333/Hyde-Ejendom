@@ -33,12 +33,7 @@ export function OOHTab({ initialFrame, initialClient, onToast }: OOHTabProps) {
     : undefined;
   return (
     <div className="animate-fade-in">
-      <div className="mb-5">
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">OOH Proposals</h1>
-        <p className="text-xs text-slate-500 mt-0.5">
-          Generer mockups, Slides og PDF — send direkte til klienter
-        </p>
-      </div>
+      <p className="text-xs text-slate-500 mb-4">Mockups, slides og PDF til klienter.</p>
       <OOHPanel
         initialFrame={normalizedFrame}
         initialClient={initialClient}

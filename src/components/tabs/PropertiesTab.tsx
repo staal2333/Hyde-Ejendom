@@ -162,7 +162,6 @@ export function PropertiesTab({
     <div className="animate-fade-in">
       <div className="flex items-center justify-between mb-5">
         <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Ejendomme</h1>
           <p className="text-xs text-slate-500 mt-0.5">{properties.length} ejendomme i pipeline</p>
         </div>
         <div className="flex items-center gap-2">

@@ -150,10 +150,7 @@ export function LeadSourcingTab() {
 
   return (
     <div className="animate-fade-in space-y-6">
-      <div>
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Lead Sourcing</h1>
-        <p className="text-xs text-slate-500 mt-0.5">AI finder leads automatisk (Meta Ad Library) eller du indtaster CVR selv; Proff + dedupe mod Contacts</p>
-      </div>
+      <p className="text-xs text-slate-500 mb-4">Meta Ad Library eller CVR → Proff + dedupe mod kontakter.</p>
 
       {/* AI Lead Discovery – Meta Ad Library */}
       <div className="bg-gradient-to-br from-indigo-50 to-violet-50 rounded-2xl border border-indigo-200/60 shadow-[var(--card-shadow)] p-5">

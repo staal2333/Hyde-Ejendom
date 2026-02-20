@@ -6,6 +6,15 @@ import { config } from "../config";
 import { estimateStreetTraffic } from "./traffic";
 import type { DawaAddress, BuildingCandidate } from "@/types";
 
+/** Reusable: build and pre-filter candidates from any list of DAWA addresses (e.g. from postcode). */
+export async function getBuildingCandidatesFromAddresses(
+  addresses: DawaAddress[]
+): Promise<BuildingCandidate[]> {
+  if (addresses.length === 0) return [];
+  const withBbr = await fetchBbrBatch(addresses);
+  return preFilter(withBbr);
+}
+
 const DAWA_BASE = config.dawa.apiUrl;
 const BBR_CONCURRENCY = 5;
 

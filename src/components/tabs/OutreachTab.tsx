@@ -53,6 +53,7 @@ export function OutreachTab({
   const [statusUpdating, setStatusUpdating] = useState(false);
   const [followUpCandidates, setFollowUpCandidates] = useState<{ propertyId: string; sentAt: string }[]>([]);
   const [followUpLoading, setFollowUpLoading] = useState(false);
+  const [followUpPreparing, setFollowUpPreparing] = useState(false);
 
   // Compose modal: state lives here; modal owns form fields
   const [compose, setCompose] = useState<{
@@ -91,6 +92,37 @@ export function OutreachTab({
       if (res.ok && data.candidates) setFollowUpCandidates(data.candidates);
     } finally {
       setFollowUpLoading(false);
+    }
+  };
+
+  const prepareFollowUpDrafts = async () => {
+    if (followUpCandidates.length === 0) {
+      addToast("Ingen kandidater til opfølgning", "info");
+      return;
+    }
+    setFollowUpPreparing(true);
+    try {
+      const res = await fetch("/api/mail/prepare-follow-ups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ days: 7, limit: 20 }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data.ok) {
+        addToast(
+          data.prepared > 0
+            ? `${data.prepared} opfølgning-udkast genereret og gemt på ejendomme. Gå til Ejendomme (filter: Første mail sendt) for at sende.`
+            : "Ingen nye udkast (evt. allerede genereret).",
+          data.prepared > 0 ? "success" : "info"
+        );
+        fetchFollowUpCandidates();
+      } else {
+        addToast(data.error || "Kunne ikke generere udkast", "error");
+      }
+    } catch {
+      addToast("Fejl ved generering af opfølgning-udkast", "error");
+    } finally {
+      setFollowUpPreparing(false);
     }
   };
 
@@ -202,22 +234,15 @@ export function OutreachTab({
 
   return (
     <div className="animate-fade-in">
-      <div className="mb-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Outreach</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Godkend, rediger og send emails</p>
-          </div>
-          <div>
-            <button onClick={fetchOutreachData} disabled={outreachLoading}
+      <div className="mb-6 flex items-center justify-between">
+        <p className="text-xs text-slate-500">Godkend og send emails.</p>
+        <button onClick={fetchOutreachData} disabled={outreachLoading}
               className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
               <svg className={`w-4 h-4 ${outreachLoading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
               </svg>
               Opdater
             </button>
-          </div>
-        </div>
       </div>
 
       {outreachData && (
@@ -441,10 +466,18 @@ export function OutreachTab({
               <span className="text-xs text-slate-400 ml-2">Første mail sendt for 7+ dage siden – ingen svar endnu</span>
             </div>
           </div>
-          <button onClick={fetchFollowUpCandidates} disabled={followUpLoading}
-            className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 disabled:opacity-50">
-            {followUpLoading ? <span className="animate-spin">↻</span> : "Opdater"}
-          </button>
+          <div className="flex items-center gap-2">
+            <button onClick={fetchFollowUpCandidates} disabled={followUpLoading}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-amber-600 bg-amber-50 rounded-lg hover:bg-amber-100 disabled:opacity-50">
+              {followUpLoading ? <span className="animate-spin">↻</span> : "Opdater"}
+            </button>
+            {followUpCandidates.length > 0 && (
+              <button onClick={prepareFollowUpDrafts} disabled={followUpPreparing}
+                className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 rounded-lg hover:bg-amber-700 disabled:opacity-50">
+                {followUpPreparing ? "Genererer…" : "Generer opfølgning-udkast"}
+              </button>
+            )}
+          </div>
         </div>
         <div className="p-4">
           {followUpCandidates.length === 0 && !followUpLoading && (
@@ -452,7 +485,7 @@ export function OutreachTab({
           )}
           {followUpCandidates.length > 0 && (
             <p className="text-sm text-slate-700">
-              <strong>{followUpCandidates.length}</strong> ejendomme kan få opfølgning. Gå til <strong>Ejendomme</strong>-fanen og filter på &quot;Første mail sendt&quot; for at sende opfølgning.
+              <strong>{followUpCandidates.length}</strong> ejendomme kan få opfølgning. Klik <strong>Generer opfølgning-udkast</strong> for at lade AI lave udkast på hver (gemmes i HubSpot). Derefter kan du under <strong>Ejendomme</strong> (filter: Første mail sendt) godkende og sende.
             </p>
           )}
         </div>

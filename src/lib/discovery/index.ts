@@ -7,6 +7,7 @@
 // ============================================================
 
 import { scanStreet } from "./street-scanner";
+import { scanArea } from "./area-scanner";
 import { scoreForOutdoorPotential } from "./scoring";
 import { estimateStreetTraffic, formatTraffic } from "./traffic";
 import { insertStagedProperty, stagedExistsByAddress } from "../staging/store";
@@ -283,6 +284,243 @@ export async function discoverStreet(
       phase: "done",
       message: `Færdig! ${result.created} nye ejendomme gemt i staging, ${result.alreadyExists} eksisterede allerede`,
       detail: `Trafik: ~${trafficFormatted}/dag | ${scored.length} vurderet | ${result.skipped} under min. score | Afventer godkendelse i Staging Queue`,
+      progress: 100,
+      result,
+      candidates: scored,
+    });
+  } catch (error) {
+    result.error = error instanceof Error ? error.message : "Unknown error";
+    result.completedAt = new Date().toISOString();
+    emit({
+      phase: "error",
+      message: `Fejl: ${result.error}`,
+      progress: 100,
+      result,
+    });
+  }
+
+  storeResult(result);
+  return result;
+}
+
+/** Max addresses to process in one area discovery run */
+const DEFAULT_AREA_MAX_ADDRESSES = 500;
+
+/**
+ * Discover properties in one or more postcodes (area-based discovery).
+ * No traffic pre-check; candidates get traffic 0. Same scoring and staging as street.
+ */
+export async function discoverArea(
+  postcodes: string[],
+  city = "",
+  minScore = 6,
+  maxAddresses = DEFAULT_AREA_MAX_ADDRESSES,
+  onProgress?: ProgressCallback,
+  isCancelled?: () => boolean
+): Promise<DiscoveryResult> {
+  const emit = onProgress || (() => {});
+  const checkCancelled = isCancelled || (() => false);
+  const normalized = postcodes.map((p) => String(p).trim()).filter(Boolean);
+  const areaLabel = normalized.length ? `Område: ${normalized.join(", ")}` : "Område";
+
+  const result: DiscoveryResult = {
+    street: areaLabel,
+    city: city || normalized.join(", ") || "",
+    totalAddresses: 0,
+    afterPreFilter: 0,
+    afterTrafficFilter: 0,
+    afterScoring: 0,
+    created: 0,
+    skipped: 0,
+    alreadyExists: 0,
+    candidates: [],
+    startedAt: new Date().toISOString(),
+  };
+
+  try {
+    if (normalized.length === 0) {
+      emit({
+        phase: "error",
+        message: "Angiv mindst ét postnummer",
+        progress: 100,
+        result,
+      });
+      result.completedAt = new Date().toISOString();
+      storeResult(result);
+      return result;
+    }
+
+    emit({
+      phase: "traffic_skip",
+      message: "Område-scan: trafik tjekkes ikke (vurderes per bygning i scoring)",
+      progress: 5,
+    });
+
+    emit({
+      phase: "scan",
+      message: `Finder bygninger i postnummer ${normalized.join(", ")}...`,
+      detail: "Henter adresser fra DAWA + BBR",
+      progress: 8,
+    });
+
+    const candidates = await scanArea(normalized, city, maxAddresses);
+    result.afterPreFilter = candidates.length;
+    result.totalAddresses = candidates.length;
+    result.afterTrafficFilter = candidates.length;
+
+    emit({
+      phase: "scan_done",
+      message: `Fandt ${candidates.length} relevante bygninger`,
+      progress: 30,
+    });
+
+    if (candidates.length === 0) {
+      emit({
+        phase: "done",
+        message: "Ingen relevante bygninger i de valgte postnummer",
+        progress: 100,
+        result,
+      });
+      result.completedAt = new Date().toISOString();
+      storeResult(result);
+      return result;
+    }
+
+    if (checkCancelled()) {
+      emit({ phase: "cancelled", message: "Stoppet af bruger efter scanning", progress: 100 });
+      result.completedAt = new Date().toISOString();
+      storeResult(result);
+      return result;
+    }
+
+    const totalBatches = Math.ceil(candidates.length / 15);
+    emit({
+      phase: "scoring",
+      message: `AI vurderer ${candidates.length} bygninger for outdoor-potentiale...`,
+      detail: `${totalBatches} batch(es)`,
+      progress: 35,
+    });
+
+    let batchesDone = 0;
+    const scored = await scoreForOutdoorPotential(
+      candidates,
+      areaLabel,
+      (city || normalized[0]) ?? "",
+      (batchIndex, batchTotal, batchResults) => {
+        batchesDone++;
+        const pct = 35 + Math.round((batchesDone / batchTotal) * 40);
+        const topInBatch = batchResults.sort((a, b) => b.outdoorScore - a.outdoorScore)[0];
+        emit({
+          phase: "scoring_batch",
+          message: `AI scorer batch ${batchIndex + 1}/${batchTotal}`,
+          detail: topInBatch ? `${topInBatch.address} → ${topInBatch.outdoorScore}/10` : undefined,
+          progress: pct,
+        });
+      }
+    );
+
+    result.candidates = scored;
+    const qualified = scored.filter((c) => c.outdoorScore >= minScore);
+    result.afterScoring = qualified.length;
+
+    const top5 = scored.slice(0, 5);
+    const avgScore = scored.length > 0
+      ? (scored.reduce((sum, c) => sum + c.outdoorScore, 0) / scored.length).toFixed(1)
+      : "0";
+
+    emit({
+      phase: "scoring_done",
+      message: `Scoring færdig! ${qualified.length} af ${scored.length} scorer >= ${minScore}`,
+      detail: `Gns. score: ${avgScore}/10 | Top: ${top5.map((c) => `${c.address} (${c.outdoorScore})`).join(", ")}`,
+      progress: 78,
+      candidates: scored,
+    });
+
+    if (checkCancelled()) {
+      emit({
+        phase: "cancelled",
+        message: `Stoppet efter scoring – ${qualified.length} kandidater fundet`,
+        progress: 100,
+        candidates: scored,
+      });
+      result.completedAt = new Date().toISOString();
+      storeResult(result);
+      return result;
+    }
+
+    if (qualified.length === 0) {
+      result.skipped = scored.length;
+      emit({
+        phase: "done",
+        message: "Ingen bygninger scorede højt nok.",
+        progress: 100,
+        result,
+      });
+    } else {
+      emit({
+        phase: "staging",
+        message: `Gemmer ${qualified.length} ejendomme i staging...`,
+        detail: "Tjekker for duplikater, gemmer nye i staging",
+        progress: 80,
+      });
+
+      for (let i = 0; i < qualified.length; i++) {
+        if (checkCancelled()) break;
+
+        const candidate = qualified[i];
+        try {
+          const [existsInStaging, existsInHubSpot] = await Promise.all([
+            stagedExistsByAddress(candidate.address),
+            ejendomExistsByAddress(candidate.address).catch(() => false),
+          ]);
+          if (existsInStaging || existsInHubSpot) {
+            result.alreadyExists++;
+            emit({
+              phase: "dedup_skip",
+              message: `${candidate.address} — eksisterer allerede`,
+              progress: 80 + Math.round(((i + 1) / qualified.length) * 18),
+            });
+            continue;
+          }
+
+          const trafficVal = candidate.estimatedDailyTraffic ?? 0;
+          await insertStagedProperty({
+            name: candidate.address,
+            address: candidate.address,
+            postalCode: candidate.postalCode,
+            city: candidate.city,
+            outdoorScore: candidate.outdoorScore,
+            outdoorNotes: formatCandidateNotes(candidate, trafficVal),
+            dailyTraffic: trafficVal,
+            source: "discovery",
+          });
+
+          result.created++;
+          emit({
+            phase: "staging_created",
+            message: `${candidate.address} — gemt i staging! Score: ${candidate.outdoorScore}/10`,
+            progress: 80 + Math.round(((i + 1) / qualified.length) * 18),
+          });
+        } catch (e) {
+          console.warn(`[Discovery] Failed to stage ${candidate.address}:`, e);
+          result.skipped++;
+          emit({
+            phase: "staging_error",
+            message: `${candidate.address} — fejl ved staging`,
+            detail: e instanceof Error ? e.message : "Ukendt fejl",
+            progress: 80 + Math.round(((i + 1) / qualified.length) * 18),
+          });
+        }
+      }
+
+      result.skipped += scored.filter((c) => c.outdoorScore < minScore).length;
+    }
+
+    result.completedAt = new Date().toISOString();
+    emit({
+      phase: "done",
+      message: `Færdig! ${result.created} nye ejendomme gemt i staging, ${result.alreadyExists} eksisterede allerede`,
+      detail: `${scored.length} vurderet | Afventer godkendelse i Staging Queue`,
       progress: 100,
       result,
       candidates: scored,

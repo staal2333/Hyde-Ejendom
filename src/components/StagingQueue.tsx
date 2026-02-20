@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { formatAddressLine, formatPropertyTitle } from "@/lib/format-address";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -683,7 +684,9 @@ export default function StagingQueue() {
                   {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-white truncate">{prop.address}</span>
+                      <span className="text-sm font-medium text-white truncate" title={formatAddressLine(prop.address, prop.postalCode, prop.city)}>
+                        {formatPropertyTitle(prop.name, prop.address, prop.postalCode, prop.city)}
+                      </span>
                       <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ${cfg.bg} ${cfg.color} border`}>
                         <span className={`w-1.5 h-1.5 rounded-full ${cfg.dot}`} />
                         {cfg.label}
@@ -693,7 +696,9 @@ export default function StagingQueue() {
                       </span>
                     </div>
                     <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500">
-                      <span>{prop.city || "Ukendt by"}{prop.postalCode ? `, ${prop.postalCode}` : ""}</span>
+                      {(prop.name ? formatAddressLine(prop.address, prop.postalCode, prop.city) : null) && (
+                        <span className="truncate">{formatAddressLine(prop.address, prop.postalCode, prop.city)}</span>
+                      )}
                       {prop.ownerCompany && (
                         <span className="text-slate-400 truncate max-w-[160px]">· {prop.ownerCompany}</span>
                       )}

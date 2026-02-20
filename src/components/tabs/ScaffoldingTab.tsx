@@ -142,10 +142,7 @@ export function ScaffoldingTab({
     return (
       <div className="animate-fade-in">
         <div className="flex items-center justify-between mb-5">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Stilladser &amp; Reklamer</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Aktive tilladelser fra kommunale WFS-datakilder</p>
-          </div>
+          <p className="text-xs text-slate-500">Aktive tilladelser fra kommunale datakilder.</p>
           <button
             onClick={() => setFullCircleOpen(true)}
             className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-500/20 hover:shadow-xl hover:shadow-indigo-500/30 transition-all"
@@ -359,13 +356,10 @@ export function ScaffoldingTab({
   return (
     <div className="animate-fade-in">
       <div className="flex items-center justify-between mb-5">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Stilladser &amp; Reklamer</h1>
-          <p className="text-xs text-slate-500 mt-0.5">Aktive tilladelser fra kommunale WFS-datakilder</p>
-        </div>
+        <p className="text-xs text-slate-500">Aktive tilladelser fra kommunale datakilder.</p>
         <button
           onClick={() => setFullCircleOpen(true)}
-          className="inline-flex items-center gap-2 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-500/20 hover:shadow-xl hover:shadow-indigo-500/30 transition-all"
+          className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-semibold shadow-md hover:shadow-lg transition-all"
         >
           <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 19.644l3.181-3.182" />

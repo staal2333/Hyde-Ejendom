@@ -458,6 +458,7 @@ function DashboardContent() {
   // Discovery
   const [discoverStreet, setDiscoverStreet] = useState("");
   const [discoverCity, setDiscoverCity] = useState("København");
+  const [discoverPostcodes, setDiscoverPostcodes] = useState("");
   const [discoverMinScore, setDiscoverMinScore] = useState(6);
   const [discoverMinTraffic, setDiscoverMinTraffic] = useState(10000);
   const [discoverMaxCandidates, setDiscoverMaxCandidates] = useState(50);
@@ -556,6 +557,20 @@ function DashboardContent() {
   useEffect(() => {
     if (fullCircleOpen) setFullCircleRunningInBackground(false);
   }, [fullCircleOpen]);
+
+  // Cleanup: abort in-flight SSE on unmount so processes don't stay "running"
+  useEffect(() => {
+    return () => {
+      discoveryAbortRef.current?.abort();
+      discoveryAbortRef.current = null;
+      scaffoldAbortRef.current?.abort();
+      scaffoldAbortRef.current = null;
+      researchAbortRef.current?.abort();
+      researchAbortRef.current = null;
+      agentAbortRef.current?.abort();
+      agentAbortRef.current = null;
+    };
+  }, []);
 
   // (Auto-scan ved åbning af Stilladser-fanen slået fra midlertidigt pga. React #310 under scan – brug "Start scan" på fanen. Full Circle auto-scanner stadig ved valg af Stilladser.)
 
@@ -687,6 +702,57 @@ function DashboardContent() {
     discoveryAbortRef.current?.abort();
     discoveryAbortRef.current = null;
     addToast("Discovery stoppet", "info");
+  };
+
+  const triggerAreaDiscovery = async () => {
+    const postcodes = discoverPostcodes.split(/[\s,;]+/).map((p) => p.trim()).filter(Boolean);
+    if (postcodes.length === 0) return;
+    const controller = new AbortController();
+    discoveryAbortRef.current = controller;
+    setDiscoveryRunning(true);
+    setDiscoveryResult(null);
+    setProgressEvents([]);
+    setProgressPct(0);
+    setCurrentPhase("");
+
+    addToast(`Scanner område ${postcodes.join(", ")}...`, "info");
+
+    const emptyAreaDiscovery = (): DiscoveryResultData => ({
+      street: `Område: ${postcodes.join(", ")}`,
+      city: discoverCity.trim(),
+      totalAddresses: 0,
+      afterPreFilter: 0,
+      afterTrafficFilter: 0,
+      afterScoring: 0,
+      created: 0,
+      skipped: 0,
+      alreadyExists: 0,
+      candidates: [],
+    });
+
+    await consumeSSE(
+      "/api/discover-area",
+      "POST",
+      {
+        postcodes,
+        city: discoverCity.trim(),
+        minScore: discoverMinScore,
+        maxAddresses: 500,
+        maxCandidates: discoverMaxCandidates > 0 ? discoverMaxCandidates : undefined,
+      },
+      setProgressEvents,
+      setProgressPct,
+      setCurrentPhase,
+      (pe) => {
+        if (pe.candidates) setDiscoveryResult((prev) => ({ ...(prev || emptyAreaDiscovery()), candidates: pe.candidates! }));
+        if (pe.result) {
+          setDiscoveryResult({ success: !pe.result.error, ...pe.result } as DiscoveryResultData);
+          addToast(`Område-scan færdig: ${pe.result.created} ejendomme oprettet`, "success");
+        }
+      },
+      () => { setDiscoveryRunning(false); discoveryAbortRef.current = null; },
+      controller.signal
+    );
   };
 
   const triggerScaffolding = async () => {
@@ -998,143 +1064,89 @@ function DashboardContent() {
           </div>
         </div>
       )}
-      <div className={`flex-1 flex min-h-0 min-w-0 w-full ${loading ? "invisible" : ""}`}>
-      {/* ─── Sidebar ─── */}
-      <aside className="w-[240px] gradient-sidebar text-white flex-shrink-0 flex flex-col">
-        {/* Brand */}
-        <div className="px-5 pt-6 pb-5">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-500/20">
-              <svg className="w-[18px] h-[18px] text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+      <div className={`layout-top-bar flex-1 min-h-0 w-full ${loading ? "invisible" : ""}`}>
+        {/* ─── Top bar ─── */}
+        <header className="top-bar">
+          <div className="flex items-center gap-2 shrink-0">
+            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-sm">
+              <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75" />
               </svg>
             </div>
-            <div>
-              <div className="font-bold text-sm tracking-tight text-white">Ejendom AI</div>
-              <div className="text-[10px] text-indigo-300/60 font-medium">Research Platform</div>
-            </div>
+            <span className="font-bold text-sm text-slate-800 hidden sm:inline">Ejendom AI</span>
           </div>
-        </div>
 
-        {/* Navigation */}
-        <nav className="flex-1 px-3 overflow-y-auto scroll-slim">
-          {/* Dashboard */}
-          <button
-            onClick={() => setActiveTab("home")}
-            className={`relative w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-all group mb-1 ${
-              activeTab === "home"
-                ? "bg-white/[0.1] text-white"
-                : "text-slate-400 hover:text-white hover:bg-white/[0.05]"
-            }`}
-          >
-            {activeTab === "home" && <div className="sidebar-active-indicator" />}
-            <svg className={`w-[18px] h-[18px] shrink-0 ${activeTab === "home" ? "text-indigo-400" : "text-slate-500 group-hover:text-slate-300"}`} fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d={HOME_TAB.icon} />
-            </svg>
-            <span className="font-medium text-[13px]">Dashboard</span>
-          </button>
-
-          {/* Section renderer */}
-          {([
-            { label: "Pipeline", tabs: PIPELINE_TABS },
-            { label: "Outreach", tabs: OUTREACH_TABS },
-            { label: "System", tabs: SYSTEM_TABS },
-          ] as const).map((section, si) => (
-            <div key={section.label} className={si === 0 ? "mt-3" : "mt-5"}>
-              <div className="px-3 mb-1.5">
-                <span className="text-[9px] font-bold text-slate-500/80 uppercase tracking-[0.1em]">{section.label}</span>
-              </div>
-              <div className="space-y-0.5">
-              {section.tabs.map((tab) => (
+          <nav className="top-bar-nav">
+            {TABS.map((tab) => {
+              const isActive = activeTab === tab.id;
+              const showDot =
+                (tab.id === "discover" && discoveryRunning) ||
+                (tab.id === "scaffolding" && scaffoldRunning) ||
+                (tab.id === "research" && !!researchRunning) ||
+                (tab.id === "street_agent" && agentRunning);
+              return (
                 <button
                   key={tab.id}
+                  type="button"
                   onClick={() => setActiveTab(tab.id)}
-                  className={`relative w-full flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm transition-all group ${
-                    activeTab === tab.id
-                      ? "bg-white/[0.1] text-white"
-                      : "text-slate-400 hover:text-white hover:bg-white/[0.05]"
-                  }`}
+                  className={`top-bar-tab ${isActive ? "active" : ""}`}
                 >
-                  {activeTab === tab.id && <div className="sidebar-active-indicator" />}
-                  <svg className={`w-[18px] h-[18px] shrink-0 ${
-                    activeTab === tab.id ? "text-indigo-400" : "text-slate-500 group-hover:text-slate-300"
-                  }`} fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
+                  <svg className="w-4 h-4 shrink-0 opacity-80" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d={tab.icon} />
                   </svg>
-                  <span className="font-medium text-[13px] flex-1 text-left">{tab.label}</span>
+                  <span>{tab.label}</span>
                   {tab.id === "properties" && properties.length > 0 && (
-                    <span className="text-[10px] font-bold bg-white/[0.1] text-slate-300 px-1.5 py-0.5 rounded-md tabular-nums">{properties.length}</span>
+                    <span className="tabular-nums text-[10px] opacity-70">({properties.length})</span>
                   )}
                   {tab.id === "staging" && (dashboard?.staging?.awaitingAction || 0) > 0 && (
-                    <span className="text-[10px] font-bold bg-amber-500/20 text-amber-300 px-1.5 py-0.5 rounded-md tabular-nums">{dashboard?.staging?.awaitingAction}</span>
+                    <span className="tabular-nums text-[10px] font-semibold text-amber-600">({dashboard?.staging?.awaitingAction})</span>
                   )}
-                  {tab.id === "discover" && discoveryRunning && (
-                    <span className="w-2 h-2 rounded-full bg-blue-400 animate-pulse shrink-0" />
-                  )}
-                  {tab.id === "scaffolding" && scaffoldRunning && (
-                    <span className="w-2 h-2 rounded-full bg-cyan-400 animate-pulse shrink-0" />
-                  )}
-                  {tab.id === "research" && researchRunning && (
-                    <span className="w-2 h-2 rounded-full bg-emerald-400 animate-glow-ring shrink-0" />
-                  )}
-                  {tab.id === "street_agent" && agentRunning && (
-                    <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse shrink-0" />
-                  )}
+                  {showDot && <span className="tab-dot bg-indigo-500 animate-pulse" />}
                 </button>
-              ))}
-              </div>
-            </div>
-          ))}
-        </nav>
+              );
+            })}
+          </nav>
 
-        {/* Stats Footer */}
-        <div className="mx-3 mb-3 space-y-2">
-          {/* System Health - compact */}
-          {systemHealth && (
-            <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/[0.03]">
-              <span className={`w-2 h-2 rounded-full shrink-0 ${
-                systemHealth.status === "healthy" ? "bg-emerald-400" :
-                systemHealth.status === "degraded" ? "bg-amber-400" : "bg-red-400"
-              }`} />
-              <span className="text-[10px] text-slate-400 flex-1">
-                {systemHealth.status === "healthy" ? "Alle systemer OK" :
-                 systemHealth.status === "degraded" ? "Delvis nedsat" : "Problemer"}
-              </span>
+          <div className="top-bar-stats">
+            <div className="top-bar-stat">
+              <div className="top-bar-stat-value text-slate-700">{dashboard?.totalProperties ?? 0}</div>
+              <div className="top-bar-stat-label">Total</div>
             </div>
-          )}
-
-          {/* Quick Stats */}
-          <div className="grid grid-cols-4 gap-1 px-2 py-2.5 rounded-xl bg-white/[0.03]">
-            {[
-              { value: dashboard?.totalProperties || 0, label: "Total", color: "text-slate-200" },
-              { value: dashboard?.readyToSend || 0, label: "Klar", color: "text-emerald-400" },
-              { value: dashboard?.staging?.awaitingAction || 0, label: "Stage", color: "text-amber-400" },
-              { value: dashboard?.mailsSent || 0, label: "Sendt", color: "text-indigo-400" },
-            ].map(s => (
-              <div key={s.label} className="text-center">
-                <div className={`text-sm font-bold tabular-nums ${s.color}`}>{s.value}</div>
-                <div className="text-[8px] text-slate-600 uppercase tracking-wider">{s.label}</div>
+            <div className="top-bar-stat">
+              <div className="top-bar-stat-value text-emerald-600">{dashboard?.readyToSend ?? 0}</div>
+              <div className="top-bar-stat-label">Klar</div>
+            </div>
+            <div className="top-bar-stat">
+              <div className="top-bar-stat-value text-amber-600">{dashboard?.staging?.awaitingAction ?? 0}</div>
+              <div className="top-bar-stat-label">Stage</div>
+            </div>
+            <div className="top-bar-stat">
+              <div className="top-bar-stat-value text-indigo-600">{dashboard?.mailsSent ?? 0}</div>
+              <div className="top-bar-stat-label">Sendt</div>
+            </div>
+            {systemHealth && (
+              <div className="flex items-center gap-1.5 pl-2" title={systemHealth.status === "healthy" ? "Alle systemer OK" : systemHealth.status === "degraded" ? "Delvis nedsat" : "Problemer"}>
+                <span className={`w-2 h-2 rounded-full shrink-0 ${
+                  systemHealth.status === "healthy" ? "bg-emerald-500" :
+                  systemHealth.status === "degraded" ? "bg-amber-500" : "bg-red-500"
+                }`} />
               </div>
-            ))}
+            )}
+            <button
+              type="button"
+              onClick={logout}
+              className="ml-1 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+            >
+              Log ud
+            </button>
           </div>
-          <button
-            type="button"
-            onClick={logout}
-            className="w-full mt-2 px-3 py-2 rounded-xl text-[10px] font-semibold text-slate-400 hover:text-slate-200 hover:bg-white/[0.06] border border-white/[0.06] transition"
-          >
-            Log ud
-          </button>
-          <p className="text-[9px] text-slate-500/80 px-3 pt-1.5 border-t border-white/[0.04] mt-2 pt-2">
-            Tast <kbd className="px-1 py-0.5 rounded bg-white/10 font-mono text-[8px]">1</kbd>–<kbd className="px-1 py-0.5 rounded bg-white/10 font-mono text-[8px]">9</kbd> eller <kbd className="px-1 py-0.5 rounded bg-white/10 font-mono text-[8px]">0</kbd> for at skifte fane
-          </p>
-        </div>
-      </aside>
+        </header>
 
-      {/* ─── Main Content ─── */}
-      <main className="flex-1 min-w-0 w-full overflow-y-auto scroll-slim">
+        {/* ─── Main content ─── */}
+        <main className="main-after-top scroll-slim">
         {/* Error Banner */}
         {error && (
-          <div className="mx-6 mt-4 p-3.5 bg-red-50 border border-red-200/40 rounded-xl flex items-center gap-3 text-sm animate-fade-in">
+          <div className="mt-4 px-4 sm:px-6 max-w-6xl mx-auto p-3.5 bg-red-50 border border-red-200/40 rounded-xl flex items-center gap-3 text-sm animate-fade-in">
             <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0">
               <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
@@ -1160,47 +1172,82 @@ function DashboardContent() {
 
         {/* ─── Active Processes ─── */}
         {(discoveryRunning || scaffoldRunning || !!researchRunning || agentRunning) && (
-          <div className="sticky top-0 z-30 mx-5 mt-3">
-            <div className="flex items-center gap-2 px-3 py-2 bg-slate-900/95 glass rounded-xl border border-slate-700/40 shadow-2xl">
+          <div className="sticky top-0 z-30 mt-3 px-4 sm:px-6 max-w-6xl mx-auto">
+            <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-900/95 backdrop-blur-sm rounded-xl border border-slate-700/40 shadow-xl">
               <div className="relative w-4 h-4 shrink-0">
                 <div className="absolute inset-0 rounded-full border-2 border-t-emerald-400 border-r-transparent border-b-transparent border-l-transparent animate-spin" />
                 <div className="absolute inset-[4px] rounded-full bg-emerald-400" />
               </div>
-              <div className="flex items-center gap-1.5 flex-wrap flex-1">
+              <div className="flex items-center gap-2 flex-wrap flex-1 min-w-0">
                 {discoveryRunning && (
-                  <button onClick={() => setActiveTab("discover")}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-blue-500/15 text-blue-300 hover:bg-blue-500/25 transition-all">
-                    <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
-                    Discovery {progressPct > 0 && <span className="opacity-60">{progressPct}%</span>}
-                  </button>
+                  <div className="inline-flex items-center gap-1.5 rounded-lg bg-blue-500/15 text-blue-300 overflow-hidden">
+                    <button onClick={() => setActiveTab("discover")}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold hover:bg-blue-500/20 transition-all">
+                      <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+                      Discovery {progressPct > 0 && <span className="opacity-70">{progressPct}%</span>}
+                    </button>
+                    <button onClick={stopDiscovery} title="Stop discovery"
+                      className="px-2 py-1.5 text-blue-200 hover:bg-red-500/30 hover:text-white transition-all border-l border-blue-500/30">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" /></svg>
+                    </button>
+                  </div>
                 )}
                 {scaffoldRunning && (
-                  <button onClick={() => setActiveTab("scaffolding")}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-cyan-500/15 text-cyan-300 hover:bg-cyan-500/25 transition-all">
-                    <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                    Stilladser {scaffoldPct > 0 && <span className="opacity-60">{scaffoldPct}%</span>}
-                  </button>
+                  <div className="inline-flex items-center gap-1.5 rounded-lg bg-cyan-500/15 text-cyan-300 overflow-hidden">
+                    <button onClick={() => setActiveTab("scaffolding")}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold hover:bg-cyan-500/20 transition-all">
+                      <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
+                      Stilladser {scaffoldPct > 0 && <span className="opacity-70">{scaffoldPct}%</span>}
+                    </button>
+                    <button onClick={stopScaffolding} title="Stop stillads-scan"
+                      className="px-2 py-1.5 text-cyan-200 hover:bg-red-500/30 hover:text-white transition-all border-l border-cyan-500/30">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" /></svg>
+                    </button>
+                  </div>
                 )}
                 {researchRunning && (
-                  <button onClick={() => setActiveTab("research")}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-amber-500/15 text-amber-300 hover:bg-amber-500/25 transition-all">
-                    <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
-                    {researchRunning === "all" ? "Batch research" : "Research"}
-                  </button>
+                  <div className="inline-flex items-center gap-1.5 rounded-lg bg-amber-500/15 text-amber-300 overflow-hidden">
+                    <button onClick={() => setActiveTab("research")}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold hover:bg-amber-500/20 transition-all">
+                      <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse" />
+                      {researchRunning === "all" ? "Batch research" : "Research"}
+                    </button>
+                    <button onClick={stopResearch} title="Stop research"
+                      className="px-2 py-1.5 text-amber-200 hover:bg-red-500/30 hover:text-white transition-all border-l border-amber-500/30">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" /></svg>
+                    </button>
+                  </div>
                 )}
                 {agentRunning && (
-                  <button onClick={() => setActiveTab("street_agent")}
-                    className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-[10px] font-semibold bg-violet-500/15 text-violet-300 hover:bg-violet-500/25 transition-all">
-                    <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-                    Gade-agent
-                  </button>
+                  <div className="inline-flex items-center gap-1.5 rounded-lg bg-violet-500/15 text-violet-300 overflow-hidden">
+                    <button onClick={() => setActiveTab("street_agent")}
+                      className="inline-flex items-center gap-1.5 px-2.5 py-1.5 text-[11px] font-semibold hover:bg-violet-500/20 transition-all">
+                      <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
+                      Gade-agent
+                    </button>
+                    <button onClick={stopStreetAgent} title="Stop gade-agent"
+                      className="px-2 py-1.5 text-violet-200 hover:bg-red-500/30 hover:text-white transition-all border-l border-violet-500/30">
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" /></svg>
+                    </button>
+                  </div>
                 )}
               </div>
             </div>
           </div>
         )}
 
-        <div className="p-6 w-full max-w-full">
+        {/* ─── Page title (current tab) ─── */}
+        {(() => {
+          const tab = TABS.find((t) => t.id === activeTab);
+          return tab ? (
+            <div className="mt-4 mb-1 px-4 sm:px-6 max-w-6xl mx-auto">
+              <h1 className="text-lg font-bold text-slate-800 tracking-tight">{tab.label}</h1>
+              {tab.desc && <p className="text-xs text-slate-500 mt-0.5">{tab.desc}</p>}
+            </div>
+          ) : null;
+        })()}
+
+        <div className="p-4 sm:p-6 w-full max-w-6xl mx-auto">
           {/* ═══ DASHBOARD / HOME ═══ */}
           {activeTab === "home" && (
             <HomeTab
@@ -1223,6 +1270,8 @@ function DashboardContent() {
               setDiscoverStreet={setDiscoverStreet}
               discoverCity={discoverCity}
               setDiscoverCity={setDiscoverCity}
+              discoverPostcodes={discoverPostcodes}
+              setDiscoverPostcodes={setDiscoverPostcodes}
               discoverMinScore={discoverMinScore}
               setDiscoverMinScore={setDiscoverMinScore}
               discoverMinTraffic={discoverMinTraffic}
@@ -1236,6 +1285,7 @@ function DashboardContent() {
               currentPhase={currentPhase}
               progressLogRef={progressLogRef}
               triggerDiscovery={triggerDiscovery}
+              triggerAreaDiscovery={triggerAreaDiscovery}
               stopDiscovery={stopDiscovery}
               setActiveTab={setActiveTab}
               addToast={addToast}

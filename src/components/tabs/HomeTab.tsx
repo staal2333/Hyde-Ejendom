@@ -3,6 +3,7 @@
 import { useDashboard } from "@/contexts/DashboardContext";
 import type { TabId } from "@/contexts/DashboardContext";
 import { getStatusConfig } from "@/lib/statusConfig";
+import { formatPropertyTitle } from "@/lib/format-address";
 
 export interface HomeTabProps {
   discoveryRunning: boolean;
@@ -38,23 +39,17 @@ export function HomeTab({
 
   return (
     <div className="animate-fade-in w-full max-w-full">
-      {/* Header with mesh gradient */}
-      <div className="relative mb-8 -mx-8 -mt-8 px-8 pt-8 pb-6 gradient-mesh">
-        <div className="flex items-end justify-between">
-          <div>
-            <h1 className="text-2xl font-bold text-slate-900 tracking-tight">Dashboard</h1>
-            <p className="text-sm text-slate-500 mt-1">Overblik over pipeline, research og outreach</p>
-          </div>
-          <button
-            onClick={() => setFullCircleOpen(true)}
-            className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-semibold shadow-lg shadow-indigo-500/20 hover:shadow-xl hover:shadow-indigo-500/30 hover:scale-[1.02] transition-all"
-          >
-            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 19.644l3.181-3.182" />
-            </svg>
-            Full Circle Pipeline
-          </button>
-        </div>
+      {/* Kun Full Circle-knap – sidens titel står i layout */}
+      <div className="flex justify-end mb-4">
+        <button
+          onClick={() => setFullCircleOpen(true)}
+          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-semibold shadow-md hover:shadow-lg transition-all"
+        >
+          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 19.644l3.181-3.182" />
+          </svg>
+          Full Circle
+        </button>
       </div>
 
       {/* KPI Cards */}
@@ -97,8 +92,8 @@ export function HomeTab({
             bgColor: "bg-violet-50/80",
           },
           {
-            label: "Nye stilladser i dag",
-            value: scaffoldPeriodCounts?.daily ?? "—",
+            label: "Nye stillads ansøgninger (dagen før)",
+            value: dashboard?.scaffoldingNewApplications?.previousDay ?? scaffoldPeriodCounts?.previousDay ?? "—",
             icon: "M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18",
             gradient: "from-cyan-500 to-teal-600",
             ring: "ring-cyan-100",
@@ -121,10 +116,12 @@ export function HomeTab({
                   <p className={`text-3xl font-extrabold tabular-nums mt-2 tracking-tight ${kpi.textColor}`}>
                     {kpi.value}
                   </p>
-                  {kpi.isStillads && scaffoldPeriodCounts?.at && (
-                    <p className="text-[9px] text-slate-400 mt-0.5">Fra seneste scan</p>
+                  {kpi.isStillads && (dashboard?.scaffoldingNewApplications?.at || scaffoldPeriodCounts?.at) && (
+                    <p className="text-[9px] text-slate-400 mt-0.5">
+                      Live · opdateres hvert 10. min
+                    </p>
                   )}
-                  {kpi.isStillads && !scaffoldPeriodCounts && (
+                  {kpi.isStillads && !dashboard?.scaffoldingNewApplications && !scaffoldPeriodCounts && (
                     <p className="text-[9px] text-slate-400 mt-0.5">Kør scan under Stilladser</p>
                   )}
                 </div>
@@ -149,6 +146,38 @@ export function HomeTab({
           );
         })}
       </div>
+
+      {/* Stilladser (dagen før) – adresse + varighed */}
+      {(dashboard?.scaffoldingNewApplications?.previousDayPermits?.length ?? 0) > 0 && (
+        <button
+          onClick={() => setActiveTab("scaffolding")}
+          className="w-full rounded-2xl border border-cyan-200/60 bg-cyan-50/50 p-5 mb-6 text-left hover:bg-cyan-50 hover:border-cyan-200 transition-all card-hover"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center">
+                <svg className="w-4 h-4 text-cyan-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18" />
+                </span>
+                Stilladser (dagen før)
+              </h2>
+              <span className="text-[10px] text-slate-400">Opdateres hvert 10. min</span>
+            </div>
+            <div className="space-y-2">
+              {dashboard.scaffoldingNewApplications.previousDayPermits.slice(0, 10).map((p, i) => (
+                <div key={i} className="flex items-center justify-between gap-3 py-1.5 border-b border-cyan-100/80 last:border-0">
+                  <span className="text-sm font-medium text-slate-800 truncate">{p.address}</span>
+                  <span className="text-xs text-cyan-700 font-semibold shrink-0">{p.durationText}</span>
+                </div>
+              ))}
+              {dashboard.scaffoldingNewApplications.previousDayPermits.length > 10 && (
+                <p className="text-[10px] text-slate-500 pt-1">
+                  + {dashboard.scaffoldingNewApplications.previousDayPermits.length - 10} flere
+                </p>
+              )}
+            </div>
+          </button>
+      )}
 
       {/* Staging Alert */}
       {(dashboard?.staging?.awaitingAction || 0) > 0 && (
@@ -259,12 +288,14 @@ export function HomeTab({
           >
             <div className="w-10 h-10 rounded-xl bg-cyan-100 flex items-center justify-center flex-shrink-0">
               <span className="text-lg font-bold text-cyan-700">
-                {typeof scaffoldPeriodCounts?.daily === "number" ? scaffoldPeriodCounts.daily : "—"}
+                {typeof (dashboard?.scaffoldingNewApplications?.previousDay ?? scaffoldPeriodCounts?.previousDay) === "number"
+                  ? (dashboard?.scaffoldingNewApplications?.previousDay ?? scaffoldPeriodCounts?.previousDay)
+                  : "—"}
               </span>
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-slate-900">Nye stilladser</p>
-              <p className="text-[11px] text-slate-500">Fra seneste scan</p>
+              <p className="text-sm font-semibold text-slate-900">Nye stillads ansøgninger</p>
+              <p className="text-[11px] text-slate-500">Dagen før · opdateres hvert 10. min</p>
             </div>
             <svg className="w-4 h-4 text-slate-300 group-hover:text-cyan-500 group-hover:translate-x-0.5 transition-all" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />

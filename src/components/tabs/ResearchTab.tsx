@@ -43,20 +43,15 @@ export function ResearchTab({
 }: ResearchTabProps) {
   return (
     <div className="animate-fade-in">
-      <div className="mb-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-xl font-bold text-slate-900 tracking-tight">Research Live</h1>
-            <p className="text-xs text-slate-500 mt-0.5">Se AI-agenten researche ejendomme i realtid</p>
-          </div>
-          {researchRunning && (
+      <div className="mb-5 flex items-center justify-between">
+        <p className="text-xs text-slate-500">Kør research for ventende ejendomme. Se status i realtid.</p>
+        {researchRunning && (
             <button onClick={stopResearch}
               className="inline-flex items-center gap-2 px-4 py-2 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold rounded-xl shadow-sm">
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" /></svg>
               Stop
             </button>
-          )}
-        </div>
+        )}
       </div>
 
       {researchEvents.length === 0 && !researchRunning && (

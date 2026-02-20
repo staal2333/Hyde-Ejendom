@@ -3,6 +3,7 @@
 import { useState, useCallback } from "react";
 import type { RefObject } from "react";
 import type { TabId } from "@/contexts/DashboardContext";
+import { formatAddressLine } from "@/lib/format-address";
 import EmptyState from "../ui/EmptyState";
 
 // Mirror of page types for discovery (avoids importing from app/page)
@@ -252,9 +253,8 @@ function CandidateTable({
                 </td>
               )}
               <td className="px-6 py-4">
-                <div className="font-semibold text-sm text-slate-900">{c.address}</div>
-                <div className="text-[11px] text-slate-400 mt-0.5">
-                  {c.postalCode} {c.city}
+                <div className="font-semibold text-sm text-slate-900">
+                  {formatAddressLine(c.address, c.postalCode, c.city)}
                 </div>
               </td>
               <td className="px-4 py-4">
@@ -319,6 +319,8 @@ export interface DiscoverTabProps {
   setDiscoverStreet: (v: string) => void;
   discoverCity: string;
   setDiscoverCity: (v: string) => void;
+  discoverPostcodes: string;
+  setDiscoverPostcodes: (v: string) => void;
   discoverMinScore: number;
   setDiscoverMinScore: (v: number) => void;
   discoverMinTraffic: number;
@@ -332,6 +334,7 @@ export interface DiscoverTabProps {
   currentPhase: string;
   progressLogRef: RefObject<HTMLDivElement | null>;
   triggerDiscovery: () => void;
+  triggerAreaDiscovery: () => void;
   stopDiscovery: () => void;
   setActiveTab?: (tab: TabId) => void;
   addToast?: (message: string, type: "success" | "error" | "info") => void;
@@ -378,6 +381,8 @@ export function DiscoverTab({
   setDiscoverStreet,
   discoverCity,
   setDiscoverCity,
+  discoverPostcodes,
+  setDiscoverPostcodes,
   discoverMinScore,
   setDiscoverMinScore,
   discoverMinTraffic,
@@ -391,6 +396,7 @@ export function DiscoverTab({
   currentPhase,
   progressLogRef,
   triggerDiscovery,
+  triggerAreaDiscovery,
   stopDiscovery,
   setActiveTab,
   addToast,
@@ -440,16 +446,11 @@ export function DiscoverTab({
 
   return (
     <div className="animate-fade-in">
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-xl font-bold text-slate-900 tracking-tight">Street Discovery</h1>
-          <p className="text-xs text-slate-500 mt-0.5">
-            Scan en vej og find ejendomme med outdoor reklame-potentiale
-          </p>
-        </div>
-      </div>
+      <p className="text-xs text-slate-500 mb-4">Scan vej eller postnummer → kandidater gemmes i Staging.</p>
 
+      {/* Efter vej */}
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-5">
+        <h2 className="text-sm font-semibold text-slate-700 mb-3">Efter vej</h2>
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
           <div className="md:col-span-3">
             <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
@@ -617,6 +618,63 @@ export function DiscoverTab({
             )}
           </div>
         </div>
+      </div>
+
+      {/* Efter område (postnummer) */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-5">
+        <h2 className="text-sm font-semibold text-slate-700 mb-3">Efter område (postnummer)</h2>
+        <div className="flex flex-wrap items-end gap-3">
+          <div className="flex-1 min-w-[200px]">
+            <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
+              Postnummer (fx 1050, 1051, 8000)
+            </label>
+            <input
+              type="text"
+              value={discoverPostcodes}
+              onChange={(e) => setDiscoverPostcodes(e.target.value)}
+              placeholder="1050, 1051 eller 8000"
+              onKeyDown={(e) => e.key === "Enter" && triggerAreaDiscovery()}
+              className="w-full px-4 py-3 border border-slate-200 rounded-xl text-sm bg-slate-50/50 focus:bg-white focus:border-indigo-300 placeholder:text-slate-400"
+            />
+          </div>
+          <div className="w-32">
+            <label className="block text-[10px] font-bold text-slate-500 mb-1.5 uppercase tracking-wider">
+              By (valgfri)
+            </label>
+            <input
+              type="text"
+              value={discoverCity}
+              onChange={(e) => setDiscoverCity(e.target.value)}
+              className="w-full px-3 py-3 border border-slate-200 rounded-xl text-sm bg-slate-50/50 focus:bg-white"
+            />
+          </div>
+          {discoveryRunning ? (
+            <button
+              onClick={stopDiscovery}
+              className="inline-flex items-center justify-center gap-2 px-5 py-3 bg-red-500 hover:bg-red-600 text-white text-sm font-semibold rounded-xl shadow-sm"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M5.25 7.5A2.25 2.25 0 017.5 5.25h9a2.25 2.25 0 012.25 2.25v9a2.25 2.25 0 01-2.25 2.25h-9a2.25 2.25 0 01-2.25-2.25v-9z" />
+              </svg>
+              Stop
+            </button>
+          ) : (
+            <button
+              onClick={triggerAreaDiscovery}
+              disabled={!discoverPostcodes.trim().replace(/[\s,;]+/g, "")}
+              className="inline-flex items-center justify-center gap-2 px-5 py-3 gradient-brand text-white text-sm font-semibold rounded-xl hover:shadow-lg hover:shadow-indigo-500/20 disabled:opacity-40 disabled:cursor-not-allowed"
+            >
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z" />
+                <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" />
+              </svg>
+              Find ejendomme i området
+            </button>
+          )}
+        </div>
+        <p className="text-[10px] text-slate-400 mt-2">
+          Henter alle adresser i de angivne postnummer fra DAWA, filtrerer og scorer med AI. Maks. 500 adresser per kørsel. Trafik tjekkes ikke på område-niveau.
+        </p>
       </div>
 
       {(discoveryRunning || progressEvents.length > 0) && (

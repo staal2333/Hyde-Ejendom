@@ -2,6 +2,7 @@
 
 import type { PropertyItem } from "@/contexts/DashboardContext";
 import { getStatusConfig } from "@/lib/statusConfig";
+import { formatAddressLine, formatPropertyTitle } from "@/lib/format-address";
 import { ScoreRing } from "./ScoreRing";
 
 export function PropertyCard({
@@ -46,13 +47,15 @@ export function PropertyCard({
             {p.outdoorScore != null && <ScoreRing score={p.outdoorScore} />}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <span className="font-semibold text-[13px] text-slate-900 truncate">{p.name || "Unavngivet"}</span>
+                <span className="font-semibold text-[13px] text-slate-900 truncate">
+                  {formatPropertyTitle(p.name, p.address, p.postalCode, p.city)}
+                </span>
                 <span className={`text-[9px] px-2 py-0.5 rounded-md font-bold ${status.bg} ${status.color}`}>{status.label}</span>
                 {hasOwner && <span className="hidden sm:inline text-[9px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-600 font-semibold">Ejer</span>}
                 {hasContact && <span className="hidden sm:inline text-[9px] px-1.5 py-0.5 rounded bg-indigo-50 text-indigo-600 font-semibold">Email</span>}
               </div>
               <div className="flex items-center gap-3 mt-0.5 text-[11px] text-slate-500">
-                <span className="truncate">{p.address}, {p.postalCode} {p.city}</span>
+                <span className="truncate">{formatAddressLine(p.address, p.postalCode, p.city)}</span>
                 {p.ownerCompanyName && <span className="hidden md:inline text-slate-400">· {p.ownerCompanyName}</span>}
               </div>
             </div>

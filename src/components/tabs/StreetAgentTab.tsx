@@ -66,10 +66,7 @@ export function StreetAgentTab({
 }: StreetAgentTabProps) {
   return (
     <div className="animate-fade-in">
-      <div className="mb-5">
-        <h1 className="text-xl font-bold text-slate-900 tracking-tight">Gade-Agent</h1>
-        <p className="text-xs text-slate-500 mt-0.5">Auto-pipeline: Scan &rarr; Research &rarr; Email</p>
-      </div>
+      <p className="text-xs text-slate-500 mb-4">Scan &rarr; Research &rarr; Email-udkast. Kør for én vej.</p>
 
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-5">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-end">

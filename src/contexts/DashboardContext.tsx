@@ -46,6 +46,15 @@ export interface DashboardData {
     awaitingAction: number;
     total: number;
   };
+  /** Live stat: nye stillads ansøgninger (opdateres ved stillads-scan og ved dashboard-fetch). */
+  scaffoldingNewApplications?: {
+    previousDay: number;
+    previousDayPermits: Array<{ address: string; durationText: string }>;
+    daily: number;
+    weekly: number;
+    monthly: number;
+    at: string;
+  } | null;
   analytics?: {
     emailQueue: {
       queued: number;
@@ -121,6 +130,8 @@ export interface Toast {
 }
 
 export interface ScaffoldPeriodCounts {
+  previousDay?: number;
+  previousDayPermits?: Array<{ address: string; durationText: string }>;
   daily: number;
   weekly: number;
   monthly: number;

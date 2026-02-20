@@ -6,6 +6,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { discoverScaffolding } from "@/lib/discovery/scaffolding";
 import type { ScaffoldingProgress } from "@/lib/discovery/scaffolding";
+import { computeScaffoldStatsFromPermits, setScaffoldStats } from "@/lib/scaffold-stats";
 
 /**
  * POST /api/discover-scaffolding
@@ -39,11 +40,14 @@ export async function POST(request: NextRequest) {
             send
           );
 
+          const stats = computeScaffoldStatsFromPermits(result.permits);
+          setScaffoldStats(stats);
+
           send({
             phase: "complete",
             message: "Stillads-scanning afsluttet",
             progress: 100,
-            result,
+            result: { ...result, scaffoldStats: stats },
             permits: result.permits,
           });
         } catch (error) {

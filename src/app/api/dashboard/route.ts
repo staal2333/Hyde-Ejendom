@@ -9,6 +9,7 @@ import { getRecentRuns } from "@/lib/workflow/engine";
 import { getStagedCounts } from "@/lib/staging/store";
 import { getQueueStats } from "@/lib/email-queue";
 import { getSends } from "@/lib/ooh/store";
+import { getScaffoldStats } from "@/lib/scaffold-stats";
 
 export async function GET() {
   try {
@@ -20,6 +21,8 @@ export async function GET() {
 
     // Email queue stats (lightweight, in-memory)
     const emailStats = getQueueStats();
+
+    const scaffoldStats = getScaffoldStats();
 
     // OOH send analytics (track opens, clicks, etc.)
     let oohAnalytics = { totalSent: 0, opened: 0, clicked: 0, replied: 0, meetings: 0, sold: 0 };
@@ -59,7 +62,16 @@ export async function GET() {
         awaitingAction: stagingCounts.new + stagingCounts.researched,
         total: Object.values(stagingCounts).reduce((a, b) => a + b, 0),
       },
-      // Analytics
+      scaffoldingNewApplications: scaffoldStats
+        ? {
+            previousDay: scaffoldStats.previousDay,
+            previousDayPermits: scaffoldStats.previousDayPermits,
+            daily: scaffoldStats.daily,
+            weekly: scaffoldStats.weekly,
+            monthly: scaffoldStats.monthly,
+            at: scaffoldStats.at,
+          }
+        : null,
       analytics: {
         emailQueue: {
           queued: emailStats.queued,
@@ -84,8 +96,19 @@ export async function GET() {
     console.error("[API] Dashboard stats failed:", error);
     // Return 200 with fallback so the app loads on Vercel when HubSpot/Supabase env is missing
     const msg = error instanceof Error ? error.message : "Unknown error";
+    const fallbackScaffold = getScaffoldStats();
     return NextResponse.json({
       error: msg,
+      scaffoldingNewApplications: fallbackScaffold
+        ? {
+            previousDay: fallbackScaffold.previousDay,
+            previousDayPermits: fallbackScaffold.previousDayPermits,
+            daily: fallbackScaffold.daily,
+            weekly: fallbackScaffold.weekly,
+            monthly: fallbackScaffold.monthly,
+            at: fallbackScaffold.at,
+          }
+        : null,
       totalProperties: 0,
       pendingResearch: 0,
       researchInProgress: 0,

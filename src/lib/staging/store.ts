@@ -141,17 +141,27 @@ export async function stagedExistsByAddress(address: string): Promise<boolean> {
   return (data?.length || 0) > 0;
 }
 
+/** Normalize string fields for storage */
+function trim(s: string | undefined): string {
+  return (s ?? "").trim();
+}
+
 /** Create a new staged property */
 export async function insertStagedProperty(input: CreateStagedInput): Promise<StagedProperty> {
   if (!HAS_SUPABASE) throw new Error("Supabase not configured");
 
+  const name = trim(input.name) || trim(input.address);
+  const address = trim(input.address) || name;
+  const postalCode = trim(input.postalCode) || undefined;
+  const city = trim(input.city) || undefined;
+
   const { data, error } = await supabase!
     .from("staged_properties")
     .insert({
-      name: input.name,
-      address: input.address,
-      postal_code: input.postalCode || null,
-      city: input.city || null,
+      name: name || address,
+      address,
+      postal_code: postalCode || null,
+      city: city || null,
       outdoor_score: input.outdoorScore ?? null,
       outdoor_notes: input.outdoorNotes || null,
       daily_traffic: input.dailyTraffic ?? null,
