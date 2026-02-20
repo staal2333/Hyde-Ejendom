@@ -19,6 +19,7 @@ export function PropertyEditModal({
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (!property) return;
     const form = e.currentTarget;
     const name = (form.querySelector('[name="name"]') as HTMLInputElement)?.value?.trim();
     const kontaktperson = (form.querySelector('[name="kontaktperson"]') as HTMLInputElement)?.value?.trim();
