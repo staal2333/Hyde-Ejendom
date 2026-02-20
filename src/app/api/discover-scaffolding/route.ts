@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
             phase: "complete",
             message: "Stillads-scanning afsluttet",
             progress: 100,
-            result: { ...result, scaffoldStats: stats },
+            result,
             permits: result.permits,
           });
         } catch (error) {

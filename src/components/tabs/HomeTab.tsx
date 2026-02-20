@@ -37,6 +37,8 @@ export function HomeTab({
     systemHealth,
   } = useDashboard();
 
+  const stilladsSectionTitle = "Stilladser (dagen før)";
+
   return (
     <div className="animate-fade-in w-full max-w-full">
       {/* Kun Full Circle-knap – sidens titel står i layout */}
@@ -147,32 +149,32 @@ export function HomeTab({
         })}
       </div>
 
-      {/* Stilladser (dagen før) – adresse + varighed */}
-      {(dashboard?.scaffoldingNewApplications?.previousDayPermits?.length ?? 0) > 0 && (
+      {((dashboard?.scaffoldingNewApplications?.previousDayPermits?.length ?? 0) > 0) && (
         <button
           onClick={() => setActiveTab("scaffolding")}
           className="w-full rounded-2xl border border-cyan-200/60 bg-cyan-50/50 p-5 mb-6 text-left hover:bg-cyan-50 hover:border-cyan-200 transition-all card-hover"
         >
           <div className="flex items-center justify-between mb-3">
             <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-              <span className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center">
+              <span className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center" aria-hidden>
                 <svg className="w-4 h-4 text-cyan-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18" />
-                </span>
-                {"Stilladser (dagen før)"}
-              </h2>
-              <span className="text-[10px] text-slate-400">Opdateres hvert 10. min</span>
-            </div>
+                </svg>
+              </span>
+              <span>{stilladsSectionTitle}</span>
+            </h2>
+            <span className="text-[10px] text-slate-400">Opdateres hvert 10. min</span>
+          </div>
             <div className="space-y-2">
-              {dashboard.scaffoldingNewApplications.previousDayPermits.slice(0, 10).map((p, i) => (
+              {(dashboard?.scaffoldingNewApplications?.previousDayPermits ?? []).slice(0, 10).map((p, i) => (
                 <div key={i} className="flex items-center justify-between gap-3 py-1.5 border-b border-cyan-100/80 last:border-0">
                   <span className="text-sm font-medium text-slate-800 truncate">{p.address}</span>
                   <span className="text-xs text-cyan-700 font-semibold shrink-0">{p.durationText}</span>
                 </div>
               ))}
-              {dashboard.scaffoldingNewApplications.previousDayPermits.length > 10 && (
+              {(dashboard?.scaffoldingNewApplications?.previousDayPermits?.length ?? 0) > 10 && (
                 <p className="text-[10px] text-slate-500 pt-1">
-                  + {dashboard.scaffoldingNewApplications.previousDayPermits.length - 10} flere
+                  + {(dashboard?.scaffoldingNewApplications?.previousDayPermits?.length ?? 0) - 10} flere
                 </p>
               )}
             </div>
