@@ -79,6 +79,7 @@ Gem filen og genstart dev-serveren (`npm run dev`).
 | Fejl | Løsning |
 |------|--------|
 | "META_AD_LIBRARY_ACCESS_TOKEN is not set" | Variablen mangler i `.env.local` – tilføj og genstart server. |
+| **190 / Session has expired / OAuthException** | **User-tokenet er udløbet.** Gå til [Graph API Explorer](https://developers.facebook.com/tools/explorer), vælg din app, klik **Generate Access Token**, tilføj permission **ads_read**, godkend, og kopiér den nye token. Opdater `META_AD_LIBRARY_ACCESS_TOKEN` i `.env.local` og genstart. (User tokens holder 1–2 timer eller op til ~60 dage; App token `APP_ID\|APP_SECRET` udløber ikke.) |
 | 190 / Invalid OAuth / Malformed | Token skal være `APP_ID\|APP_SECRET` på én linje. Brug App ID og App Secret fra Settings → Basic. |
 | 190 / Invalid application ID | Tjek at du bruger **App ID** fra Basic (ikke Page ID eller andet). |
 | **500 / Code 1 – "An unknown error has occurred"** | Generel Meta-fejl. Tjek: 1) Under **Brugssituationer** at du har tilføjet **Marketing API** (Create & manage ads). 2) Nogle gange kræver **Ad Library** særskilt godkendelse – søg under "Add products" efter "Ad Library" eller "Ads transparency". 3) Prøv igen senere (kan være midlertidig hos Meta). 4) I Development mode er adgang til ads_archive nogle gange begrænset. |

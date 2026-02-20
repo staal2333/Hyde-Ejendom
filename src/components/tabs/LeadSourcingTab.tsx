@@ -73,7 +73,11 @@ export function LeadSourcingTab() {
         }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Kunne ikke køre discovery");
+      if (!res.ok) {
+        addToast(data.error || "Kunne ikke køre discovery", "error");
+        if (data.hint) addToast(data.hint, "info");
+        return;
+      }
       setCompanies(data.companies || []);
       if (data.platformFallback) {
         addToast("Instagram-filter gav API-fejl hos Meta; viste annoncører fra alle platforme i stedet.", "info");

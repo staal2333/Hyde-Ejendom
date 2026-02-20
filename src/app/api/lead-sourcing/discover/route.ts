@@ -31,8 +31,13 @@ export async function POST(req: NextRequest) {
       platformFallback: result.platformFallback ?? false,
     });
   } catch (e) {
+    const message = e instanceof Error ? e.message : "Unknown error";
+    const isMetaCode1 = message.includes('"code":1') || message.includes("unknown error") && message.toLowerCase().includes("meta");
+    const hint = isMetaCode1
+      ? "Meta Ad Library returnerer ofte kode 1 når appen ikke har fuld adgang. På developers.facebook.com: tilføj «Ad Library API» / Marketing API, gennemfør evt. ID-verifikation (facebook.com/ID), og brug et User Access Token fra Graph API Explorer med ads_read (App-token virker ofte ikke til Ad Library)."
+      : undefined;
     return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Unknown error" },
+      { error: message, hint },
       { status: 500 }
     );
   }

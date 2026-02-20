@@ -32,11 +32,14 @@ export async function GET() {
     const message = e instanceof Error ? e.message : String(e);
     const isCode1 = message.includes('"code":1') || message.includes("code\":1");
     const isFetchFailed = message.includes("fetch failed") || message.includes("netværksfejl");
-    const hint = isCode1
-      ? CODE_1_HINT
-      : isFetchFailed
-        ? "Serveren kunne ikke nå Meta (graph.facebook.com). Tjek internet, firewall og at port 3004 kører."
-        : undefined;
+    const isTokenExpired = message.includes("190") || message.includes("Session has expired") || message.includes("OAuthException");
+    const hint = isTokenExpired
+      ? "Tokenet er udløbet. Gå til Graph API Explorer (developers.facebook.com/tools/explorer), vælg din app, klik «Generate Access Token», tilføj ads_read, og opdater META_AD_LIBRARY_ACCESS_TOKEN i .env.local med den nye token."
+      : isCode1
+        ? CODE_1_HINT
+        : isFetchFailed
+          ? "Serveren kunne ikke nå Meta (graph.facebook.com). Tjek internet, firewall og at port 3004 kører."
+          : undefined;
     return NextResponse.json(
       {
         ok: false,
