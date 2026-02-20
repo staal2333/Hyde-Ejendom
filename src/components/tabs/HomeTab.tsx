@@ -159,7 +159,7 @@ export function HomeTab({
                 <svg className="w-4 h-4 text-cyan-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18" />
                 </span>
-                Stilladser (dagen før)
+                {"Stilladser (dagen før)"}
               </h2>
               <span className="text-[10px] text-slate-400">Opdateres hvert 10. min</span>
             </div>
