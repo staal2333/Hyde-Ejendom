@@ -836,7 +836,7 @@ function DashboardContent() {
     addToast("Stillads-scanning stoppet", "info");
   };
 
-  const triggerResearch = async (propertyId?: string) => {
+  const triggerResearch = async (propertyId?: string, opts?: { staged?: boolean }) => {
     const id = propertyId || "all";
     const controller = new AbortController();
     researchAbortRef.current = controller;
@@ -851,10 +851,14 @@ function DashboardContent() {
       "info"
     );
 
+    const postBody = propertyId
+      ? (opts?.staged ? { stagedPropertyId: propertyId } : { propertyId })
+      : undefined;
+
     await consumeSSE(
       "/api/run-research",
       propertyId ? "POST" : "GET",
-      propertyId ? { propertyId } : undefined,
+      postBody,
       setResearchEvents, setResearchPct, () => {},
       (pe) => {
         if (pe.phase === "property_done" || pe.phase === "complete") {
@@ -1038,7 +1042,7 @@ function DashboardContent() {
       setQuickAddAddress("");
       await fetchData();
       if (andResearch && data.id) {
-        triggerResearch(data.id);
+        triggerResearch(data.id, { staged: data.staged === true });
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Fejl ved oprettelse");
