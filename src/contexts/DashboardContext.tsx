@@ -188,6 +188,8 @@ export interface DashboardContextValue {
   setOohInitialFrame: (v: OOHInitialFrame | undefined) => void;
   oohInitialClient: OOHInitialClient | undefined;
   setOohInitialClient: (v: OOHInitialClient | undefined) => void;
+  stagingResearch: { active: number; total: number; label: string } | null;
+  setStagingResearch: (v: { active: number; total: number; label: string } | null) => void;
 }
 
 const DashboardContext = createContext<DashboardContextValue | null>(null);
@@ -214,6 +216,8 @@ const DEFAULT_DASHBOARD_VALUE: DashboardContextValue = {
   setOohInitialFrame: () => {},
   oohInitialClient: undefined,
   setOohInitialClient: () => {},
+  stagingResearch: null,
+  setStagingResearch: () => {},
 };
 
 // ─── Provider ────────────────────────────────────────────────
@@ -249,6 +253,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
   });
   const [oohInitialFrame, setOohInitialFrame] = useState<OOHInitialFrame | undefined>();
   const [oohInitialClient, setOohInitialClient] = useState<OOHInitialClient | undefined>();
+  const [stagingResearch, setStagingResearch] = useState<{ active: number; total: number; label: string } | null>(null);
 
   const addToast = useCallback((message: string, type: Toast["type"] = "info", detail?: string) => {
     const id = `${Date.now()}-${Math.random()}`;
@@ -346,6 +351,8 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
     setOohInitialFrame,
     oohInitialClient,
     setOohInitialClient,
+    stagingResearch,
+    setStagingResearch,
   };
 
   return (

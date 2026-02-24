@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import { formatAddressLine, formatPropertyTitle } from "@/lib/format-address";
+import { useDashboard } from "@/contexts/DashboardContext";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -93,6 +94,7 @@ function timeAgo(iso: string): string {
 // ─── Component ──────────────────────────────────────────────
 
 export default function StagingQueue() {
+  const { fetchDashboard, setStagingResearch, setActiveTab: setGlobalTab } = useDashboard();
   const [properties, setProperties] = useState<StagedProperty[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<StagedStage | "all">("all");
@@ -146,6 +148,21 @@ export default function StagingQueue() {
 
   // Stable boolean: is any research in progress? (avoids effect re-runs on every SSE update)
   const hasActiveResearch = Object.keys(researchProgress).length > 0;
+
+  // Sync research progress to global context for cross-tab visibility
+  useEffect(() => {
+    const active = Object.keys(researchProgress).length;
+    if (active > 0) {
+      const first = Object.values(researchProgress)[0];
+      setStagingResearch({
+        active,
+        total: batchResearching ? properties.filter(p => p.stage === "new").length + active : active,
+        label: first?.message || "Research kører...",
+      });
+    } else {
+      setStagingResearch(null);
+    }
+  }, [hasActiveResearch, researchProgress, batchResearching, properties, setStagingResearch]);
 
   // Smart polling: 15s normally, 5s during research, pause when tab is hidden
   useEffect(() => {
@@ -245,6 +262,7 @@ export default function StagingQueue() {
 
       addToast("Research fuldført", "success");
       await fetchProperties();
+      fetchDashboard();
     } catch (e) {
       if ((e as Error).name !== "AbortError") {
         addToast("Research fejlede", "error", (e as Error).message);
@@ -257,7 +275,7 @@ export default function StagingQueue() {
       });
       delete abortRef.current[id];
     }
-  }, [addToast, fetchProperties]);
+  }, [addToast, fetchProperties, fetchDashboard]);
 
   // ── Research batch (all "new") ──
   const handleBatchResearch = useCallback(async () => {
@@ -269,7 +287,8 @@ export default function StagingQueue() {
     }
     setBatchResearching(false);
     addToast(`Batch research færdig: ${newProps.length} ejendomme`, "success");
-  }, [properties, handleResearch, addToast]);
+    fetchDashboard();
+  }, [properties, handleResearch, addToast, fetchDashboard]);
 
   // ── Generate draft (researched → approved, internal only; no HubSpot) ──
   const handleGenerateDraft = useCallback(async (ids?: string[]) => {
@@ -292,6 +311,7 @@ export default function StagingQueue() {
         setSelected(prev => new Set([...prev].filter(id => !researchedNoDraft.some(p => p.id === id))));
         addToast(`${data.generated} mail-udkast genereret (stadig internt)`, "success");
         await fetchProperties();
+        fetchDashboard();
       } else {
         addToast("Generering af mail-udkast fejlede", "error", data.error);
       }
@@ -300,7 +320,7 @@ export default function StagingQueue() {
     } finally {
       setGeneratingDraft(false);
     }
-  }, [selected, properties, addToast, fetchProperties]);
+  }, [selected, properties, addToast, fetchProperties, fetchDashboard]);
 
   // ── Push to HubSpot (approved/researched with draft only) ──
   const handleApprove = useCallback(async (ids?: string[]) => {
@@ -323,6 +343,7 @@ export default function StagingQueue() {
         setSelected(new Set());
         addToast(`${data.approved} ejendom${data.approved !== 1 ? "me" : ""} pushed til HubSpot`, "success");
         await fetchProperties();
+        fetchDashboard();
       } else {
         addToast("Push til HubSpot fejlede", "error", data.error);
       }
@@ -331,7 +352,7 @@ export default function StagingQueue() {
     } finally {
       setApproving(false);
     }
-  }, [selected, properties, addToast, fetchProperties]);
+  }, [selected, properties, addToast, fetchProperties, fetchDashboard]);
 
   // ── Approve & Send (one-click: approve → HubSpot → enqueue email) ──
   const handleApproveSend = useCallback(async (ids?: string[]) => {
@@ -360,6 +381,7 @@ export default function StagingQueue() {
           "success",
         );
         await fetchProperties();
+        fetchDashboard();
       } else {
         addToast("Godkend & Send fejlede", "error", data.error);
       }
@@ -368,7 +390,7 @@ export default function StagingQueue() {
     } finally {
       setApproveSending(false);
     }
-  }, [selected, properties, addToast, fetchProperties]);
+  }, [selected, properties, addToast, fetchProperties, fetchDashboard]);
 
   // ── Reject ──
   const handleReject = useCallback(async (ids?: string[]) => {
@@ -386,13 +408,14 @@ export default function StagingQueue() {
         setSelected(new Set());
         addToast(`${data.rejected} ejendom${data.rejected !== 1 ? "me" : ""} afvist`, "info");
         await fetchProperties();
+        fetchDashboard();
       }
     } catch (e) {
       addToast("Afvisning fejlede", "error", (e as Error).message);
     } finally {
       setRejecting(false);
     }
-  }, [selected, addToast, fetchProperties]);
+  }, [selected, addToast, fetchProperties, fetchDashboard]);
 
   // ── Delete ──
   const handleDelete = useCallback(async (id: string) => {
@@ -400,10 +423,11 @@ export default function StagingQueue() {
       await fetch(`/api/staged-properties?id=${id}`, { method: "DELETE" });
       addToast("Ejendom slettet", "info");
       await fetchProperties();
+      fetchDashboard();
     } catch (e) {
       addToast("Sletning fejlede", "error", (e as Error).message);
     }
-  }, [addToast, fetchProperties]);
+  }, [addToast, fetchProperties, fetchDashboard]);
 
   const activeCount = counts.new + counts.researching + counts.researched;
 
@@ -808,6 +832,15 @@ export default function StagingQueue() {
 
                   {/* Quick actions (visible on hover / always on small) */}
                   <div className="flex items-center gap-1 flex-shrink-0">
+                    <a
+                      href={mapsUrl(prop)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="p-1.5 rounded-lg text-slate-400/60 hover:text-emerald-500 hover:bg-emerald-500/10 transition-all opacity-0 group-hover:opacity-100"
+                      title="Vis på Google Maps"
+                    >
+                      <Ic d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" className="w-4 h-4" />
+                    </a>
                     {prop.stage === "new" && !rp && (
                       <button
                         onClick={() => handleResearch(prop.id)}
@@ -854,6 +887,37 @@ export default function StagingQueue() {
                 {/* ── Expanded Detail Panel ── */}
                 {isExpanded && (
                   <div className="px-4 pb-4 pt-2 border-t border-slate-100 animate-fade-in">
+                    {/* Google Maps embed */}
+                    <div className="mb-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <div className="flex items-center gap-2">
+                          <Ic d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" className="w-3.5 h-3.5 text-slate-400" />
+                          <h4 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Lokation</h4>
+                        </div>
+                        <a
+                          href={mapsUrl(prop)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="inline-flex items-center gap-1 text-[10px] font-medium text-emerald-600 hover:text-emerald-700 transition-colors"
+                        >
+                          Åbn i Google Maps
+                          <Ic d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" className="w-3 h-3" />
+                        </a>
+                      </div>
+                      <div className="rounded-lg overflow-hidden border border-slate-200 bg-slate-100">
+                        <iframe
+                          src={mapsEmbedUrl(prop)}
+                          width="100%"
+                          height="200"
+                          style={{ border: 0 }}
+                          allowFullScreen
+                          loading="lazy"
+                          referrerPolicy="no-referrer-when-downgrade"
+                          title={`Kort: ${prop.address}`}
+                        />
+                      </div>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                       {/* Left column: Research data */}
                       <div className="space-y-3">
@@ -1021,6 +1085,16 @@ export default function StagingQueue() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────
+
+function mapsUrl(prop: StagedProperty): string {
+  const parts = [prop.address, prop.postalCode, prop.city, "Danmark"].filter(Boolean);
+  return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(parts.join(", "))}`;
+}
+
+function mapsEmbedUrl(prop: StagedProperty): string {
+  const parts = [prop.address, prop.postalCode, prop.city, "Danmark"].filter(Boolean);
+  return `https://maps.google.com/maps?q=${encodeURIComponent(parts.join(", "))}&t=&z=17&ie=UTF8&iwloc=&output=embed`;
+}
 
 function isOOHCandidate(prop: StagedProperty): boolean {
   return (prop.outdoorScore ?? 0) >= 8 &&
