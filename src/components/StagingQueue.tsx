@@ -105,6 +105,7 @@ export default function StagingQueue() {
   const [toasts, setToasts] = useState<Toast[]>([]);
   const [researchProgress, setResearchProgress] = useState<Record<string, ResearchProgress>>({});
   const [batchResearching, setBatchResearching] = useState(false);
+  const [approveSending, setApproveSending] = useState(false);
   const abortRef = useRef<Record<string, AbortController>>({});
   const [counts, setCounts] = useState<Record<StagedStage, number>>({
     new: 0, researching: 0, researched: 0, approved: 0, rejected: 0, pushed: 0,
@@ -332,6 +333,43 @@ export default function StagingQueue() {
     }
   }, [selected, properties, addToast, fetchProperties]);
 
+  // ── Approve & Send (one-click: approve → HubSpot → enqueue email) ──
+  const handleApproveSend = useCallback(async (ids?: string[]) => {
+    const toSend = ids || Array.from(selected);
+    const propsToSend = properties.filter(p => toSend.includes(p.id));
+    const canSend = propsToSend.filter(p =>
+      (p.stage === "researched" || p.stage === "approved" || p.stage === "new") &&
+      p.emailDraftSubject && p.contactEmail
+    );
+    if (canSend.length === 0) {
+      addToast("Vælg ejendomme med email-udkast og kontakt-email", "info");
+      return;
+    }
+    setApproveSending(true);
+    try {
+      const res = await fetch("/api/staged-properties/approve-send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ids: canSend.map(p => p.id) }),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        setSelected(new Set());
+        addToast(
+          `${data.approved} pushed til HubSpot, ${data.emailsQueued} emails sat i kø`,
+          "success",
+        );
+        await fetchProperties();
+      } else {
+        addToast("Godkend & Send fejlede", "error", data.error);
+      }
+    } catch (e) {
+      addToast("Godkend & Send fejlede", "error", (e as Error).message);
+    } finally {
+      setApproveSending(false);
+    }
+  }, [selected, properties, addToast, fetchProperties]);
+
   // ── Reject ──
   const handleReject = useCallback(async (ids?: string[]) => {
     const toReject = ids || Array.from(selected);
@@ -462,6 +500,26 @@ export default function StagingQueue() {
                   Godkend & generer mail ({counts.researched})
                 </button>
               )}
+              {(() => {
+                const readyToSend = properties.filter(p =>
+                  (p.stage === "researched" || p.stage === "approved") && p.emailDraftSubject && p.contactEmail
+                ).length;
+                return readyToSend > 0 ? (
+                  <button
+                    onClick={() => {
+                      const readyIds = properties
+                        .filter(p => (p.stage === "researched" || p.stage === "approved") && p.emailDraftSubject && p.contactEmail)
+                        .map(p => p.id);
+                      handleApproveSend(readyIds);
+                    }}
+                    disabled={approveSending}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500 transition-colors disabled:opacity-50 shadow-sm"
+                  >
+                    <Ic d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" className="w-3.5 h-3.5" />
+                    {approveSending ? "Sender..." : `Godkend & Send (${readyToSend})`}
+                  </button>
+                ) : null;
+              })()}
             </div>
           </div>
         </div>
@@ -541,6 +599,19 @@ export default function StagingQueue() {
                   {approving ? "Pusher..." : `Push til HubSpot (${canPushHubSpot.length})`}
                 </button>
               )}
+              {(() => {
+                const canSend = selectedProps.filter(p => p.emailDraftSubject && p.contactEmail);
+                return canSend.length > 0 ? (
+                  <button
+                    onClick={() => handleApproveSend()}
+                    disabled={approveSending}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500 transition-colors disabled:opacity-50 shadow-sm"
+                  >
+                    <Ic d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" className="w-3.5 h-3.5" />
+                    {approveSending ? "Sender..." : `Godkend & Send (${canSend.length})`}
+                  </button>
+                ) : null;
+              })()}
               <button
                 onClick={() => handleReject()}
                 disabled={rejecting}
@@ -694,6 +765,12 @@ export default function StagingQueue() {
                       <span className={`inline-flex px-1.5 py-0.5 rounded-md text-[10px] font-medium ${src.color}`}>
                         {src.label}
                       </span>
+                      {isOOHCandidate(prop) && (
+                        <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
+                          <Ic d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5" className="w-3 h-3" />
+                          OOH
+                        </span>
+                      )}
                     </div>
                     <div className="flex items-center gap-2 mt-0.5 text-[11px] text-slate-500">
                       {(prop.name ? formatAddressLine(prop.address, prop.postalCode, prop.city) : null) && (
@@ -896,6 +973,16 @@ export default function StagingQueue() {
                               Push til HubSpot
                             </button>
                           )}
+                          {prop.emailDraftSubject && prop.contactEmail && prop.stage !== "pushed" && !rp && (
+                            <button
+                              onClick={() => handleApproveSend([prop.id])}
+                              disabled={approveSending}
+                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500 transition-colors disabled:opacity-50 shadow-sm"
+                            >
+                              <Ic d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" className="w-3.5 h-3.5" />
+                              {approveSending ? "Sender..." : "Godkend & Send"}
+                            </button>
+                          )}
                           {prop.stage !== "pushed" && prop.stage !== "rejected" && !rp && (
                             <button
                               onClick={() => handleReject([prop.id])}
@@ -934,6 +1021,13 @@ export default function StagingQueue() {
 }
 
 // ─── Helpers ──────────────────────────────────────────────
+
+function isOOHCandidate(prop: StagedProperty): boolean {
+  return (prop.outdoorScore ?? 0) >= 8 &&
+    ((prop.outdoorNotes?.toLowerCase().includes("stillads") ?? false) ||
+     (prop.outdoorNotes?.toLowerCase().includes("scaffold") ?? false) ||
+     (prop.dailyTraffic ?? 0) >= 15000);
+}
 
 function getCompleteness(prop: StagedProperty): number {
   let score = 0;

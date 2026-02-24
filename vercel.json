@@ -1,5 +1,6 @@
 {
   "crons": [
+    { "path": "/api/cron/auto-discover", "schedule": "0 6 * * *" },
     { "path": "/api/cron/ooh-followup", "schedule": "0 8 * * 1-5" },
     { "path": "/api/cron/mail-sync", "schedule": "0 8 * * *" },
     { "path": "/api/cron/scaffolding-stats", "schedule": "0 8 * * *" },

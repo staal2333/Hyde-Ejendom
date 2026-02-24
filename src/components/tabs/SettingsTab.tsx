@@ -3,6 +3,19 @@
 import { useState, useEffect, useCallback } from "react";
 import { useDashboard } from "@/contexts/DashboardContext";
 
+interface DiscoveryConfig {
+  id: string;
+  type: "scaffolding" | "street";
+  city: string;
+  street: string | null;
+  minScore: number;
+  minTraffic: number;
+  isActive: boolean;
+  lastRunAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+}
+
 const AUTONOMY_KEY = "ejendom_ai_autonomy";
 const RULES_KEY = "ejendom_ai_auto_rules";
 
@@ -42,10 +55,101 @@ export function SettingsTab() {
   const [autonomyLevel, setAutonomyLevel] = useState(0);
   const [rules, setRules] = useState<Record<RuleId, boolean>>(loadRules);
 
+  const [discoveryConfigs, setDiscoveryConfigs] = useState<DiscoveryConfig[]>([]);
+  const [discoveryLoading, setDiscoveryLoading] = useState(true);
+  const [addingConfig, setAddingConfig] = useState(false);
+  const [newConfigType, setNewConfigType] = useState<"scaffolding" | "street">("street");
+  const [newConfigCity, setNewConfigCity] = useState("København");
+  const [newConfigStreet, setNewConfigStreet] = useState("");
+  const [newConfigMinScore, setNewConfigMinScore] = useState(6);
+  const [newConfigMinTraffic, setNewConfigMinTraffic] = useState(10000);
+  const [savingConfig, setSavingConfig] = useState(false);
+
   useEffect(() => {
     setAutonomyLevel(loadAutonomy());
     setRules(loadRules());
   }, []);
+
+  const fetchDiscoveryConfigs = useCallback(async () => {
+    try {
+      const res = await fetch("/api/discovery-config");
+      const data = await res.json();
+      setDiscoveryConfigs(Array.isArray(data) ? data : []);
+    } catch {
+      setDiscoveryConfigs([]);
+    } finally {
+      setDiscoveryLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { fetchDiscoveryConfigs(); }, [fetchDiscoveryConfigs]);
+
+  const handleAddConfig = useCallback(async () => {
+    if (newConfigType === "street" && !newConfigStreet.trim()) {
+      addToast("Angiv en gade for street-scanning", "error");
+      return;
+    }
+    setSavingConfig(true);
+    try {
+      const res = await fetch("/api/discovery-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: newConfigType,
+          city: newConfigCity,
+          street: newConfigType === "street" ? newConfigStreet.trim() : null,
+          minScore: newConfigMinScore,
+          minTraffic: newConfigMinTraffic,
+          isActive: true,
+        }),
+      });
+      if (res.ok) {
+        addToast("Discovery config tilfojet", "success");
+        setAddingConfig(false);
+        setNewConfigStreet("");
+        await fetchDiscoveryConfigs();
+      } else {
+        const data = await res.json();
+        addToast(data.error || "Fejl ved oprettelse", "error");
+      }
+    } catch (e) {
+      addToast("Fejl ved oprettelse", "error");
+    } finally {
+      setSavingConfig(false);
+    }
+  }, [newConfigType, newConfigCity, newConfigStreet, newConfigMinScore, newConfigMinTraffic, addToast, fetchDiscoveryConfigs]);
+
+  const handleToggleConfig = useCallback(async (cfg: DiscoveryConfig) => {
+    try {
+      const res = await fetch("/api/discovery-config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...cfg, isActive: !cfg.isActive }),
+      });
+      if (res.ok) {
+        addToast(cfg.isActive ? "Config deaktiveret" : "Config aktiveret", "info");
+        await fetchDiscoveryConfigs();
+      }
+    } catch {
+      addToast("Fejl ved toggle", "error");
+    }
+  }, [addToast, fetchDiscoveryConfigs]);
+
+  const handleDeleteConfig = useCallback(async (id: string) => {
+    try {
+      const res = await fetch("/api/discovery-config", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id }),
+      });
+      if (res.ok) {
+        addToast("Config slettet", "info");
+        await fetchDiscoveryConfigs();
+      }
+    } catch {
+      addToast("Fejl ved sletning", "error");
+    }
+  }, [addToast, fetchDiscoveryConfigs]);
 
   const setAutonomy = useCallback((level: number) => {
     setAutonomyLevel(level);
@@ -101,6 +205,177 @@ export function SettingsTab() {
           ))}
         </div>
         <p className="text-[10px] text-slate-400 mt-3">Valgt niveau: {autonomyLevel}. Ændringen er gemt lokalt.</p>
+      </div>
+
+      {/* Auto-Discovery Config */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-6">
+        <div className="flex items-center gap-2 mb-4">
+          <div className="w-7 h-7 rounded-lg bg-cyan-50 flex items-center justify-center">
+            <svg className="w-4 h-4 text-cyan-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
+          </div>
+          <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Auto-Discovery</h3>
+        </div>
+        <p className="text-xs text-slate-500 mb-4">
+          Konfigurer gader og byer der automatisk scannes af cron-jobbet <code className="bg-slate-100 px-1 rounded text-[9px]">/api/cron/auto-discover</code> dagligt kl. 06:00.
+        </p>
+
+        {discoveryLoading ? (
+          <div className="text-center py-6">
+            <div className="animate-spin rounded-full h-6 w-6 border-2 border-slate-300/30 border-t-slate-600 mx-auto mb-2" />
+            <p className="text-xs text-slate-400">Henter konfigurationer...</p>
+          </div>
+        ) : (
+          <>
+            {discoveryConfigs.length === 0 && !addingConfig && (
+              <div className="rounded-xl border border-dashed border-slate-300 p-5 text-center mb-4">
+                <p className="text-xs text-slate-500 mb-2">Ingen discovery configs endnu. Tilfoj gader eller byer for automatisk scanning.</p>
+              </div>
+            )}
+
+            {discoveryConfigs.length > 0 && (
+              <div className="space-y-2 mb-4">
+                {discoveryConfigs.map(cfg => (
+                  <div
+                    key={cfg.id}
+                    className={`flex items-center justify-between p-3 rounded-xl border transition-colors ${cfg.isActive ? "border-cyan-200 bg-cyan-50/30" : "border-slate-200 bg-slate-50/50 opacity-60"}`}
+                  >
+                    <div className="flex items-center gap-3 flex-1 min-w-0">
+                      <span className={`inline-flex px-2 py-0.5 rounded-md text-[10px] font-bold uppercase ${cfg.type === "scaffolding" ? "bg-amber-100 text-amber-700" : "bg-blue-100 text-blue-700"}`}>
+                        {cfg.type === "scaffolding" ? "Stillads" : "Gade"}
+                      </span>
+                      <div className="min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">
+                          {cfg.type === "street" ? `${cfg.street}, ${cfg.city}` : cfg.city}
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          Min score: {cfg.minScore} · Min trafik: {cfg.minTraffic.toLocaleString("da-DK")}
+                          {cfg.lastRunAt && ` · Seneste: ${new Date(cfg.lastRunAt).toLocaleDateString("da-DK")}`}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-3">
+                      <button
+                        type="button"
+                        onClick={() => handleToggleConfig(cfg)}
+                        title={cfg.isActive ? "Deaktiver" : "Aktiver"}
+                        className={`w-10 h-5 rounded-full relative cursor-pointer transition-colors flex-shrink-0 ${cfg.isActive ? "bg-cyan-500" : "bg-slate-300"}`}
+                      >
+                        <div className={`absolute top-0.5 w-4 h-4 bg-white rounded-full shadow transition-transform ${cfg.isActive ? "left-5" : "left-0.5"}`} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteConfig(cfg.id)}
+                        className="p-1 rounded-lg text-slate-400 hover:text-red-500 hover:bg-red-50 transition-colors"
+                        title="Slet"
+                      >
+                        <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {addingConfig ? (
+              <div className="rounded-xl border border-cyan-200 bg-cyan-50/30 p-4 space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 uppercase">Type</label>
+                    <select
+                      value={newConfigType}
+                      onChange={e => setNewConfigType(e.target.value as "scaffolding" | "street")}
+                      className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800"
+                    >
+                      <option value="street">Gade-scanning</option>
+                      <option value="scaffolding">Stillads-scanning</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 uppercase">By</label>
+                    <select
+                      value={newConfigCity}
+                      onChange={e => setNewConfigCity(e.target.value)}
+                      className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800"
+                    >
+                      <option>København</option>
+                      <option>Aarhus</option>
+                      <option>Odense</option>
+                      <option>Aalborg</option>
+                      <option>Frederiksberg</option>
+                    </select>
+                  </div>
+                </div>
+                {newConfigType === "street" && (
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 uppercase">Gade</label>
+                    <input
+                      type="text"
+                      value={newConfigStreet}
+                      onChange={e => setNewConfigStreet(e.target.value)}
+                      placeholder="F.eks. Vesterbrogade"
+                      className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800 placeholder-slate-400"
+                    />
+                  </div>
+                )}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 uppercase">Min score</label>
+                    <input
+                      type="number"
+                      value={newConfigMinScore}
+                      onChange={e => setNewConfigMinScore(Number(e.target.value))}
+                      min={1} max={10} step={1}
+                      className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-semibold text-slate-600 uppercase">Min trafik/dag</label>
+                    <input
+                      type="number"
+                      value={newConfigMinTraffic}
+                      onChange={e => setNewConfigMinTraffic(Number(e.target.value))}
+                      min={0} step={1000}
+                      className="mt-1 w-full px-3 py-1.5 rounded-lg border border-slate-200 bg-white text-sm text-slate-800"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={handleAddConfig}
+                    disabled={savingConfig}
+                    className="flex-1 px-4 py-2 rounded-lg bg-cyan-600 text-white text-xs font-semibold hover:bg-cyan-500 transition-colors disabled:opacity-50"
+                  >
+                    {savingConfig ? "Gemmer..." : "Gem"}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setAddingConfig(false)}
+                    className="px-4 py-2 rounded-lg border border-slate-200 text-slate-600 text-xs font-medium hover:bg-slate-50 transition-colors"
+                  >
+                    Annuller
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setAddingConfig(true)}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl border-2 border-dashed border-cyan-300 text-cyan-700 text-xs font-semibold hover:bg-cyan-50 hover:border-cyan-400 transition-colors"
+              >
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 4.5v15m7.5-7.5h-15" /></svg>
+                Tilfoej gade eller by
+              </button>
+            )}
+
+            <div className="mt-4 p-3 bg-cyan-50 border border-cyan-200/60 rounded-xl">
+              <p className="text-[10px] text-cyan-700">
+                <strong>Cron-job:</strong> Auto-discovery koerer dagligt kl. 06:00 via <code className="bg-cyan-100 px-1 rounded">/api/cron/auto-discover</code>.
+                Nye ejendomme stages, researches og faar email-udkast automatisk. Du godkender og sender i Staging.
+              </p>
+            </div>
+          </>
+        )}
       </div>
 
       {/* Auto-Research Rules */}

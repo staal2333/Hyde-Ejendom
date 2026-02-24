@@ -1124,7 +1124,10 @@ function DashboardContent() {
                     <span className="tabular-nums text-[10px] opacity-70">({properties.length})</span>
                   )}
                   {tab.id === "staging" && (dashboard?.staging?.awaitingAction || 0) > 0 && (
-                    <span className="tabular-nums text-[10px] font-semibold text-amber-600">({dashboard?.staging?.awaitingAction})</span>
+                    <span className="relative inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold tabular-nums shadow-sm">
+                      {dashboard?.staging?.awaitingAction}
+                      <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                    </span>
                   )}
                   {showDot && <span className="tab-dot bg-indigo-500 animate-pulse" />}
                 </button>

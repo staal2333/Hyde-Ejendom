@@ -153,7 +153,7 @@ export async function POST(req: NextRequest) {
               });
             },
             isCancelled,
-            { skipEmailDraft: true }
+            { skipEmailDraft: false }
           );
 
           if (run.status === "completed") {
