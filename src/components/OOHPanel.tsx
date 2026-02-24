@@ -1003,29 +1003,70 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
   const handleDrop = async (e: DragEvent, type: "frame" | "creative") => { e.preventDefault(); setDragOver(null); const file = e.dataTransfer.files[0]; if (file?.type.startsWith("image/")) await uploadFile(file, type); };
   const handleDragOver = (e: DragEvent, zone: string) => { e.preventDefault(); setDragOver(zone); };
 
+  const compressImage = async (file: File, maxSizeMB = 4): Promise<File> => {
+    if (file.size <= maxSizeMB * 1024 * 1024) return file;
+    return new Promise((resolve) => {
+      const img = new Image();
+      img.onload = () => {
+        const maxDim = 4000;
+        let { width, height } = img;
+        if (width > maxDim || height > maxDim) {
+          const scale = maxDim / Math.max(width, height);
+          width = Math.round(width * scale);
+          height = Math.round(height * scale);
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+        canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+        canvas.toBlob(
+          (blob) => {
+            if (blob && blob.size < file.size) {
+              resolve(new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" }));
+            } else {
+              resolve(file);
+            }
+          },
+          "image/jpeg",
+          0.85
+        );
+      };
+      img.src = URL.createObjectURL(file);
+    });
+  };
+
   const uploadFile = async (file: File, type: "frame" | "creative") => {
     if (type === "creative") {
-      // Check for duplicate first
       const existingCreative = creatives.find(c => c.filename === file.name && c.fileSize === file.size);
       if (existingCreative) {
         setSelectedCreative(existingCreative); toast("Creative findes allerede – genbruger eksisterende", "info");
         return;
       }
-      // Open naming modal instead of uploading directly
       setPendingCreativeUpload({ file, context: tab === "creatives" ? "creatives-tab" : "builder" });
       setCreativeNameInput(file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "));
       return;
     }
     setUploading(true);
-    const formData = new FormData(); formData.append("file", file); formData.append("type", type);
     try {
-      const res = await fetch("/api/ooh/upload", { method: "POST", body: formData }); const data = await res.json();
+      const compressed = await compressImage(file);
+      const formData = new FormData(); formData.append("file", compressed); formData.append("type", type);
+      const res = await fetch("/api/ooh/upload", { method: "POST", body: formData });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({ error: `Server error ${res.status}` }));
+        throw new Error(err.error || `Upload fejlede (${res.status})`);
+      }
+      const data = await res.json();
+      if (!data.url) throw new Error("Ingen URL returneret fra upload");
       const fRes = await fetch("/api/ooh/frames", { method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ name: file.name.replace(/\.[^.]+$/, "").replace(/[-_]/g, " "), frameImageUrl: data.url, frameWidth: data.width || 800, frameHeight: data.height || 600,
           placement: { x: Math.round((data.width || 800) * 0.1), y: Math.round((data.height || 600) * 0.1), width: Math.round((data.width || 800) * 0.8), height: Math.round((data.height || 600) * 0.8), label: "Front" },
           placements: [{ x: Math.round((data.width || 800) * 0.1), y: Math.round((data.height || 600) * 0.1), width: Math.round((data.width || 800) * 0.8), height: Math.round((data.height || 600) * 0.8), label: "Front" }] }) });
+      if (!fRes.ok) {
+        const err = await fRes.json().catch(() => ({ error: `Frame-oprettelse fejlede (${fRes.status})` }));
+        throw new Error(err.error || "Frame-oprettelse fejlede");
+      }
       const frame = await fRes.json(); setFrames(prev => [frame, ...prev]); setSelectedFrame(frame); setEditingFrameId(frame.id); toast("Frame uploadet!", "success");
-    } catch (e) { toast("Upload fejlede", "error"); }
+    } catch (e) { toast(e instanceof Error ? e.message : "Upload fejlede", "error"); }
     finally { setUploading(false); }
   };
 

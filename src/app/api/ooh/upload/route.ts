@@ -14,7 +14,7 @@ export async function POST(req: NextRequest) {
   try {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
-    const type = formData.get("type") as string; // "frame" or "creative"
+    const type = formData.get("type") as string;
 
     if (!file) {
       return NextResponse.json({ error: "No file provided" }, { status: 400 });
@@ -30,7 +30,6 @@ export async function POST(req: NextRequest) {
     let publicUrl: string;
 
     if (HAS_SUPABASE) {
-      // ── Supabase Storage ──
       const storagePath = `${subdir}/${filename}`;
       const { error } = await supabase!.storage
         .from(OOH_BUCKET)
@@ -38,14 +37,16 @@ export async function POST(req: NextRequest) {
           contentType: file.type,
           upsert: true,
         });
-      if (error) throw error;
+      if (error) {
+        logger.error(`Supabase storage upload failed: ${error.message}`, { service: "upload" });
+        return NextResponse.json({ error: `Storage upload failed: ${error.message}` }, { status: 500 });
+      }
 
       const { data: urlData } = supabase!.storage
         .from(OOH_BUCKET)
         .getPublicUrl(storagePath);
       publicUrl = urlData.publicUrl;
     } else {
-      // ── Local filesystem fallback ──
       const { writeFile, mkdir } = await import("fs/promises");
       const path = await import("path");
       const dir = path.join(process.cwd(), "public", "ooh", subdir);
@@ -54,7 +55,6 @@ export async function POST(req: NextRequest) {
       publicUrl = `/ooh/${subdir}/${filename}`;
     }
 
-    // Get image dimensions
     let width: number | undefined;
     let height: number | undefined;
     try {
@@ -63,7 +63,7 @@ export async function POST(req: NextRequest) {
       width = meta.width;
       height = meta.height;
     } catch {
-      // sharp may not be available in all environments
+      // sharp may not be available – dimensions will be undefined
     }
 
     return NextResponse.json({
@@ -77,10 +77,8 @@ export async function POST(req: NextRequest) {
       height,
     });
   } catch (error) {
-    logger.error("Upload error", { service: "upload" });
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Upload failed" },
-      { status: 500 }
-    );
+    const msg = error instanceof Error ? error.message : "Upload failed";
+    logger.error(`Upload error: ${msg}`, { service: "upload" });
+    return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
