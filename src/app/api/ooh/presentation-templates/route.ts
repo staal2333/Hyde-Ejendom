@@ -10,6 +10,7 @@ import {
   deletePresentationTemplate,
 } from "@/lib/ooh/store";
 import type { PresentationTemplate } from "@/lib/ooh/types";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 
@@ -19,7 +20,7 @@ export async function GET() {
     return NextResponse.json(templates);
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[presentation-templates]", msg);
+    logger.error(msg, { service: "presentation-templates" });
     // Return 200 with empty array so OOH panel loads when Supabase/env is missing (e.g. Vercel)
     return NextResponse.json([]);
   }
@@ -43,7 +44,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(template, { status: 201 });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[presentation-templates]", msg);
+    logger.error(msg, { service: "presentation-templates" });
     return NextResponse.json({ error: msg });
   }
 }
@@ -71,7 +72,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json(updated);
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[presentation-templates]", msg);
+    logger.error(msg, { service: "presentation-templates" });
     return NextResponse.json({ error: msg });
   }
 }
@@ -87,7 +88,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true, id });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[presentation-templates]", msg);
+    logger.error(msg, { service: "presentation-templates" });
     return NextResponse.json({ error: msg });
   }
 }

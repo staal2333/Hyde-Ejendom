@@ -11,6 +11,7 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { getDueFollowUps, getContact, getCampaign } from "@/lib/ooh/store";
+import { logger } from "@/lib/logger";
 
 export async function POST() {
   try {
@@ -94,7 +95,7 @@ Svar i valid JSON: {"subject": "...", "body": "..."}`,
           });
         }
       } catch (err) {
-        console.error(`[agent/follow-up] Error drafting for send ${send.id}:`, err);
+        logger.error(`Error drafting for send ${send.id}`, { service: "ooh-agent-follow-up" });
       }
     }
 
@@ -105,7 +106,7 @@ Svar i valid JSON: {"subject": "...", "body": "..."}`,
       drafts,
     });
   } catch (error) {
-    console.error("[agent/follow-up] Error:", error);
+    logger.error("Agent follow-up error", { service: "ooh-agent-follow-up" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

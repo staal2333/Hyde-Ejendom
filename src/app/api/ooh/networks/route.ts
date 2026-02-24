@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getNetworks, getNetwork, upsertNetwork, deleteNetwork, seedDemoData } from "@/lib/ooh/store";
 import type { Network } from "@/lib/ooh/types";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 
@@ -16,7 +17,7 @@ export async function GET() {
     return NextResponse.json({ networks: await getNetworks() });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[networks]", msg);
+    logger.error(msg, { service: "networks" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -40,7 +41,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(network, { status: 201 });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[networks]", msg);
+    logger.error(msg, { service: "networks" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -62,7 +63,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json(updated);
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[networks]", msg);
+    logger.error(msg, { service: "networks" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -80,7 +81,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true, id });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[networks]", msg);
+    logger.error(msg, { service: "networks" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

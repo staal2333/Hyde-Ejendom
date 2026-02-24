@@ -12,6 +12,7 @@ import { scoreForOutdoorPotential } from "./scoring";
 import { estimateStreetTraffic, formatTraffic } from "./traffic";
 import { insertStagedProperty, stagedExistsByAddress } from "../staging/store";
 import { ejendomExistsByAddress } from "../hubspot";
+import { logger } from "../logger";
 import type { DiscoveryResult, ScoredCandidate } from "@/types";
 
 // In-memory store for recent discovery runs
@@ -264,7 +265,7 @@ export async function discoverStreet(
             progress: 80 + Math.round(((i + 1) / qualified.length) * 18),
           });
         } catch (e) {
-          console.warn(`[Discovery] Failed to stage ${candidate.address}:`, e);
+          logger.warn(`[Discovery] Failed to stage ${candidate.address}: ${e instanceof Error ? e.message : e}`);
           result.skipped++;
           emit({
             phase: "staging_error",
@@ -502,7 +503,7 @@ export async function discoverArea(
             progress: 80 + Math.round(((i + 1) / qualified.length) * 18),
           });
         } catch (e) {
-          console.warn(`[Discovery] Failed to stage ${candidate.address}:`, e);
+          logger.warn(`[Discovery] Failed to stage ${candidate.address}: ${e instanceof Error ? e.message : e}`);
           result.skipped++;
           emit({
             phase: "staging_error",

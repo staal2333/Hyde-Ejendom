@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getFrames, getFrame, upsertFrame, deleteFrame, seedDemoData } from "@/lib/ooh/store";
 import type { Frame } from "@/lib/ooh/types";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 
@@ -22,7 +23,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ frames: framesList, total: framesList.length });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[frames]", msg);
+    logger.error(msg, { service: "frames" });
     return NextResponse.json({ frames: [], total: 0, error: msg });
   }
 }
@@ -55,7 +56,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(frame, { status: 201 });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[frames]", msg);
+    logger.error(msg, { service: "frames" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -87,7 +88,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json(updated);
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[frames]", msg);
+    logger.error(msg, { service: "frames" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -111,7 +112,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true, id });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[frames]", msg);
+    logger.error(msg, { service: "frames" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

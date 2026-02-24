@@ -6,6 +6,7 @@
 // ============================================================
 
 import * as cheerio from "cheerio";
+import { logger } from "../logger";
 import { estimateStreetTraffic, formatTraffic } from "./traffic";
 import type {
   ScaffoldingPermit,
@@ -400,7 +401,7 @@ async function fetchKbhWfsPermits(
         `${WFS_BASE}?${params.toString()}`
       );
       if (!res || !res.ok) {
-        console.warn(
+        logger.warn(
           `[WFS] ${layer.typeName} returned ${res?.status}`
         );
         continue;
@@ -424,7 +425,7 @@ async function fetchKbhWfsPermits(
         }
       }
     } catch (e) {
-      console.warn(`[WFS] Layer ${layer.typeName} failed:`, e);
+      logger.warn(`[WFS] Layer ${layer.typeName} failed: ${e instanceof Error ? e.message : e}`);
       emit({
         phase: "wfs_layer_error",
         message: `⚠️ Kunne ikke hente ${layer.label}: ${e instanceof Error ? e.message : "Ukendt fejl"}`,
@@ -607,7 +608,7 @@ async function fetchAarhusWfsPermits(
       }
     }
   } catch (e) {
-    console.warn("[WFS] Aarhus WebKort failed:", e);
+    logger.warn(`[WFS] Aarhus WebKort failed: ${e instanceof Error ? e.message : e}`);
   }
 
   // ── Try Aarhus Open Data portal (CKAN) ──
@@ -662,7 +663,7 @@ async function fetchAarhusWfsPermits(
       }
     }
   } catch (e) {
-    console.warn("[Aarhus] Open data search failed:", e);
+    logger.warn(`[Aarhus] Open data search failed: ${e instanceof Error ? e.message : e}`);
   }
 
   // ── Aarhus: also try the national opendata.dk for excavation permits ──
@@ -883,7 +884,7 @@ async function searchForScaffolding(
         }
       });
     } catch (e) {
-      console.warn(`[Scaffolding] Search failed for "${query}":`, e);
+      logger.warn(`[Scaffolding] Search failed for "${query}": ${e instanceof Error ? e.message : e}`);
     }
   }
 

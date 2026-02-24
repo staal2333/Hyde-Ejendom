@@ -8,6 +8,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { enqueueEmail, enqueueBatch, getQueueStats, getQueueItems, cancelQueuedEmail } from "@/lib/email-queue";
 import { checkGmailHealth } from "@/lib/email-sender";
+import { apiError } from "@/lib/api-error";
+import { sendEmailSchema, parseBody } from "@/lib/validation";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/send-email
@@ -23,17 +26,14 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({
         success: true,
         ...result,
-        stats: getQueueStats(),
+        stats: await getQueueStats(),
       });
     }
 
     // Single mode
     const { propertyId, attachmentUrl, attachmentFile, subject, body: emailBody, to } = body;
     if (!propertyId) {
-      return NextResponse.json(
-        { error: "propertyId is required" },
-        { status: 400 }
-      );
+      return apiError(400, "propertyId is required");
     }
 
     // PDF attachment: from drag-and-drop (base64) or from URL
@@ -67,15 +67,11 @@ export async function POST(req: NextRequest) {
       ...(typeof emailBody === "string" ? { body: emailBody } : {}),
       ...(typeof to === "string" && to.trim() ? { to: to.trim() } : {}),
     });
-    return NextResponse.json({
-      ...result,
-      stats: getQueueStats(),
-    });
+    const stats = await getQueueStats();
+    return NextResponse.json({ ...result, stats });
   } catch (error) {
-    return NextResponse.json(
-      { error: String(error) },
-      { status: 500 }
-    );
+    logger.error("send-email POST error", { service: "api-send-email", error: { message: String(error) } });
+    return apiError(500, String(error));
   }
 }
 
@@ -84,20 +80,13 @@ export async function POST(req: NextRequest) {
  */
 export async function GET() {
   try {
-    const stats = getQueueStats();
-    const items = getQueueItems();
+    const stats = await getQueueStats();
+    const items = await getQueueItems();
     const gmailHealth = await checkGmailHealth();
-
-    return NextResponse.json({
-      stats,
-      items: items.slice(0, 100),
-      gmail: gmailHealth,
-    });
+    return NextResponse.json({ stats, items: items.slice(0, 100), gmail: gmailHealth });
   } catch (error) {
-    return NextResponse.json(
-      { error: String(error) },
-      { status: 500 }
-    );
+    logger.error("send-email GET error", { service: "api-send-email", error: { message: String(error) } });
+    return apiError(500, String(error));
   }
 }
 
@@ -110,19 +99,11 @@ export async function DELETE(req: NextRequest) {
     const body = await req.json();
     const { queueId } = body;
 
-    if (!queueId) {
-      return NextResponse.json(
-        { error: "queueId is required" },
-        { status: 400 }
-      );
-    }
+    if (!queueId) return apiError(400, "queueId is required");
 
     const cancelled = cancelQueuedEmail(queueId);
     return NextResponse.json({ success: cancelled });
   } catch (error) {
-    return NextResponse.json(
-      { error: String(error) },
-      { status: 500 }
-    );
+    return apiError(500, String(error));
   }
 }

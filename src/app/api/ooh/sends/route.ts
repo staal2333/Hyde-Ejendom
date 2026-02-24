@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getSends, getSend, upsertSend } from "@/lib/ooh/store";
 import { syncToHubSpot } from "@/lib/ooh/hubspot-sync";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ sends });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[sends]", msg);
+    logger.error(msg, { service: "ooh-sends" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -67,7 +68,7 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json(updated);
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[sends]", msg);
+    logger.error(msg, { service: "ooh-sends" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

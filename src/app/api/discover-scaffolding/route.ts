@@ -7,6 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { discoverScaffolding } from "@/lib/discovery/scaffolding";
 import type { ScaffoldingProgress } from "@/lib/discovery/scaffolding";
 import { computeScaffoldStatsFromPermits, setScaffoldStats } from "@/lib/scaffold-stats";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/discover-scaffolding
@@ -41,7 +42,7 @@ export async function POST(request: NextRequest) {
           );
 
           const stats = computeScaffoldStatsFromPermits(result.permits);
-          setScaffoldStats(stats);
+          await setScaffoldStats(stats);
 
           send({
             phase: "complete",
@@ -71,7 +72,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[API] Scaffolding discovery failed:", error);
+    logger.error("Scaffolding discovery failed", { service: "discover-scaffolding" });
     return NextResponse.json(
       { success: false, error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

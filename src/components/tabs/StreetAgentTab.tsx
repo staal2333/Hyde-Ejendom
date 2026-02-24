@@ -1,8 +1,20 @@
 "use client";
 
+import { useState, useEffect, useRef } from "react";
 import type { RefObject } from "react";
 import type { TabId } from "@/contexts/DashboardContext";
 import EmptyState from "../ui/EmptyState";
+
+const AGENT_RUNS_KEY = "ejendom_agent_runs";
+const MAX_RUNS = 10;
+
+interface AgentRunEntry {
+  street: string;
+  city: string;
+  date: string;
+  created?: number;
+  researchCompleted?: number;
+}
 
 export interface ProgressEvent {
   phase: string;
@@ -64,9 +76,42 @@ export function StreetAgentTab({
   LogPanel,
   ResultStat,
 }: StreetAgentTabProps) {
+  const [lastRuns, setLastRuns] = useState<AgentRunEntry[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = localStorage.getItem(AGENT_RUNS_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw) as AgentRunEntry[];
+      return Array.isArray(arr) ? arr.slice(0, MAX_RUNS) : [];
+    } catch {
+      return [];
+    }
+  });
+  const prevRunningRef = useRef(agentRunning);
+
+  useEffect(() => {
+    if (prevRunningRef.current && !agentRunning && agentStats && agentStreet.trim()) {
+      const entry: AgentRunEntry = {
+        street: agentStreet.trim(),
+        city: agentCity,
+        date: new Date().toISOString(),
+        created: agentStats.created,
+        researchCompleted: agentStats.researchCompleted,
+      };
+      setLastRuns((prev) => {
+        const next = [entry, ...prev.filter((r) => !(r.street === entry.street && r.city === entry.city && r.date === entry.date))].slice(0, MAX_RUNS);
+        try {
+          localStorage.setItem(AGENT_RUNS_KEY, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
+    }
+    prevRunningRef.current = agentRunning;
+  }, [agentRunning, agentStats, agentStreet, agentCity]);
+
   return (
     <div className="animate-fade-in">
-      <p className="text-xs text-slate-500 mb-4">Scan &rarr; Research &rarr; Email-udkast. Kør for én vej.</p>
+      <p className="text-xs text-slate-500 mb-4">Scan → Research → Email-udkast. Kør for én vej.</p>
 
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-5">
         <div className="grid grid-cols-1 md:grid-cols-12 gap-5 items-end">
@@ -194,7 +239,27 @@ export function StreetAgentTab({
         </div>
       )}
 
-      {!agentRunning && agentEvents.length === 0 && (
+      {lastRuns.length > 0 && !agentRunning && (
+        <div className="mb-6 bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-4">
+          <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-3">Seneste kørsler</h3>
+          <ul className="space-y-2">
+            {lastRuns.slice(0, 5).map((run, i) => (
+              <li key={`${run.street}-${run.date}-${i}`} className="flex items-center justify-between gap-3 py-2 px-3 rounded-xl bg-slate-50/80">
+                <div>
+                  <span className="font-semibold text-sm text-slate-800">{run.street}</span>
+                  <span className="text-xs text-slate-500 ml-2">{run.city}</span>
+                </div>
+                <div className="flex items-center gap-2 text-[10px] text-slate-500">
+                  {run.created != null && <span>{run.created} oprettet</span>}
+                  <span>{new Date(run.date).toLocaleDateString("da-DK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {!agentRunning && agentEvents.length === 0 && !agentStats && (
         <EmptyState
           icon="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z"
           title="Klar til at koere"

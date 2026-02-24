@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useDashboard } from "@/contexts/DashboardContext";
 
 export interface LeadCompany {
@@ -18,7 +18,7 @@ export interface LeadCompany {
 }
 
 export function LeadSourcingTab() {
-  const { addToast } = useDashboard();
+  const { addToast, setActiveTab } = useDashboard();
   const [input, setInput] = useState("");
   const [loading, setLoading] = useState(false);
   const [discoverQuery, setDiscoverQuery] = useState("");
@@ -28,6 +28,46 @@ export function LeadSourcingTab() {
   const [companies, setCompanies] = useState<LeadCompany[]>([]);
   const [addingId, setAddingId] = useState<string | null>(null);
   const [contactEmail, setContactEmail] = useState<Record<string, string>>({});
+  const [metaOk, setMetaOk] = useState<boolean | null>(null);
+  const [blocklistInfo, setBlocklistInfo] = useState<{ domains: number; companyIds: number; count: number } | null>(null);
+
+  const DISCOVERIES_KEY = "ejendom_lead_discoveries";
+  const MAX_DISCOVERIES = 10;
+  const [discoveryHistory, setDiscoveryHistory] = useState<{ query: string; country: string; platform: string; count: number; date: string }[]>(() => {
+    if (typeof window === "undefined") return [];
+    try {
+      const raw = localStorage.getItem(DISCOVERIES_KEY);
+      if (!raw) return [];
+      const arr = JSON.parse(raw);
+      return Array.isArray(arr) ? arr.slice(0, MAX_DISCOVERIES) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const [metaRes, blockRes] = await Promise.all([
+          fetch("/api/lead-sourcing/test-meta"),
+          fetch("/api/lead-sourcing/blocklist"),
+        ]);
+        if (cancelled) return;
+        const metaData = await metaRes.json();
+        setMetaOk(metaData.ok === true);
+        const blockData = await blockRes.json();
+        if (blockRes.ok && !blockData.error) {
+          const domains = Array.isArray(blockData.domains) ? blockData.domains.length : 0;
+          const companyIds = Array.isArray(blockData.companyIds) ? blockData.companyIds.length : 0;
+          setBlocklistInfo({ domains, companyIds, count: blockData.count ?? domains + companyIds });
+        }
+      } catch {
+        if (!cancelled) setMetaOk(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   const formatNumber = (n: number | null) =>
     n == null ? "—" : new Intl.NumberFormat("da-DK", { maximumFractionDigits: 0 }).format(n);
@@ -89,6 +129,21 @@ export function LeadSourcingTab() {
           : "Ingen nye leads fundet. Prøv andre søgeord.",
         data.companies?.length ? "success" : "info"
       );
+      // Historik: gem discovery
+      const entry = {
+        query: discoverQuery.trim() || "(ingen søgeord)",
+        country: discoverCountry.trim() || "DK",
+        platform: discoverPlatform,
+        count: data.companies?.length ?? 0,
+        date: new Date().toISOString(),
+      };
+      setDiscoveryHistory((prev) => {
+        const next = [entry, ...prev.filter((r) => !(r.query === entry.query && r.country === entry.country && r.date === entry.date))].slice(0, MAX_DISCOVERIES);
+        try {
+          localStorage.setItem(DISCOVERIES_KEY, JSON.stringify(next));
+        } catch {}
+        return next;
+      });
     } catch (e) {
       addToast(e instanceof Error ? e.message : "Fejl ved discovery", "error");
     } finally {
@@ -150,17 +205,40 @@ export function LeadSourcingTab() {
 
   return (
     <div className="animate-fade-in space-y-6">
-      <p className="text-xs text-slate-500 mb-4">Meta Ad Library eller CVR → Proff + dedupe mod kontakter.</p>
+      <p className="text-xs text-slate-500 mb-2">Meta Ad Library eller CVR → Proff + dedupe mod kontakter.</p>
 
-      {/* AI Lead Discovery – Meta Ad Library */}
+      {metaOk === false && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <p className="text-sm font-semibold text-amber-900">Meta Ad Library er ikke konfigureret</p>
+            <p className="text-xs text-amber-800 mt-0.5">Sæt <code className="bg-amber-100/80 px-1 rounded">META_AD_LIBRARY_ACCESS_TOKEN</code> i Indstillinger for at bruge AI Lead Discovery.</p>
+          </div>
+          <button
+            type="button"
+            onClick={() => setActiveTab("settings")}
+            className="px-4 py-2 bg-amber-600 text-white text-sm font-semibold rounded-xl hover:bg-amber-700"
+          >
+            Gå til Indstillinger
+          </button>
+        </div>
+      )}
+
+      {blocklistInfo != null && blocklistInfo.count > 0 && (
+        <p className="text-[11px] text-slate-500">
+          Dedupe: <span className="font-medium text-slate-600">{blocklistInfo.domains} domæner</span>, <span className="font-medium text-slate-600">{blocklistInfo.companyIds} virksomheder</span> fra HubSpot Contacts bruges til at markere &quot;Allerede i CRM&quot;.
+        </p>
+      )}
+
+      {/* 1. AI Lead Discovery – Meta Ad Library */}
       <div className="bg-gradient-to-br from-indigo-50 to-violet-50 rounded-2xl border border-indigo-200/60 shadow-[var(--card-shadow)] p-5">
         <h2 className="text-sm font-bold text-slate-800 mb-2 flex items-center gap-2">
+          <span className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center text-white text-xs font-bold">1</span>
           <span className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center">
             <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
             </svg>
           </span>
-          AI Lead Discovery
+          AI Lead Discovery (Meta Ad Library)
         </h2>
         <p className="text-xs text-slate-600 mb-4">Find virksomheder der annoncerer på Meta (Facebook/Instagram). Systemet henter annoncører, matcher til CVR, beriger med Proff og ekskluderer jeres eksisterende kontakter.</p>
         <div className="flex flex-wrap items-end gap-3">
@@ -213,11 +291,46 @@ export function LeadSourcingTab() {
             Kør lead discovery
           </button>
         </div>
-        <p className="text-[10px] text-slate-500 mt-3">Kræver <code className="bg-white/80 px-1 rounded">META_AD_LIBRARY_ACCESS_TOKEN</code> i .env (Meta App med Ad Library API).</p>
+        <p className="text-[10px] text-slate-500 mt-3">Kræver <code className="bg-white/80 px-1 rounded">META_AD_LIBRARY_ACCESS_TOKEN</code> i Indstillinger (Meta App med Ad Library API).</p>
       </div>
 
+      {/* Seneste discoveries (historik) */}
+      {discoveryHistory.length > 0 && (
+        <div className="rounded-2xl border border-slate-200/60 bg-slate-50/50 p-4">
+          <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-3">Seneste discoveries</h3>
+          <ul className="space-y-2">
+            {discoveryHistory.slice(0, 5).map((run, i) => (
+              <li key={`${run.date}-${i}`} className="flex items-center justify-between gap-3 py-2 px-3 rounded-xl bg-white border border-slate-100">
+                <div className="min-w-0">
+                  <span className="text-sm font-semibold text-slate-800 truncate block">{run.query}</span>
+                  <span className="text-[10px] text-slate-500">{run.country} · {run.platform === "instagram" ? "Instagram" : "Meta"} · {run.count} leads</span>
+                </div>
+                <div className="flex items-center gap-2 shrink-0">
+                  <span className="text-[10px] text-slate-400">{new Date(run.date).toLocaleDateString("da-DK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDiscoverQuery(run.query === "(ingen søgeord)" ? "" : run.query);
+                      setDiscoverCountry(run.country);
+                      setDiscoverPlatform(run.platform as "all" | "instagram");
+                    }}
+                    className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-700"
+                  >
+                    Brug igen
+                  </button>
+                </div>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {/* 2. CVR-opslag (Proff + dedupe) */}
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5">
-        <h2 className="text-sm font-bold text-slate-800 mb-3">Eller: Indtast CVR-numre</h2>
+        <h2 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+          <span className="w-6 h-6 rounded-lg bg-slate-600 text-white text-xs font-bold flex items-center justify-center">2</span>
+          CVR-opslag (Proff + dedupe)
+        </h2>
         <p className="text-xs text-slate-500 mb-3">Én per linje eller kommasepareret. Du kan også uploade en CSV (første kolonne eller linje med 8-cifrede CVR bruges).</p>
         <div className="flex flex-col sm:flex-row gap-3">
           <textarea

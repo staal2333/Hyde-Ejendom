@@ -683,7 +683,7 @@ export async function processProperty(
           const contactId = await upsertContact(contact, property.id);
           contactIds.push(contactId);
         } catch (e) {
-          console.warn(`Failed to upsert contact ${contact.fullName}:`, e);
+          logger.warn(`Failed to upsert contact ${contact.fullName}: ${e instanceof Error ? e.message : e}`);
         }
       }
     }

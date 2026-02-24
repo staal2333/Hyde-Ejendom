@@ -5,6 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { sendReply } from "@/lib/email-sender";
+import { logger } from "@/lib/logger";
 
 export async function POST(request: NextRequest) {
   try {
@@ -40,7 +41,7 @@ export async function POST(request: NextRequest) {
       threadId: result.threadId,
     });
   } catch (error) {
-    console.error("[API] Send reply failed:", error);
+    logger.error("Send reply failed", { service: "mail-send-reply" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Kunne ikke sende svar" },
       { status: 500 }

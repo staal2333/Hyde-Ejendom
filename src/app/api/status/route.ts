@@ -19,13 +19,17 @@ export async function GET() {
   const startTime = Date.now();
 
   // ── Ping key services (parallel) ──
-  const [dawa, ois, cvr, wfsKbh, hubspot] = await Promise.all([
+  const [dawa, ois, cvr, wfsKbh, wfsAarhus, hubspot] = await Promise.all([
     pingService("dawa", "https://dawa.aws.dk/kommuner?q=K%C3%B8benhavn&per_side=1"),
     pingService("ois", "https://ois.dk"),
     pingService("cvr", "https://cvrapi.dk/api?search=test&country=dk"),
     pingService(
       "wfs",
       "https://wfs-kbhkort.kk.dk/k101/ows?service=WFS&version=1.0.0&request=GetCapabilities"
+    ),
+    pingService(
+      "wfs_aarhus",
+      "https://webkort.aarhuskommune.dk/wfs/wfs?service=WFS&version=1.0.0&request=GetCapabilities"
     ),
     pingService(
       "hubspot",
@@ -44,6 +48,7 @@ export async function GET() {
     ois: { ...ois, service: "OIS.dk (Ejerskab)" },
     cvr: { ...cvr, service: "CVR API (Virksomheder)" },
     wfs_kbh: { ...wfsKbh, service: "KBH WFS (Stilladser)" },
+    wfs_aarhus: { ...wfsAarhus, service: "Aarhus WFS (Stilladser)" },
     hubspot: { ...hubspot, service: "HubSpot CRM" },
   };
 
@@ -52,11 +57,14 @@ export async function GET() {
   const metrics = getAllMetrics();
   const cache = getCacheStats();
 
-  // ── Environment check ──
+  // ── Environment check (for setup-guide / manglende integrationer) ──
   const env = {
     hubspot_token: !!process.env.HUBSPOT_ACCESS_TOKEN,
     openai_key: !!process.env.OPENAI_API_KEY,
     cron_secret: !!process.env.CRON_SECRET,
+    gmail_configured: !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_REFRESH_TOKEN),
+    meta_ad_library: !!process.env.META_AD_LIBRARY_ACCESS_TOKEN,
+    supabase_configured: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
     node_env: process.env.NODE_ENV || "development",
   };
 

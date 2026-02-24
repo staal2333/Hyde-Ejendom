@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSend, upsertSend } from "@/lib/ooh/store";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 
@@ -19,24 +20,19 @@ export async function GET(req: NextRequest) {
       const send = await getSend(sendId);
       if (send) {
         const now = new Date().toISOString();
-        // If status is "sent", upgrade to "opened" (they clicked a link)
         if (send.status === "sent") {
           send.status = "opened";
           send.openedAt = now;
         }
-        // Always record the click timestamp (latest click)
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        (send as any).clickedAt = now;
+        send.clickedAt = now;
         await upsertSend(send);
-        console.log(`[track/click] Send ${sendId} click recorded`);
+        logger.info(`Send ${sendId} click recorded`, { service: "ooh-tracking" });
       }
     } catch (err) {
-      console.error("[track/click] Error updating send:", err);
+      logger.error(`Error updating send: ${err}`, { service: "ooh-tracking" });
     }
   }
 
-  // Redirect to the target URL, or fallback to homepage
   const redirectTo = targetUrl || "/";
-
   return NextResponse.redirect(redirectTo, { status: 302 });
 }

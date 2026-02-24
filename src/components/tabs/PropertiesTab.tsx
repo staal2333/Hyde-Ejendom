@@ -186,7 +186,9 @@ export function PropertiesTab({
               Stop research
             </button>
           ) : (
-            <button onClick={() => triggerResearch()} disabled={!!researchRunning}
+            <button onClick={() => {
+              if (window.confirm("Kør research for alle ejendomme der afventer research? Dette kan tage lang tid.")) triggerResearch();
+            }} disabled={!!researchRunning}
               className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-bold rounded-xl shadow-lg shadow-indigo-500/20 disabled:opacity-40 disabled:cursor-not-allowed transition-all">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M5.25 5.653c0-.856.917-1.398 1.667-.986l11.54 6.347a1.125 1.125 0 010 1.972l-11.54 6.347a1.125 1.125 0 01-1.667-.986V5.653z" /></svg>
               Koer al research

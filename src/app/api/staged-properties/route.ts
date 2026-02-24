@@ -15,6 +15,9 @@ import {
   getStagedCounts,
 } from "@/lib/staging/store";
 import type { StagedStage, StagedSource } from "@/lib/staging/store";
+import { apiError } from "@/lib/api-error";
+import { stagedPropertyCreateSchema, parseBody } from "@/lib/validation";
+import { logger } from "@/lib/logger";
 
 export async function GET(req: NextRequest) {
   try {
@@ -39,45 +42,26 @@ export async function GET(req: NextRequest) {
 
     return NextResponse.json({ properties });
   } catch (error) {
-    console.error("[staged-properties] GET error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
-    );
+    logger.error("staged-properties GET error", { service: "api-staged", error: { message: String(error) } });
+    return apiError(500, error instanceof Error ? error.message : "Unknown error");
   }
 }
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    const { name, address, postalCode, city, outdoorScore, outdoorNotes, dailyTraffic, trafficSource, source } = body;
-
-    if (!name || !address) {
-      return NextResponse.json(
-        { error: "name and address are required" },
-        { status: 400 }
-      );
-    }
+    const raw = await req.json();
+    const parsed = parseBody(stagedPropertyCreateSchema, raw);
+    if (!parsed.ok) return apiError(400, parsed.error, parsed.detail);
 
     const property = await insertStagedProperty({
-      name,
-      address,
-      postalCode,
-      city,
-      outdoorScore,
-      outdoorNotes,
-      dailyTraffic,
-      trafficSource,
-      source: source || "manual",
+      ...parsed.data,
+      source: parsed.data.source || "manual",
     });
 
     return NextResponse.json({ property }, { status: 201 });
   } catch (error) {
-    console.error("[staged-properties] POST error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
-    );
+    logger.error("staged-properties POST error", { service: "api-staged", error: { message: String(error) } });
+    return apiError(500, error instanceof Error ? error.message : "Unknown error");
   }
 }
 
@@ -86,24 +70,16 @@ export async function PUT(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
-    if (!id) {
-      return NextResponse.json({ error: "id query param is required" }, { status: 400 });
-    }
+    if (!id) return apiError(400, "id query param is required");
 
     const body = await req.json();
     const updated = await updateStagedProperty(id, body);
-
-    if (!updated) {
-      return NextResponse.json({ error: "Not found" }, { status: 404 });
-    }
+    if (!updated) return apiError(404, "Not found");
 
     return NextResponse.json({ property: updated });
   } catch (error) {
-    console.error("[staged-properties] PUT error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
-    );
+    logger.error("staged-properties PUT error", { service: "api-staged", error: { message: String(error) } });
+    return apiError(500, error instanceof Error ? error.message : "Unknown error");
   }
 }
 
@@ -112,21 +88,14 @@ export async function DELETE(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const id = searchParams.get("id");
 
-    if (!id) {
-      return NextResponse.json({ error: "id query param is required" }, { status: 400 });
-    }
+    if (!id) return apiError(400, "id query param is required");
 
     const ok = await deleteStagedProperty(id);
-    if (!ok) {
-      return NextResponse.json({ error: "Delete failed" }, { status: 500 });
-    }
+    if (!ok) return apiError(500, "Delete failed");
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("[staged-properties] DELETE error:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Unknown error" },
-      { status: 500 }
-    );
+    logger.error("staged-properties DELETE error", { service: "api-staged", error: { message: String(error) } });
+    return apiError(500, error instanceof Error ? error.message : "Unknown error");
   }
 }

@@ -109,6 +109,7 @@ export interface OOHPanelProps {
   initialFrame?: { address: string; city: string; traffic: number; imageUrl?: string; type: "scaffolding" | "facade" | "gable" | "other" };
   initialClient?: { company: string; contactName: string; email: string };
   onToast?: (msg: string, type: "success" | "error" | "info") => void;
+  setActiveTab?: (tab: string) => void;
 }
 
 // ── Helpers ──────────────────────────────────────────────
@@ -630,7 +631,7 @@ function FrameEditModal({ frame, onSave, onClose }: { frame: Frame; onSave: (upd
 
 // ── Main Component ───────────────────────────────────────
 
-export default function OOHPanel({ initialFrame, initialClient, onToast }: OOHPanelProps) {
+export default function OOHPanel({ initialFrame, initialClient, onToast, setActiveTab }: OOHPanelProps) {
   const [tab, setTab] = useState<OOHTab>("oplaeg");
   const [frames, setFrames] = useState<Frame[]>([]);
   const [creatives, setCreatives] = useState<Creative[]>([]);
@@ -1202,6 +1203,21 @@ export default function OOHPanel({ initialFrame, initialClient, onToast }: OOHPa
     <div className="animate-fade-in">
       {/* Tabs */}
       <TabBar tabs={TABS} active={tab} onChange={setTab} />
+
+      {/* Outreach-integration: Send via Email Kø */}
+      {setActiveTab && (
+        <div className="mb-4 rounded-xl border border-emerald-200/60 bg-emerald-50/50 px-4 py-2.5 flex items-center justify-between gap-3">
+          <p className="text-xs text-emerald-800">Vil du sende ejendoms-mails eller opfølgning? Brug Email Kø.</p>
+          <button
+            type="button"
+            onClick={() => setActiveTab("outreach")}
+            className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-700 transition-colors"
+          >
+            Send via Email Kø
+            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" /></svg>
+          </button>
+        </div>
+      )}
 
       {/* ═══ BUILDER ═══ */}
       {tab === "builder" && (
@@ -2383,10 +2399,10 @@ export default function OOHPanel({ initialFrame, initialClient, onToast }: OOHPa
       {/* ═══ OUTREACH ═══ */}
       {tab === "outreach" && (
         <OOHOutreach
-          frames={frames as any}
-          creatives={creatives as any}
-          networks={networks as any}
-          presTemplates={presTemplates as any}
+          frames={frames}
+          creatives={creatives}
+          networks={networks}
+          presTemplates={presTemplates}
           onToast={toast}
         />
       )}

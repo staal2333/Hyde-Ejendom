@@ -5,6 +5,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getThreadWithMessages } from "@/lib/email-sender";
 import { getPropertyIdForThread } from "@/lib/mail-threads";
+import { logger } from "@/lib/logger";
 
 export async function GET(
   _request: NextRequest,
@@ -22,7 +23,7 @@ export async function GET(
     const propertyId = getPropertyIdForThread(threadId) ?? null;
     return NextResponse.json({ thread, propertyId });
   } catch (error) {
-    console.error("[API] Thread get failed:", error);
+    logger.error("Thread get failed", { service: "mail-threads" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Kunne ikke hente tråd" },
       { status: 500 }

@@ -19,6 +19,7 @@ import type {
 } from "./types";
 
 import { supabase, HAS_SUPABASE } from "../supabase";
+import { logger } from "../logger";
 
 /* ================================================================
    SUPABASE POSTGRES IMPLEMENTATION
@@ -731,7 +732,7 @@ function loadFromDisk(): StoreData | null {
       return JSON.parse(raw);
     }
   } catch (e) {
-    console.warn("[ooh-store] Could not load store from disk:", e);
+    logger.warn(`[ooh-store] Could not load store from disk: ${e instanceof Error ? e.message : e}`);
   }
   return null;
 }
@@ -752,7 +753,7 @@ function saveToDisk() {
     };
     writeFileSync(STORE_FILE, JSON.stringify(data, null, 2), "utf-8");
   } catch (e) {
-    console.warn("[ooh-store] Could not save store to disk:", e);
+    logger.warn(`[ooh-store] Could not save store to disk: ${e instanceof Error ? e.message : e}`);
   }
 }
 
@@ -822,7 +823,7 @@ if (!g.__ooh_loaded) {
     if (diskData.oohSends)
       for (const [k, v] of Object.entries(diskData.oohSends))
         oohSends.set(k, v);
-    console.log(
+    logger.info(
       `[ooh-store] Local fallback: ${frames.size} frames, ${creatives.size} creatives`
     );
   }

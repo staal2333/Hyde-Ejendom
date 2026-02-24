@@ -11,6 +11,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getSend, upsertSend, getContact, getCampaign } from "@/lib/ooh/store";
 import { sendEmail } from "@/lib/email-sender";
 import { syncToHubSpot } from "@/lib/ooh/hubspot-sync";
+import { logger } from "@/lib/logger";
 
 const FOLLOW_UP_DAYS = 5;
 
@@ -110,7 +111,7 @@ Hyde Media`;
       );
     }
   } catch (error) {
-    console.error("[follow-up] Error:", error);
+    logger.error("Follow-up error", { service: "ooh-follow-up" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }
@@ -125,7 +126,7 @@ export async function GET() {
     const due = await getDueFollowUps();
     return NextResponse.json({ followUps: due, count: due.length });
   } catch (error) {
-    console.error("[follow-up] Error:", error);
+    logger.error("Follow-up list error", { service: "ooh-follow-up" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

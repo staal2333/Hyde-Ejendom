@@ -7,7 +7,7 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
-import { config } from "@/lib/config";
+import { verifyCronSecret } from "@/lib/cron-auth";
 import { fetchAllEjendomme, updateEjendom } from "@/lib/hubspot";
 import { DEFAULT_AUTO_RULES } from "@/lib/state-machine";
 import type { Property } from "@/types";
@@ -16,12 +16,8 @@ export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min max
 
 export async function GET(req: NextRequest) {
-  // ── Auth check ──
-  const secret = req.nextUrl.searchParams.get("secret");
-  const cronSecret = config.cronSecret();
-  if (cronSecret && secret !== cronSecret) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const authErr = verifyCronSecret(req);
+  if (authErr) return authErr;
 
   try {
     // ── Fetch all properties ──

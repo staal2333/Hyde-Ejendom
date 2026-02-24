@@ -57,6 +57,11 @@ export function PropertyCard({
               <div className="flex items-center gap-3 mt-0.5 text-[11px] text-slate-500">
                 <span className="truncate">{formatAddressLine(p.address, p.postalCode, p.city)}</span>
                 {p.ownerCompanyName && <span className="hidden md:inline text-slate-400">· {p.ownerCompanyName}</span>}
+                {p.lastModifiedDate && (
+                  <span className="hidden sm:inline text-slate-400" title="Sidst opdateret i HubSpot">
+                    · {new Date(p.lastModifiedDate).toLocaleDateString("da-DK", { day: "numeric", month: "short", year: "numeric" })}
+                  </span>
+                )}
               </div>
             </div>
             <div className="flex items-center gap-2 flex-shrink-0">

@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabase, HAS_SUPABASE, OOH_BUCKET } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
       const pdfDoc = await PDFDocument.load(buffer);
       pageCount = pdfDoc.getPageCount();
     } catch (e) {
-      console.error("[upload-template-pdf] Could not read PDF:", e);
+      logger.error("Could not read PDF", { service: "upload-template-pdf" });
     }
 
     return NextResponse.json({
@@ -78,7 +79,7 @@ export async function POST(req: NextRequest) {
       pageCount,
     });
   } catch (error) {
-    console.error("[upload-template-pdf] Error:", error);
+    logger.error("Upload error", { service: "upload-template-pdf" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Upload failed" },
       { status: 500 }

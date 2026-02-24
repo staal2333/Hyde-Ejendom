@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getSend, upsertSend } from "@/lib/ooh/store";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 
@@ -26,10 +27,10 @@ export async function GET(req: NextRequest) {
         send.status = "opened";
         send.openedAt = new Date().toISOString();
         await upsertSend(send);
-        console.log(`[track/open] Send ${sendId} marked as opened`);
+        logger.info(`Send ${sendId} marked as opened`, { service: "ooh-track-open" });
       }
     } catch (err) {
-      console.error("[track/open] Error updating send:", err);
+      logger.error("Error updating send", { service: "ooh-track-open" });
     }
   }
 

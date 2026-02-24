@@ -5,6 +5,7 @@
 
 import { google } from "googleapis";
 import { config } from "../config";
+import { logger } from "../logger";
 import type { MockupPlacement } from "./types";
 
 // Lazy singleton
@@ -140,8 +141,8 @@ export async function applyMockupPlacements(
         placement.slideIndex
       );
     } catch (e) {
-      console.warn(
-        `[Slides] Failed to place mockup at slide ${placement.slideIndex}: ${e}`
+      logger.warn(
+        `[Slides] Failed to place mockup at slide ${placement.slideIndex}: ${e instanceof Error ? e.message : e}`
       );
     }
   }

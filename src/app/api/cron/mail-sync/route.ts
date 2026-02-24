@@ -6,22 +6,18 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { loadThreadPropertiesFromDb } from "@/lib/mail-threads";
-import { config } from "@/lib/config";
+import { verifyCronSecret } from "@/lib/cron-auth";
+import { logger } from "@/lib/logger";
 
 export async function GET(request: NextRequest) {
-  const cronSecret = config.cronSecret();
-  if (cronSecret) {
-    const authHeader = request.headers.get("authorization");
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  const authErr = verifyCronSecret(request);
+  if (authErr) return authErr;
 
   try {
     await loadThreadPropertiesFromDb();
     return NextResponse.json({ ok: true, message: "Mail thread→property sync loaded from Supabase" });
   } catch (error) {
-    console.error("[cron/mail-sync] Error:", error);
+    logger.error(`cron/mail-sync error: ${error instanceof Error ? error.message : error}`, { service: "cron-mail-sync" });
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "Sync failed" },
       { status: 500 }

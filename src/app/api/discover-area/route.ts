@@ -8,6 +8,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { discoverArea } from "@/lib/discovery";
 import type { DiscoveryProgress } from "@/lib/discovery";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/discover-area
@@ -112,7 +113,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[API] Discover-area failed:", error);
+    logger.error("Discover-area failed", { service: "discover-area" });
     return NextResponse.json(
       {
         success: false,

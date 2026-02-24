@@ -4,6 +4,7 @@
 
 import OpenAI from "openai";
 import { config } from "../config";
+import { logger } from "../logger";
 import type { BuildingCandidate, ScoredCandidate } from "@/types";
 
 const BATCH_SIZE = 15;
@@ -37,7 +38,7 @@ export async function scoreForOutdoorPotential(
 
   const totalBatches = Math.ceil(candidates.length / BATCH_SIZE);
 
-  console.log(
+  logger.info(
     `[Scoring] Scoring ${candidates.length} candidates in ${totalBatches} batches...`
   );
 
@@ -48,7 +49,7 @@ export async function scoreForOutdoorPotential(
     const batch = candidates.slice(i, i + BATCH_SIZE);
     const batchNum = Math.floor(i / BATCH_SIZE);
 
-    console.log(`[Scoring] Batch ${batchNum + 1}/${totalBatches} (${batch.length} buildings)`);
+    logger.info(`[Scoring] Batch ${batchNum + 1}/${totalBatches} (${batch.length} buildings)`);
 
     const scored = await scoreBatch(batch, streetName, city);
     allScored.push(...scored);
@@ -156,7 +157,7 @@ Vær realistisk og konkret i din begrundelse. Brug trafikdata aktivt.`,
 
   const content = response.choices[0]?.message?.content;
   if (!content) {
-    console.warn("[Scoring] LLM returned empty response");
+    logger.warn("[Scoring] LLM returned empty response");
     return batch.map((b) => ({ ...b, outdoorScore: 5, scoreReason: "Ingen vurdering" }));
   }
 
@@ -176,7 +177,7 @@ Vær realistisk og konkret i din begrundelse. Brug trafikdata aktivt.`,
       };
     });
   } catch (e) {
-    console.warn("[Scoring] Failed to parse LLM response:", e);
+    logger.warn(`[Scoring] Failed to parse LLM response: ${e instanceof Error ? e.message : e}`);
     return batch.map((b) => ({ ...b, outdoorScore: 5, scoreReason: "Parse-fejl" }));
   }
 }

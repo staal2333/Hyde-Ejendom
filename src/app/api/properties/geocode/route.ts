@@ -4,6 +4,7 @@
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 
 const DAWA_BASE = "https://api.dataforsyningen.dk";
 
@@ -44,7 +45,7 @@ export async function GET(request: NextRequest) {
       betegnelse: hit.betegnelse || null,
     });
   } catch (e) {
-    console.error("[API] Geocode error:", e);
+    logger.error("Geocode error", { service: "properties-geocode" });
     return NextResponse.json(
       { error: "Kunne ikke geokode adressen" },
       { status: 500 }

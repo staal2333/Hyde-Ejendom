@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { supabase, HAS_SUPABASE, OOH_BUCKET } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 
@@ -76,7 +77,7 @@ export async function POST(req: NextRequest) {
       height,
     });
   } catch (error) {
-    console.error("[upload] Error:", error);
+    logger.error("Upload error", { service: "upload" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Upload failed" },
       { status: 500 }

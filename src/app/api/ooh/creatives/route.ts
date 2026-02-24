@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCreatives, upsertCreative, deleteCreative } from "@/lib/ooh/store";
 import type { Creative } from "@/lib/ooh/types";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 
@@ -17,7 +18,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json(result);
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[creatives]", msg);
+    logger.error(msg, { service: "creatives" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
         : typeof error === "object" && error !== null && "message" in error
           ? String((error as { message: string }).message)
           : JSON.stringify(error);
-    console.error("[creatives] POST error:", msg);
+    logger.error("POST error: " + msg, { service: "creatives" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }
@@ -82,7 +83,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true, id });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[creatives]", msg);
+    logger.error(msg, { service: "creatives" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

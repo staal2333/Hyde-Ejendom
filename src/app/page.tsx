@@ -40,6 +40,7 @@ import { SettingsTab } from "../components/tabs/SettingsTab";
 import { LeadSourcingTab } from "../components/tabs/LeadSourcingTab";
 import { ProgressBar, LogPanel, ResultStat, PipelineStat, PropertyCard } from "@/components/dashboard";
 import FullCircleWizard from "../components/FullCircleWizard";
+import { CommandPalette } from "../components/CommandPalette";
 
 // ─── Types ──────────────────────────────────────────────────
 
@@ -142,6 +143,7 @@ interface PropertyItem {
     email: string | null;
     role: string | null;
   } | null;
+  lastModifiedDate?: string | null;
 }
 
 interface ProgressEvent {
@@ -526,6 +528,19 @@ function DashboardContent() {
   const scaffoldAbortRef = useRef<AbortController | null>(null);
   const researchAbortRef = useRef<AbortController | null>(null);
   const agentAbortRef = useRef<AbortController | null>(null);
+
+  // Command palette (Cmd+K / Ctrl+K)
+  const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setCommandPaletteOpen((open) => !open);
+      }
+    };
+    window.addEventListener("keydown", onKeyDown);
+    return () => window.removeEventListener("keydown", onKeyDown);
+  }, []);
 
   // Properties view state
   const [expandedProperty, setExpandedProperty] = useState<string | null>(null);
@@ -1044,6 +1059,11 @@ function DashboardContent() {
     { propertyFilter, statusFilter, cityFilter, scoreFilter, sortBy, sortAsc, researchRunning }
   );
 
+  const pendingResearchProperties = useMemo(() => {
+    const list = properties ?? [];
+    return list.filter((p) => p.outreachStatus === "NY_KRAEVER_RESEARCH" || p.outreachStatus === "RESEARCH_IGANGSAT");
+  }, [properties]);
+
   // Single return path only (no early return) to avoid React #310
   return (
     <div className="min-h-screen w-full flex flex-col relative" style={{ background: "var(--background)" }}>
@@ -1077,7 +1097,7 @@ function DashboardContent() {
           </div>
 
           <nav className="top-bar-nav">
-            {TABS.map((tab) => {
+            {TABS.map((tab, tabIndex) => {
               const isActive = activeTab === tab.id;
               const showDot =
                 (tab.id === "discover" && discoveryRunning) ||
@@ -1090,6 +1110,7 @@ function DashboardContent() {
                   type="button"
                   onClick={() => setActiveTab(tab.id)}
                   className={`top-bar-tab ${isActive ? "active" : ""}`}
+                  title={tab.label}
                 >
                   <svg className="w-4 h-4 shrink-0 opacity-80" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d={tab.icon} />
@@ -1393,6 +1414,7 @@ function DashboardContent() {
               stopResearch={stopResearch}
               currentResearchProperty={currentResearchProperty}
               researchSummary={researchSummary}
+              pendingResearchProperties={pendingResearchProperties}
               ProgressBar={ProgressBar}
               LogPanel={LogPanel}
             />
@@ -1441,6 +1463,7 @@ function DashboardContent() {
               initialFrame={oohInitialFrame}
               initialClient={oohInitialClient}
               onToast={addToast}
+              setActiveTab={(tab) => setActiveTab(tab as TabId)}
             />
           )}
 
@@ -1505,6 +1528,15 @@ function DashboardContent() {
           </div>
         ))}
       </div>
+
+      <CommandPalette
+        open={commandPaletteOpen}
+        onClose={() => setCommandPaletteOpen(false)}
+        tabs={TABS.map((t) => ({ id: t.id, label: t.label }))}
+        setActiveTab={(id) => setActiveTab(id as TabId)}
+        properties={properties.map((p) => ({ id: p.id, name: p.name, address: [p.address, p.postalCode, p.city].filter(Boolean).join(", ") }))}
+        onSelectProperty={(id) => setExpandedProperty(id)}
+      />
       </div>
     </div>
   );

@@ -12,6 +12,7 @@ import { compositeMultiplePlacements } from "@/lib/ooh/image-processor";
 import { loadImageBuffer } from "@/lib/ooh/load-image";
 import type { PlacementConfig } from "@/lib/ooh/types";
 import sharp from "sharp";
+import { logger } from "@/lib/logger";
 
 let seeded = false;
 function ensureSeeded() {
@@ -87,7 +88,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[download-mockup] Error:", error);
+    logger.error("Download mockup error", { service: "download-mockup" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error generating mockup" },
       { status: 500 }

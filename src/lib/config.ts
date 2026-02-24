@@ -39,7 +39,13 @@ export const config = {
   },
 
   // Internal cron secret (protect the /api/run-research endpoint)
-  cronSecret: () => optionalEnv("CRON_SECRET", ""),
+  cronSecret: () => {
+    const val = optionalEnv("CRON_SECRET", "");
+    if (!val && process.env.NODE_ENV === "production") {
+      throw new Error("CRON_SECRET must be set in production");
+    }
+    return val;
+  },
 
   // Tone of voice for email generation
   toneOfVoice: optionalEnv(
@@ -62,12 +68,19 @@ Korte sætninger, konkret værdi, ingen buzzwords.`
   },
 
   // Email rate limiting
-  emailRateLimitPerHour: parseInt(optionalEnv("EMAIL_RATE_LIMIT_PER_HOUR", "200"), 10),
+  emailRateLimitPerHour: (() => {
+    const val = parseInt(optionalEnv("EMAIL_RATE_LIMIT_PER_HOUR", "200"), 10);
+    if (Number.isNaN(val) || val <= 0) return 200;
+    return val;
+  })(),
 
   // Scaffold cron settings
   scaffoldCron: {
     cities: optionalEnv("CRON_SCAFFOLD_CITIES", "København,Aarhus").split(",").map(s => s.trim()),
-    minScore: parseInt(optionalEnv("CRON_SCAFFOLD_MIN_SCORE", "7"), 10),
+    minScore: (() => {
+      const v = parseInt(optionalEnv("CRON_SCAFFOLD_MIN_SCORE", "7"), 10);
+      return Number.isNaN(v) ? 7 : v;
+    })(),
     autoResearch: optionalEnv("CRON_SCAFFOLD_AUTO_RESEARCH", "true") === "true",
   },
 

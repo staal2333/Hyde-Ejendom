@@ -10,6 +10,7 @@ import OpenAI from "openai";
 import { config } from "@/lib/config";
 import { fetchEjendomById, saveEmailDraft } from "@/lib/hubspot";
 import { supabase, HAS_SUPABASE } from "@/lib/supabase";
+import { logger } from "@/lib/logger";
 
 const openai = new OpenAI({ apiKey: config.openai.apiKey() });
 
@@ -84,7 +85,7 @@ export async function POST(req: NextRequest) {
         results.push({ propertyId, success: true });
       } catch (e) {
         const msg = e instanceof Error ? e.message : "Ukendt fejl";
-        console.warn(`[prepare-follow-ups] ${propertyId}:`, msg);
+        logger.warn(`${propertyId}: ` + msg, { service: "mail-prepare-follow-ups" });
         results.push({ propertyId, success: false, error: msg });
       }
     }
@@ -99,7 +100,7 @@ export async function POST(req: NextRequest) {
       results,
     });
   } catch (error) {
-    console.error("[API] prepare-follow-ups failed:", error);
+    logger.error("Prepare follow-ups failed", { service: "mail-prepare-follow-ups" });
     return NextResponse.json(
       { ok: false, error: error instanceof Error ? error.message : "Fejl", prepared: 0, failed: 0 },
       { status: 500 }

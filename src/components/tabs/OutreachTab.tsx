@@ -236,13 +236,21 @@ export function OutreachTab({
     <div className="animate-fade-in">
       <div className="mb-6 flex items-center justify-between">
         <p className="text-xs text-slate-500">Godkend og send emails.</p>
-        <button onClick={fetchOutreachData} disabled={outreachLoading}
+        <div className="flex items-center gap-2">
+          {!outreachData && (
+            <button onClick={fetchOutreachData} disabled={outreachLoading}
+              className="inline-flex items-center gap-2 px-3 py-1.5 text-xs font-medium text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg disabled:opacity-50">
+              {outreachLoading ? "Henter…" : "Hent data"}
+            </button>
+          )}
+          <button onClick={fetchOutreachData} disabled={outreachLoading}
               className="inline-flex items-center gap-2 px-4 py-2 bg-white border border-slate-200 rounded-xl text-sm font-medium text-slate-700 hover:bg-slate-50 disabled:opacity-50">
               <svg className={`w-4 h-4 ${outreachLoading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" />
               </svg>
               Opdater
             </button>
+        </div>
       </div>
 
       {outreachData && (
@@ -260,7 +268,7 @@ export function OutreachTab({
             </span>
             {outreachData.gmail.working && outreachData.stats && (
               <span className="ml-auto text-xs font-medium text-green-600 bg-green-100 px-2.5 py-1 rounded-full">
-                {outreachData.stats.sentThisHour}/{outreachData.stats.rateLimitPerHour ?? 0} sendt denne time
+                Rate: {outreachData.stats.sentThisHour}/{outreachData.stats.rateLimitPerHour ?? 0} sendt denne time · {(outreachData.stats.rateLimitPerHour ?? 0) - outreachData.stats.sentThisHour} tilbage
               </span>
             )}
           </div>
@@ -274,6 +282,42 @@ export function OutreachTab({
           <ResultStat label="Sendt i dag" value={outreachData.stats.sent} icon="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" color="green" />
           <ResultStat label="Fejlet" value={outreachData.stats.failed} icon="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0z" color={outreachData.stats.failed > 0 ? "red" : undefined} />
           <ResultStat label="Sender nu" value={outreachData.stats.sending} icon="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" color={outreachData.stats.sending > 0 ? "brand" : undefined} />
+        </div>
+      )}
+
+      {outreachData && outreachData.items && outreachData.items.length > 0 && (
+        <div className="mb-6 bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] overflow-hidden">
+          <h3 className="px-4 py-3 text-xs font-bold text-slate-700 uppercase tracking-wide border-b border-slate-100">Mail-kø (queued / sending / sent / failed)</h3>
+          <div className="overflow-x-auto max-h-48 overflow-y-auto">
+            <table className="w-full text-xs">
+              <thead className="bg-slate-50 sticky top-0">
+                <tr>
+                  <th className="text-left py-2 px-3 font-semibold text-slate-600">Status</th>
+                  <th className="text-left py-2 px-3 font-semibold text-slate-600">Til</th>
+                  <th className="text-left py-2 px-3 font-semibold text-slate-600">Emne</th>
+                  <th className="text-left py-2 px-3 font-semibold text-slate-600">Tid</th>
+                </tr>
+              </thead>
+              <tbody>
+                {outreachData.items.slice(0, 50).map((item) => (
+                  <tr key={item.id} className="border-t border-slate-100 hover:bg-slate-50/50">
+                    <td className="py-2 px-3">
+                      <span className={`px-1.5 py-0.5 rounded text-[10px] font-semibold ${
+                        item.status === "sent" ? "bg-green-100 text-green-700" :
+                        item.status === "sending" ? "bg-blue-100 text-blue-700" :
+                        item.status === "failed" ? "bg-red-100 text-red-700" :
+                        "bg-slate-100 text-slate-600"
+                      }`}>{item.status}</span>
+                    </td>
+                    <td className="py-2 px-3 text-slate-600 truncate max-w-[120px]">{item.to}</td>
+                    <td className="py-2 px-3 text-slate-700 truncate max-w-[180px]">{item.subject}</td>
+                    <td className="py-2 px-3 text-slate-400">{item.sentAt ? new Date(item.sentAt).toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" }) : item.queuedAt ? new Date(item.queuedAt).toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" }) : "—"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {outreachData.items.length > 50 && <p className="px-3 py-2 text-[10px] text-slate-400 border-t border-slate-100">Viser 50 af {outreachData.items.length}</p>}
         </div>
       )}
 
@@ -623,11 +667,8 @@ export function OutreachTab({
       )}
 
       {!outreachData && (
-        <div className="text-center py-12">
-          <button onClick={fetchOutreachData}
-            className="inline-flex items-center gap-2 px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white text-sm font-semibold rounded-xl transition-colors">
-            Hent outreach-data
-          </button>
+        <div className="text-center py-8 text-slate-500">
+          <p className="text-sm">Klik &quot;Hent data&quot; i toppen for at indlæse kø og statistik.</p>
         </div>
       )}
     </div>

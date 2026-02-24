@@ -9,6 +9,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import { discoverStreet, getRecentDiscoveries } from "@/lib/discovery";
 import type { DiscoveryProgress } from "@/lib/discovery";
+import { logger } from "@/lib/logger";
 
 /**
  * POST /api/discover
@@ -97,7 +98,7 @@ export async function POST(request: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[API] Discovery failed:", error);
+    logger.error("Discovery failed", { service: "discover" });
     return NextResponse.json(
       {
         success: false,

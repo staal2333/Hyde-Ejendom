@@ -2,6 +2,7 @@
 
 import type { RefObject } from "react";
 import EmptyState from "../ui/EmptyState";
+import type { PropertyItem } from "@/contexts/DashboardContext";
 
 export interface ProgressEvent {
   phase: string;
@@ -20,6 +21,7 @@ export interface ResearchTabProps {
   stopResearch: () => void;
   currentResearchProperty: { name?: string; address?: string; postalCode?: string; city?: string } | null | undefined;
   researchSummary: { oisOwner?: string | null; totalSearches: number; contactsFound: number; emailsFound: number };
+  pendingResearchProperties?: PropertyItem[];
   ProgressBar: React.ComponentType<{ pct: number; running: boolean; phase: string }>;
   LogPanel: React.ComponentType<{
     logRef: RefObject<HTMLDivElement | null>;
@@ -38,6 +40,7 @@ export function ResearchTab({
   stopResearch,
   currentResearchProperty,
   researchSummary,
+  pendingResearchProperties = [],
   ProgressBar,
   LogPanel,
 }: ResearchTabProps) {
@@ -54,7 +57,30 @@ export function ResearchTab({
         )}
       </div>
 
-      {researchEvents.length === 0 && !researchRunning && (
+      {pendingResearchProperties.length > 0 && !researchRunning && (
+        <div className="mb-6 bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] overflow-hidden">
+          <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between gap-3">
+            <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide">Afventer research ({pendingResearchProperties.length})</h3>
+            <button onClick={() => triggerResearch()} className="text-xs font-semibold text-indigo-600 hover:text-indigo-700 px-2.5 py-1.5 rounded-lg hover:bg-indigo-50">Kør al research</button>
+          </div>
+          <ul className="divide-y divide-slate-100 max-h-64 overflow-y-auto">
+            {pendingResearchProperties.map((p) => (
+              <li key={p.id} className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-slate-50/50">
+                <div className="min-w-0 flex-1">
+                  <div className="font-semibold text-sm text-slate-900 truncate">{p.name || p.address}</div>
+                  <div className="text-[11px] text-slate-500 truncate">{p.address}{p.postalCode || p.city ? ` · ${[p.postalCode, p.city].filter(Boolean).join(" ")}` : ""}</div>
+                </div>
+                <button onClick={() => triggerResearch(p.id)} disabled={!!researchRunning}
+                  className="shrink-0 px-3 py-1.5 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-bold rounded-lg shadow-sm disabled:opacity-40">
+                  Start
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {researchEvents.length === 0 && !researchRunning && pendingResearchProperties.length === 0 && (
         <div className="mb-6">
           <EmptyState
             icon="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3"

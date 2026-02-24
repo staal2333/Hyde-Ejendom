@@ -9,13 +9,18 @@ export default function PinGate() {
   const [error, setError] = useState("");
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const submit = useCallback(() => {
+  const [loading, setLoading] = useState(false);
+
+  const submit = useCallback(async () => {
     setError("");
     if (pin.length !== 4) {
       setError("Indtast 4 cifre");
       return;
     }
-    if (login(pin)) {
+    setLoading(true);
+    const ok = await login(pin);
+    setLoading(false);
+    if (ok) {
       setPin("");
     } else {
       setError("Forkert kode");

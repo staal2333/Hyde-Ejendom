@@ -3,6 +3,7 @@
 // ============================================================
 
 import { config } from "../config";
+import { logger } from "../logger";
 import { estimateStreetTraffic } from "./traffic";
 import type { DawaAddress, BuildingCandidate } from "@/types";
 
@@ -35,15 +36,15 @@ export async function scanStreet(
   streetName: string,
   city: string
 ): Promise<BuildingCandidate[]> {
-  console.log(`[Scanner] Scanning ${streetName}, ${city}...`);
+  logger.info(`[Scanner] Scanning ${streetName}, ${city}...`);
 
   // Step 1: Resolve city to kommunekode
   const kommunekode = await resolveKommunekode(city);
-  console.log(`[Scanner] Kommunekode for ${city}: ${kommunekode}`);
+  logger.info(`[Scanner] Kommunekode for ${city}: ${kommunekode}`);
 
   // Step 2: Fetch all unique building addresses on the street
   const addresses = await fetchStreetAddresses(streetName, kommunekode);
-  console.log(`[Scanner] Found ${addresses.length} unique addresses on ${streetName}`);
+  logger.info(`[Scanner] Found ${addresses.length} unique addresses on ${streetName}`);
 
   if (addresses.length === 0) {
     return [];
@@ -51,11 +52,11 @@ export async function scanStreet(
 
   // Step 3: Fetch BBR data for each address (batched)
   const candidates = await fetchBbrBatch(addresses);
-  console.log(`[Scanner] Got BBR data for ${candidates.length} buildings`);
+  logger.info(`[Scanner] Got BBR data for ${candidates.length} buildings`);
 
   // Step 4: Pre-filter irrelevant buildings
   const filtered = preFilter(candidates);
-  console.log(`[Scanner] After pre-filter: ${filtered.length} candidates remain`);
+  logger.info(`[Scanner] After pre-filter: ${filtered.length} candidates remain`);
 
   // Step 5: Attach traffic data to all candidates
   const trafficEstimate = estimateStreetTraffic(streetName, city);
@@ -64,7 +65,7 @@ export async function scanStreet(
     candidate.trafficSource = trafficEstimate.trafficSource;
     candidate.trafficConfidence = trafficEstimate.confidence;
   }
-  console.log(
+  logger.info(
     `[Scanner] Traffic estimate for ${streetName}: ${trafficEstimate.estimatedDailyTraffic} ADT (${trafficEstimate.trafficSource}, confidence: ${trafficEstimate.confidence})`
   );
 
@@ -116,7 +117,7 @@ async function resolveKommunekode(city: string): Promise<string> {
       }
     }
   } catch (e) {
-    console.warn(`[Scanner] Could not resolve kommunekode for ${city}:`, e);
+    logger.warn(`[Scanner] Could not resolve kommunekode for ${city}: ${e instanceof Error ? e.message : e}`);
   }
 
   // Default to Copenhagen
@@ -242,7 +243,7 @@ async function fetchBbrForAddress(
 
     return candidate;
   } catch (e) {
-    console.warn(`[Scanner] BBR fetch failed for ${addr.betegnelse}:`, e);
+    logger.warn(`[Scanner] BBR fetch failed for ${addr.betegnelse}: ${e instanceof Error ? e.message : e}`);
     return null;
   }
 }

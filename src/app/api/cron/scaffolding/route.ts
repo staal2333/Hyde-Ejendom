@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { config } from "@/lib/config";
+import { verifyCronSecret } from "@/lib/cron-auth";
 import { discoverScaffolding } from "@/lib/discovery/scaffolding";
 import { createEjendom, ejendomExistsByAddress, fetchEjendommeByStatus } from "@/lib/hubspot";
 import { processProperty } from "@/lib/workflow/engine";
@@ -42,14 +43,8 @@ const MAX_CRON_HISTORY = 30;
  * Add ?dryRun=true to scan without creating properties
  */
 export async function GET(req: NextRequest) {
-  // Verify cron secret (if configured)
-  const cronSecret = config.cronSecret();
-  if (cronSecret) {
-    const authHeader = req.headers.get("authorization") || req.nextUrl.searchParams.get("secret");
-    if (authHeader !== `Bearer ${cronSecret}` && authHeader !== cronSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  const authErr = verifyCronSecret(req);
+  if (authErr) return authErr;
 
   const specificCity = req.nextUrl.searchParams.get("city");
   const dryRun = req.nextUrl.searchParams.get("dryRun") === "true";

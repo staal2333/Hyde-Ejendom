@@ -15,6 +15,7 @@ export const runtime = "nodejs";
 export const maxDuration = 60;
 
 import { NextRequest, NextResponse } from "next/server";
+import { verifyCronSecret } from "@/lib/cron-auth";
 import {
   getDueFollowUps,
   getSend,
@@ -24,20 +25,15 @@ import {
 } from "@/lib/ooh/store";
 import { sendEmail } from "@/lib/email-sender";
 import OpenAI from "openai";
+import { logger } from "@/lib/logger";
 
 const MAX_FOLLOW_UPS = parseInt(process.env.OOH_MAX_FOLLOW_UPS || "3", 10);
 const FOLLOW_UP_DAYS = parseInt(process.env.OOH_FOLLOW_UP_DAYS || "5", 10);
 const AUTO_SEND = process.env.OOH_FOLLOW_UP_AUTO_SEND !== "false"; // default true
 
 export async function GET(req: NextRequest) {
-  // Verify cron secret
-  const cronSecret = process.env.CRON_SECRET;
-  if (cronSecret) {
-    const auth = req.headers.get("authorization");
-    if (auth !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  const authErr = verifyCronSecret(req);
+  if (authErr) return authErr;
 
   try {
     const dueFollowUps = await getDueFollowUps();
@@ -120,7 +116,7 @@ Svar i valid JSON: {"subject": "...", "body": "..."}`,
             body = parsed.body || body;
           }
         } catch (err) {
-          console.error(`[cron/ooh-followup] AI draft error for ${send.id}:`, err);
+          logger.error(`AI draft error for ${send.id}`, { service: "cron-ooh-followup" });
           // Fall back to default text
         }
       }
@@ -163,17 +159,17 @@ Svar i valid JSON: {"subject": "...", "body": "..."}`,
             await upsertSend(send);
             sent++;
           } else {
-            console.error(`[cron/ooh-followup] Send failed for ${send.id}:`, emailResult.error);
+            logger.error(`Send failed for ${send.id}: ` + emailResult.error, { service: "cron-ooh-followup" });
             skipped++;
           }
         } catch (err) {
-          console.error(`[cron/ooh-followup] Error sending ${send.id}:`, err);
+          logger.error(`Error sending ${send.id}`, { service: "cron-ooh-followup" });
           skipped++;
         }
       } else {
         // Store draft only (logged for manual approval)
         drafted++;
-        console.log(`[cron/ooh-followup] Draft for ${send.id}: ${subject}`);
+        logger.info(`Draft for ${send.id}: ${subject}`, { service: "cron-ooh-followup" });
       }
     }
 
@@ -189,7 +185,7 @@ Svar i valid JSON: {"subject": "...", "body": "..."}`,
       autoSend: AUTO_SEND,
     });
   } catch (error) {
-    console.error("[cron/ooh-followup] Error:", error);
+    logger.error("Cron OOH follow-up error", { service: "cron-ooh-followup" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

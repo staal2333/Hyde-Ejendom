@@ -1,10 +1,14 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import type { RefObject } from "react";
 import type { TabId } from "@/contexts/DashboardContext";
 import { formatAddressLine } from "@/lib/format-address";
 import EmptyState from "../ui/EmptyState";
+
+const DISCOVERY_LAST_KEY = "ejendom_discovery_last";
+const EXAMPLE_STREETS = ["Vesterbrogade", "Nørrebrogade", "Jagtvej"];
+const EXAMPLE_POSTCODES = ["1050", "8000", "2100"];
 
 // Mirror of page types for discovery (avoids importing from app/page)
 export interface ScoredCandidateData {
@@ -405,6 +409,31 @@ export function DiscoverTab({
   LogPanel,
 }: DiscoverTabProps) {
   const [adding, setAdding] = useState(false);
+  const [discoverMode, setDiscoverMode] = useState<"vej" | "omraade">("vej");
+  const [lastScan, setLastScan] = useState<{ type: string; label: string; date: string } | null>(() => {
+    if (typeof window === "undefined") return null;
+    try {
+      const raw = localStorage.getItem(DISCOVERY_LAST_KEY);
+      if (!raw) return null;
+      const data = JSON.parse(raw) as { type: string; label: string; date: string };
+      return data?.label ? data : null;
+    } catch {
+      return null;
+    }
+  });
+
+  useEffect(() => {
+    if (!discoveryResult?.street && !discoveryResult?.candidates?.length) return;
+    const type = discoveryResult.street ? "vej" : "omraade";
+    const label = discoveryResult.street?.trim()
+      ? `${discoveryResult.street}, ${discoveryResult.city || ""}`
+      : (discoverPostcodes.trim() || "Område");
+    const entry = { type, label, date: new Date().toISOString() };
+    setLastScan(entry);
+    try {
+      localStorage.setItem(DISCOVERY_LAST_KEY, JSON.stringify(entry));
+    } catch {}
+  }, [discoveryResult?.street, discoveryResult?.city, discoveryResult?.candidates?.length, discoverPostcodes]);
 
   const handleAddOne = useCallback(
     async (c: ScoredCandidateData) => {
@@ -446,9 +475,33 @@ export function DiscoverTab({
 
   return (
     <div className="animate-fade-in">
-      <p className="text-xs text-slate-500 mb-4">Scan vej eller postnummer → kandidater gemmes i Staging.</p>
+      <div className="flex flex-wrap items-center gap-3 mb-4">
+        <div className="inline-flex rounded-xl bg-slate-100 p-0.5">
+          <button
+            type="button"
+            onClick={() => setDiscoverMode("vej")}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${discoverMode === "vej" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
+          >
+            Efter vej
+          </button>
+          <button
+            type="button"
+            onClick={() => setDiscoverMode("omraade")}
+            className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all ${discoverMode === "omraade" ? "bg-white text-slate-900 shadow-sm" : "text-slate-600 hover:text-slate-800"}`}
+          >
+            Efter område
+          </button>
+        </div>
+        {lastScan && (
+          <span className="text-xs text-slate-500">
+            Sidst scannet: <strong className="text-slate-700">{lastScan.label}</strong>, {new Date(lastScan.date).toLocaleDateString("da-DK", { day: "numeric", month: "short" })}
+          </span>
+        )}
+      </div>
+      <p className="text-xs text-slate-500 mb-4">Kandidater gemmes i Staging.</p>
 
       {/* Efter vej */}
+      {discoverMode === "vej" && (
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-5">
         <h2 className="text-sm font-semibold text-slate-700 mb-3">Efter vej</h2>
         <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
@@ -619,8 +672,10 @@ export function DiscoverTab({
           </div>
         </div>
       </div>
+      )}
 
       {/* Efter område (postnummer) */}
+      {discoverMode === "omraade" && (
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-5">
         <h2 className="text-sm font-semibold text-slate-700 mb-3">Efter område (postnummer)</h2>
         <div className="flex flex-wrap items-end gap-3">
@@ -676,6 +731,7 @@ export function DiscoverTab({
           Henter alle adresser i de angivne postnummer fra DAWA, filtrerer og scorer med AI. Maks. 500 adresser per kørsel. Trafik tjekkes ikke på område-niveau.
         </p>
       </div>
+      )}
 
       {(discoveryRunning || progressEvents.length > 0) && (
         <div className="mb-6 animate-fade-in">
@@ -797,11 +853,33 @@ export function DiscoverTab({
         )}
 
       {!discoveryRunning && !discoveryResult && progressEvents.length === 0 && (
-        <EmptyState
-          icon="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607Z"
-          title="Klar til at scanne"
-          description="Indtast et vejnavn ovenfor for at finde ejendomme med outdoor reklame-potentiale. AI-agenten scanner automatisk alle adresser og vurderer potentialet."
-        />
+        <div className="rounded-2xl border border-slate-200/60 bg-slate-50/50 p-6 text-center">
+          <p className="text-sm font-semibold text-slate-700 mb-1">Klar til at scanne</p>
+          <p className="text-xs text-slate-500 mb-4">Indtast vejnavn eller postnummer ovenfor. Klik på et eksempel for at udfylde.</p>
+          <div className="flex flex-wrap justify-center gap-2">
+            {discoverMode === "vej"
+              ? EXAMPLE_STREETS.map((s) => (
+                  <button
+                    key={s}
+                    type="button"
+                    onClick={() => setDiscoverStreet(s)}
+                    className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300"
+                  >
+                    {s}
+                  </button>
+                ))
+              : EXAMPLE_POSTCODES.map((pc) => (
+                  <button
+                    key={pc}
+                    type="button"
+                    onClick={() => setDiscoverPostcodes(discoverPostcodes ? `${discoverPostcodes}, ${pc}` : pc)}
+                    className="px-3 py-1.5 rounded-lg bg-white border border-slate-200 text-xs font-medium text-slate-700 hover:bg-slate-50 hover:border-slate-300"
+                  >
+                    {pc}
+                  </button>
+                ))}
+          </div>
+        </div>
       )}
     </div>
   );

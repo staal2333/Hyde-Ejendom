@@ -11,6 +11,7 @@ import { getFrame, getCreative, getProposal, seedDemoData } from "@/lib/ooh/stor
 import { compositeMultiplePlacements } from "@/lib/ooh/image-processor";
 import { generateProposalPdf } from "@/lib/ooh/pdf-generator";
 import { loadImageBuffer } from "@/lib/ooh/load-image";
+import { logger } from "@/lib/logger";
 
 let seeded = false;
 function ensureSeeded() {
@@ -104,7 +105,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[generate-pdf] Error:", error);
+    logger.error("PDF generation error", { service: "generate-pdf" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error generating PDF" },
       { status: 500 }

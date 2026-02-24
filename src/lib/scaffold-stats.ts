@@ -1,7 +1,11 @@
 // ============================================================
 // Live stillads-statistik – gemmes ved scan, serveres til dashboard
 // Vises for dagen før; opdateres hvert 10. min via cron.
+// Persisted in Supabase (with in-memory fallback)
 // ============================================================
+
+import { supabase, HAS_SUPABASE } from "./supabase";
+import { logger } from "./logger";
 
 export interface ScaffoldStatsPermitItem {
   address: string;
@@ -9,17 +13,17 @@ export interface ScaffoldStatsPermitItem {
 }
 
 export interface ScaffoldStats {
-  /** Antal oprettet i går (dagen før) */
   previousDay: number;
-  /** Tilladelser fra dagen før med adresse + varighed */
   previousDayPermits: ScaffoldStatsPermitItem[];
   daily: number;
   weekly: number;
   monthly: number;
-  at: string; // ISO timestamp for seneste opdatering
+  at: string;
 }
 
-let store: ScaffoldStats | null = null;
+let memStore: ScaffoldStats | null = null;
+
+const STATS_KEY = "scaffold_stats_latest";
 
 type PermitInput = {
   createdDate?: string | null;
@@ -48,7 +52,6 @@ function formatDuration(p: PermitInput): string {
   return "—";
 }
 
-/** Beregn statistik inkl. dagen før og liste med adresse + varighed. */
 export function computeScaffoldStatsFromPermits(permits: PermitInput[]): ScaffoldStats {
   const now = Date.now();
   const oneDayMs = 24 * 60 * 60 * 1000;
@@ -74,10 +77,7 @@ export function computeScaffoldStatsFromPermits(permits: PermitInput[]): Scaffol
       previousDay++;
       const addr = (p.address || "").trim();
       if (addr) {
-        previousDayPermits.push({
-          address: addr,
-          durationText: formatDuration(p),
-        });
+        previousDayPermits.push({ address: addr, durationText: formatDuration(p) });
       }
     }
     if (t >= todayStart) daily++;
@@ -85,22 +85,33 @@ export function computeScaffoldStatsFromPermits(permits: PermitInput[]): Scaffol
     if (t >= monthStart) monthly++;
   }
 
-  return {
-    previousDay,
-    previousDayPermits,
-    daily,
-    weekly,
-    monthly,
-    at: new Date().toISOString(),
-  };
+  return { previousDay, previousDayPermits, daily, weekly, monthly, at: new Date().toISOString() };
 }
 
-/** Gem statistik (kaldes fra discover-scaffolding når scan er færdig). */
-export function setScaffoldStats(stats: ScaffoldStats): void {
-  store = stats;
+export async function setScaffoldStats(stats: ScaffoldStats): Promise<void> {
+  memStore = stats;
+  if (!HAS_SUPABASE) return;
+  try {
+    await supabase!.from("kv_store").upsert(
+      { key: STATS_KEY, value: JSON.stringify(stats), updated_at: new Date().toISOString() },
+      { onConflict: "key" },
+    );
+  } catch (e) {
+    logger.warn(`Failed to persist scaffold stats: ${e}`, { service: "scaffold-stats" });
+  }
 }
 
-/** Hent seneste statistik til dashboard. */
-export function getScaffoldStats(): ScaffoldStats | null {
-  return store;
+export async function getScaffoldStats(): Promise<ScaffoldStats | null> {
+  if (memStore) return memStore;
+  if (!HAS_SUPABASE) return null;
+  try {
+    const { data } = await supabase!.from("kv_store").select("value").eq("key", STATS_KEY).single();
+    if (data?.value) {
+      memStore = JSON.parse(data.value as string) as ScaffoldStats;
+      return memStore;
+    }
+  } catch {
+    // table may not exist yet
+  }
+  return null;
 }

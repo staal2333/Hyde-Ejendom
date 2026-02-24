@@ -4,6 +4,7 @@
 // ============================================================
 
 import { supabase, HAS_SUPABASE } from "./supabase";
+import { logger } from "./logger";
 
 const threadToProperty = new Map<string, string>();
 
@@ -18,7 +19,7 @@ export function recordThreadProperty(threadId: string, propertyId: string): void
         { onConflict: "thread_id" }
       )
       .then(({ error }) => {
-        if (error) console.warn("[mail-threads] Supabase upsert failed:", error);
+        if (error) logger.warn(`[mail-threads] Supabase upsert failed: ${error.message}`);
       });
   }
 }
@@ -34,7 +35,7 @@ export async function loadThreadPropertiesFromDb(): Promise<void> {
     .from("mail_thread_property")
     .select("thread_id, property_id");
   if (error) {
-    console.warn("[mail-threads] Supabase load failed:", error);
+    logger.warn(`[mail-threads] Supabase load failed: ${error.message}`);
     return;
   }
   for (const row of data || []) {

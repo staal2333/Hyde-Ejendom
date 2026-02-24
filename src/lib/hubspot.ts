@@ -4,6 +4,8 @@
 // ============================================================
 
 import { config } from "./config";
+import { apiFetch, apiPost, apiPatch } from "./api-client";
+import { logger } from "./logger";
 import type {
   Property,
   Contact,
@@ -49,9 +51,18 @@ const EJENDOM_PROPERTIES = [
   "email_draft_note",
 ];
 
-// ─── HTTP Helpers ───────────────────────────────────────────
+// ─── HTTP Helpers (rate-limited via api-client) ─────────────
 
-function getHeaders() {
+const HS_CLIENT_OPTS = {
+  timeout: 30_000,
+  maxRetries: 3,
+  backoffMs: 2_000,
+  rateLimit: 80,
+  rateLimitWindowMs: 10_000,
+  service: "hubspot",
+};
+
+function authHeaders(): Record<string, string> {
   return {
     Authorization: `Bearer ${config.hubspot.accessToken()}`,
     "Content-Type": "application/json",
@@ -59,38 +70,39 @@ function getHeaders() {
 }
 
 async function hubspotGet(path: string): Promise<Record<string, unknown>> {
-  const res = await fetch(`${BASE_URL}${path}`, { headers: getHeaders() });
-  if (!res.ok) {
-    const error = await res.text();
-    throw new Error(`HubSpot GET ${path} failed (${res.status}): ${error}`);
+  const url = `${BASE_URL}${path}`;
+  const result = await apiFetch<Record<string, unknown>>(url, {
+    ...HS_CLIENT_OPTS,
+    headers: authHeaders(),
+  });
+  if (!result.ok) {
+    throw new Error(`HubSpot GET ${path} failed (${result.status}): ${result.error}`);
   }
-  return res.json();
+  return result.data!;
 }
 
 async function hubspotPost(path: string, body: unknown): Promise<Record<string, unknown>> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: "POST",
-    headers: getHeaders(),
-    body: JSON.stringify(body),
+  const url = `${BASE_URL}${path}`;
+  const result = await apiPost<Record<string, unknown>>(url, body, {
+    ...HS_CLIENT_OPTS,
+    headers: authHeaders(),
   });
-  if (!res.ok) {
-    const error = await res.text();
-    throw new Error(`HubSpot POST ${path} failed (${res.status}): ${error}`);
+  if (!result.ok) {
+    throw new Error(`HubSpot POST ${path} failed (${result.status}): ${result.error}`);
   }
-  return res.json();
+  return result.data!;
 }
 
 async function hubspotPatch(path: string, body: unknown): Promise<Record<string, unknown>> {
-  const res = await fetch(`${BASE_URL}${path}`, {
-    method: "PATCH",
-    headers: getHeaders(),
-    body: JSON.stringify(body),
+  const url = `${BASE_URL}${path}`;
+  const result = await apiPatch<Record<string, unknown>>(url, body, {
+    ...HS_CLIENT_OPTS,
+    headers: authHeaders(),
   });
-  if (!res.ok) {
-    const error = await res.text();
-    throw new Error(`HubSpot PATCH ${path} failed (${res.status}): ${error}`);
+  if (!result.ok) {
+    throw new Error(`HubSpot PATCH ${path} failed (${result.status}): ${result.error}`);
   }
-  return res.json();
+  return result.data!;
 }
 
 // ─── Ejendomme (Listings / Custom Object 0-420) ────────────
@@ -337,7 +349,7 @@ export async function upsertContact(
       await updateEjendom(ejendomId, ejendomUpdate);
     }
   } catch (e) {
-    console.warn("Could not update ejendom contact fields:", e);
+    logger.warn(`Could not update ejendom contact fields: ${e instanceof Error ? e.message : e}`);
   }
 
   return contactId;
@@ -364,7 +376,7 @@ export async function addDraftNoteToContact(
 
     return data?.engagement?.id?.toString() || "ok";
   } catch (e) {
-    console.warn("Note creation failed:", e);
+    logger.warn(`Note creation failed: ${e instanceof Error ? e.message : e}`);
     return "skipped";
   }
 }
@@ -392,7 +404,7 @@ export async function createFollowUpTask(
 
     return data?.engagement?.id?.toString() || "ok";
   } catch (e) {
-    console.warn("Task creation failed:", e);
+    logger.warn(`Task creation failed: ${e instanceof Error ? e.message : e}`);
     return "skipped";
   }
 }
@@ -414,7 +426,7 @@ export async function getContactBlocklist(): Promise<{
   do {
     const res = await fetch(
       `${BASE_URL}/crm/v3/objects/contacts?limit=100${after ? `&after=${after}` : ""}&properties=email&properties=associatedcompanyid`,
-      { headers: getHeaders() }
+      { headers: authHeaders() }
     );
     if (!res.ok) break;
     const json = await res.json() as { results?: { id: string; properties?: Record<string, string> }[]; paging?: { next?: { after: string } } };
@@ -488,7 +500,7 @@ export async function createLeadContact(properties: {
         inputs: [{ from: { id: contactId }, to: { id: properties.companyId }, type: "contact_to_company" }],
       });
     } catch (e) {
-      console.warn("Contact-company association failed:", e);
+      logger.warn(`Contact-company association failed: ${e instanceof Error ? e.message : e}`);
     }
   }
   return contactId;
@@ -516,12 +528,16 @@ export async function getDashboardStats(): Promise<{
 interface HubSpotRecord {
   id: string;
   properties: Record<string, string | null>;
+  updatedAt?: string;
+  createdAt?: string;
 }
 
 function mapRecordToProperty(record: HubSpotRecord): Property {
   const p = record.properties;
   return {
     id: record.id,
+    updatedAt: record.updatedAt,
+    createdAt: record.createdAt,
     name: p.hs_name || "",
     address: [p.hs_address_1, p.hs_address_2].filter(Boolean).join(" "),
     postalCode: p.hs_zip || "",

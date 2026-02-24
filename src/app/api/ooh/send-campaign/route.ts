@@ -24,6 +24,7 @@ import { compositeMultiplePlacements } from "@/lib/ooh/image-processor";
 import { loadImageBuffer } from "@/lib/ooh/load-image";
 import type { OOHSend } from "@/lib/ooh/types";
 import { syncToHubSpot } from "@/lib/ooh/hubspot-sync";
+import { logger } from "@/lib/logger";
 
 const FOLLOW_UP_DAYS = 5;
 
@@ -135,7 +136,7 @@ export async function POST(req: NextRequest) {
               height: drawH,
             });
           } catch (err) {
-            console.error(`[send-campaign] Mockup error for slot ${slot.id}:`, err);
+            logger.error(`Mockup error for slot ${slot.id}`, { service: "send-campaign" });
           }
         }
       }
@@ -260,7 +261,7 @@ export async function POST(req: NextRequest) {
       results,
     });
   } catch (error) {
-    console.error("[send-campaign] Error:", error);
+    logger.error("Send campaign error", { service: "send-campaign" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

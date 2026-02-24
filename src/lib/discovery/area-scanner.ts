@@ -4,6 +4,7 @@
 // ============================================================
 
 import { config } from "../config";
+import { logger } from "../logger";
 import { getBuildingCandidatesFromAddresses } from "./street-scanner";
 import type { DawaAddress, BuildingCandidate } from "@/types";
 
@@ -26,7 +27,7 @@ async function fetchAddressesByPostcodes(
     const url = `${DAWA_BASE}/adgangsadresser?postnr=${encodeURIComponent(trimmed)}&struktur=mini&per_side=${MAX_ADDRESSES_PER_POSTCODE}`;
     const res = await fetch(url);
     if (!res.ok) {
-      console.warn(`[AreaScanner] DAWA postnr ${trimmed} failed: ${res.status}`);
+      logger.warn(`[AreaScanner] DAWA postnr ${trimmed} failed: ${res.status}`);
       continue;
     }
 
@@ -78,20 +79,20 @@ export async function scanArea(
     return [];
   }
 
-  console.log(`[AreaScanner] Fetching addresses for postnr: ${normalized.join(", ")}`);
+  logger.info(`[AreaScanner] Fetching addresses for postnr: ${normalized.join(", ")}`);
   let addresses = await fetchAddressesByPostcodes(normalized);
   if (addresses.length > maxAddresses) {
-    console.log(`[AreaScanner] Capping at ${maxAddresses} addresses`);
+    logger.info(`[AreaScanner] Capping at ${maxAddresses} addresses`);
     addresses = addresses.slice(0, maxAddresses);
   }
-  console.log(`[AreaScanner] Found ${addresses.length} unique addresses`);
+  logger.info(`[AreaScanner] Found ${addresses.length} unique addresses`);
 
   if (addresses.length === 0) {
     return [];
   }
 
   const candidates = await getBuildingCandidatesFromAddresses(addresses);
-  console.log(`[AreaScanner] After BBR + pre-filter: ${candidates.length} candidates`);
+  logger.info(`[AreaScanner] After BBR + pre-filter: ${candidates.length} candidates`);
 
   for (const c of candidates) {
     c.estimatedDailyTraffic = 0;

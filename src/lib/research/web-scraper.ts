@@ -3,6 +3,7 @@
 // ============================================================
 
 import * as cheerio from "cheerio";
+import { logger } from "../logger";
 import type { WebsiteContent, WebSearchResult } from "@/types";
 
 const MAX_TEXT_LENGTH = 5000;
@@ -113,7 +114,7 @@ export async function scrapeWebsite(url: string): Promise<WebsiteContent | null>
       contactPageText: bodyText.substring(0, MAX_TEXT_LENGTH),
     };
   } catch (error) {
-    console.error(`Failed to scrape ${url}:`, error);
+    logger.error(`Failed to scrape ${url}: ${error instanceof Error ? error.message : error}`);
     return null;
   }
 }
@@ -199,7 +200,7 @@ export async function scrapeCompanyWebsite(
       relevantSnippets: [...new Set(rootContent.relevantSnippets)].slice(0, 12),
     };
   } catch (error) {
-    console.error(`Failed to scrape company website ${rootUrl}:`, error);
+    logger.error(`Failed to scrape company website ${rootUrl}: ${error instanceof Error ? error.message : error}`);
     return null;
   }
 }
@@ -248,7 +249,7 @@ export async function searchGoogle(
 
     return results;
   } catch (error) {
-    console.error("Search failed:", error);
+    logger.error(`Search failed: ${error instanceof Error ? error.message : error}`);
     return [];
   }
 }

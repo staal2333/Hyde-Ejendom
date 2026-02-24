@@ -244,7 +244,7 @@ export async function lookupProff(companyName: string): Promise<CvrResult | null
     if (hasMatch && cvrNumbers.length > 0) {
       // Found our company on proff.dk – now look up via CVR number
       const cvrNumber = cvrNumbers[0];
-      console.log(`Proff.dk: Found CVR ${cvrNumber} for "${companyName}"`);
+      logger.info(`Proff.dk: Found CVR ${cvrNumber} for "${companyName}"`);
       return await lookupCvr(cvrNumber);
     }
 
@@ -268,7 +268,7 @@ export async function lookupProff(companyName: string): Promise<CvrResult | null
         const detailHtml = await detailResp.text();
         const cvrMatch = detailHtml.match(/CVR[:\s-]*nr[:\s]*(\d{8})/i) || detailHtml.match(/(\d{8})/);
         if (cvrMatch) {
-          console.log(`Proff.dk detail: Found CVR ${cvrMatch[1]} for "${companyName}"`);
+          logger.info(`Proff.dk detail: Found CVR ${cvrMatch[1]} for "${companyName}"`);
           return await lookupCvr(cvrMatch[1]);
         }
       }
@@ -276,7 +276,7 @@ export async function lookupProff(companyName: string): Promise<CvrResult | null
 
     return null;
   } catch (error) {
-    console.warn("Proff.dk lookup failed:", error instanceof Error ? error.message : error);
+    logger.warn(`Proff.dk lookup failed: ${error instanceof Error ? error.message : error}`);
     return null;
   }
 }

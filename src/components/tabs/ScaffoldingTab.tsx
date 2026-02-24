@@ -156,11 +156,11 @@ export function ScaffoldingTab({
         <div className="flex items-center gap-2 mb-4">
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-50 text-[10px] font-semibold text-violet-700">
             <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
-            Kun aktive tilladelser
+            Aktive tilladelser
           </span>
           <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-[10px] font-semibold text-amber-700">
             <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-            Rapport-visning
+            Rapport
           </span>
         </div>
         <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-5">
@@ -221,7 +221,7 @@ export function ScaffoldingTab({
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607Z" />
                 </svg>
-                Start daglig scanning
+                Hent aktive tilladelser nu
               </button>
             )}
           </div>
@@ -370,11 +370,11 @@ export function ScaffoldingTab({
       <div className="flex items-center gap-2 mb-4">
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-violet-50 text-[10px] font-semibold text-violet-700">
           <span className="w-1.5 h-1.5 rounded-full bg-violet-500" />
-          Kun aktive tilladelser
+          Aktive tilladelser
         </span>
         <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-50 text-[10px] font-semibold text-amber-700">
           <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
-          Rapport-visning
+          Rapport
         </span>
       </div>
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-5">
@@ -435,7 +435,7 @@ export function ScaffoldingTab({
               <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607Z" />
               </svg>
-              Start daglig scanning
+              Hent aktive tilladelser nu
             </button>
           )}
         </div>

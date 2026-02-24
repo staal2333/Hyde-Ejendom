@@ -5,19 +5,15 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { config } from "@/lib/config";
+import { verifyCronSecret } from "@/lib/cron-auth";
 import { discoverScaffolding } from "@/lib/discovery/scaffolding";
 import { computeScaffoldStatsFromPermits, setScaffoldStats } from "@/lib/scaffold-stats";
 import { logger } from "@/lib/logger";
 import type { ScoredScaffolding } from "@/types";
 
 export async function GET(req: NextRequest) {
-  const cronSecret = config.cronSecret();
-  if (cronSecret) {
-    const authHeader = req.headers.get("authorization") || req.nextUrl.searchParams.get("secret");
-    if (authHeader !== `Bearer ${cronSecret}` && authHeader !== cronSecret) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  const authErr = verifyCronSecret(req);
+  if (authErr) return authErr;
 
   const cities = config.scaffoldCron.cities;
   const minScore = config.scaffoldCron.minScore;
@@ -35,7 +31,7 @@ export async function GET(req: NextRequest) {
   }
 
   const stats = computeScaffoldStatsFromPermits(allPermits);
-  setScaffoldStats(stats);
+  await setScaffoldStats(stats);
 
   return NextResponse.json({
     ok: true,

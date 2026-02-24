@@ -10,6 +10,7 @@ import { config } from "@/lib/config";
 import { getThreadWithMessages } from "@/lib/email-sender";
 import { getPropertyIdForThread, loadThreadPropertiesFromDb } from "@/lib/mail-threads";
 import { fetchEjendomById } from "@/lib/hubspot";
+import { logger } from "@/lib/logger";
 
 const client = new OpenAI({ apiKey: config.openai.apiKey() });
 
@@ -117,7 +118,7 @@ Skriv et kort svar til modtageren i vores tone.`;
       category,
     });
   } catch (error) {
-    console.error("[API] Reply draft failed:", error);
+    logger.error("Reply draft failed", { service: "mail-reply-draft" });
     return NextResponse.json(
       {
         error: error instanceof Error ? error.message : "Kunne ikke generere udkast",

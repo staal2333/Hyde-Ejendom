@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getCampaigns, getCampaign, upsertCampaign, deleteCampaign } from "@/lib/ooh/store";
 import type { OOHCampaign } from "@/lib/ooh/types";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 
@@ -66,7 +67,7 @@ export async function DELETE(req: NextRequest) {
     return NextResponse.json({ success: true, id });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[campaigns]", msg);
+    logger.error(msg, { service: "ooh-campaigns" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

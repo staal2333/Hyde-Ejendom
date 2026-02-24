@@ -120,21 +120,23 @@ export function SettingsTab() {
           ].map((rule) => {
             const active = rules[rule.id];
             return (
-              <div key={rule.id} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-slate-50/50">
+              <div key={rule.id} className="flex items-center justify-between p-4 rounded-xl border border-slate-200 bg-slate-50/50">
                 <div className="flex-1 min-w-0">
-                  <div className="text-xs font-semibold text-slate-700">{rule.label}</div>
-                  <div className="text-[10px] text-slate-400 mt-0.5">{rule.detail}</div>
+                  <div className="text-sm font-semibold text-slate-800">{rule.label}</div>
+                  <div className="text-[11px] text-slate-500 mt-0.5">{rule.detail}</div>
                 </div>
-                <div className="flex items-center gap-2 ml-3">
-                  <span className={`px-2 py-0.5 text-[10px] font-bold rounded-md ${active ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}`}>
+                <div className="flex items-center gap-3 ml-4 shrink-0">
+                  <span className={`px-2.5 py-1 text-[11px] font-bold rounded-lg ${active ? "bg-emerald-100 text-emerald-700" : "bg-slate-200 text-slate-500"}`}>
                     {active ? "Aktiv" : "Inaktiv"}
                   </span>
                   <button
                     type="button"
                     onClick={() => toggleRule(rule.id)}
-                    className={`w-8 h-4.5 rounded-full relative cursor-pointer transition-colors flex-shrink-0 ${active ? "bg-emerald-500" : "bg-slate-300"}`}
+                    title={active ? "Deaktiver regel" : "Aktiver regel"}
+                    aria-label={active ? "Deaktiver regel" : "Aktiver regel"}
+                    className={`w-11 h-6 rounded-full relative cursor-pointer transition-colors flex-shrink-0 ${active ? "bg-emerald-500" : "bg-slate-300"}`}
                   >
-                    <div className={`absolute top-0.5 w-3.5 h-3.5 bg-white rounded-full shadow transition-transform ${active ? "left-4" : "left-0.5"}`} />
+                    <div className={`absolute top-1 w-4 h-4 bg-white rounded-full shadow transition-transform ${active ? "left-6" : "left-1"}`} />
                   </button>
                 </div>
               </div>
@@ -142,10 +144,27 @@ export function SettingsTab() {
           })}
         </div>
         <div className="mt-3 p-3 bg-amber-50 border border-amber-200/60 rounded-xl">
-          <p className="text-[10px] text-amber-700">
-            <strong>Cron-endpoint:</strong> <code className="bg-amber-100 px-1 rounded text-[9px]">GET /api/auto-research?secret=DIN_CRON_SECRET</code><br />
-            Kald dette endpoint fra en scheduler (f.eks. cron-job.org) for at aktivere reglerne. Saet CRON_SECRET i env vars.
+          <p className="text-[10px] text-amber-700 mb-2">
+            <strong>Cron-endpoint:</strong> Kald dette fra en scheduler (f.eks. cron-job.org) for at aktivere reglerne. Sæt CRON_SECRET i env vars.
           </p>
+          <div className="flex flex-wrap items-center gap-2">
+            <code className="bg-amber-100 px-2 py-1 rounded text-[10px] font-mono text-amber-900 flex-1 min-w-0 truncate">
+              {typeof window !== "undefined" ? `${window.location.origin}/api/auto-research?secret=DIN_CRON_SECRET` : "/api/auto-research?secret=DIN_CRON_SECRET"}
+            </code>
+            <button
+              type="button"
+              onClick={() => {
+                const url = typeof window !== "undefined"
+                  ? `${window.location.origin}/api/auto-research?secret=DIN_CRON_SECRET`
+                  : "/api/auto-research?secret=DIN_CRON_SECRET";
+                navigator.clipboard.writeText(url).then(() => addToast("Cron-URL kopieret til udklipsholder", "success")).catch(() => addToast("Kunne ikke kopiere", "error"));
+              }}
+              className="shrink-0 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-amber-200/80 hover:bg-amber-300/80 text-amber-900 text-[10px] font-semibold transition-colors"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.666 3.888A2.25 2.25 0 0013.5 2.25h-3c-1.03 0-1.9.693-2.166 1.638m7.332 0c.055.194.084.4.084.612v0a.75.75 0 01-.75.75H9.75a.75.75 0 01-.75-.75v0c0-.212.03-.418.084-.612m7.332 0c.646.049 1.288.11 1.927.184 1.1.128 1.907 1.077 1.907 2.185V19.5a2.25 2.25 0 01-2.25 2.25H6.75A2.25 2.25 0 014.5 19.5V6.257c0-1.108.806-2.057 1.907-2.185a48.208 48.208 0 011.927-.184" /></svg>
+              Kopiér
+            </button>
+          </div>
         </div>
       </div>
 
@@ -203,6 +222,39 @@ export function SettingsTab() {
           <span className="ml-auto">Opdateres hvert 2. minut</span>
         </div>
       </div>
+
+      {/* Manglende integrationer (setup-guide) */}
+      {systemHealth?.environment && (() => {
+        const env = systemHealth.environment;
+        const missing: { key: string; label: string }[] = [];
+        if (!env.hubspot_token) missing.push({ key: "HUBSPOT_ACCESS_TOKEN", label: "HubSpot CRM" });
+        if (!env.openai_key) missing.push({ key: "OPENAI_API_KEY", label: "OpenAI / GPT" });
+        if (!env.cron_secret) missing.push({ key: "CRON_SECRET", label: "Cron / auto-research" });
+        if (!env.gmail_configured) missing.push({ key: "GMAIL_CLIENT_ID + GMAIL_REFRESH_TOKEN", label: "Gmail (email-kø)" });
+        if (!env.meta_ad_library) missing.push({ key: "META_AD_LIBRARY_ACCESS_TOKEN", label: "Meta Ad Library (Lead Sourcing)" });
+        if (!env.supabase_configured) missing.push({ key: "NEXT_PUBLIC_SUPABASE_URL", label: "Supabase" });
+        if (missing.length === 0) return null;
+        return (
+          <div className="bg-amber-50 rounded-2xl border border-amber-200/60 shadow-[var(--card-shadow)] p-5">
+            <h3 className="text-sm font-bold text-amber-900 uppercase tracking-wide mb-2 flex items-center gap-2">
+              <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126zM12 15.75h.007v.008H12v-.008z" /></svg>
+              Manglende integrationer
+            </h3>
+            <p className="text-xs text-amber-800 mb-3">Følgende API-er er ikke konfigureret. Uden dem virker nogle funktioner ikke.</p>
+            <ul className="space-y-1.5 mb-3">
+              {missing.map((m) => (
+                <li key={m.key} className="flex items-center gap-2 text-xs">
+                  <span className="font-semibold text-amber-900">{m.label}</span>
+                  <code className="bg-amber-100/80 px-1.5 py-0.5 rounded text-[10px] font-mono text-amber-900">{m.key}</code>
+                </li>
+              ))}
+            </ul>
+            <p className="text-[10px] text-amber-700">
+              Kopier <code className="bg-amber-100/80 px-1 rounded">.env.example</code> til <code className="bg-amber-100/80 px-1 rounded">.env.local</code> i projektroden og udfyld værdierne. På Vercel: Project Settings → Environment Variables.
+            </p>
+          </div>
+        );
+      })()}
 
       {/* API Integrations */}
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-6">

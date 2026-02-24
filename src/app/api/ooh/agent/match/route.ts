@@ -19,6 +19,7 @@ import {
   upsertCampaign,
 } from "@/lib/ooh/store";
 import type { OOHCampaign } from "@/lib/ooh/types";
+import { logger } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
   try {
@@ -189,7 +190,7 @@ Foreslå de bedste kampagner baseret på denne data.`,
       createdCampaigns: createdCampaigns.length,
     });
   } catch (error) {
-    console.error("[agent/match] Error:", error);
+    logger.error("Agent match error", { service: "ooh-agent-match" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

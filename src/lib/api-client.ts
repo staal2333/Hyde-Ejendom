@@ -547,6 +547,99 @@ export async function apiPost<T = unknown>(
   };
 }
 
+/**
+ * Convenience: PATCH request through the central layer.
+ */
+export async function apiPatch<T = unknown>(
+  url: string,
+  body: unknown,
+  opts: ApiClientOptions = {}
+): Promise<ApiCallResult<T>> {
+  const timeout = opts.timeout ?? 15_000;
+  const maxRetries = opts.maxRetries ?? 2;
+  const backoffMs = opts.backoffMs ?? 1_000;
+  const headers = opts.headers ?? {};
+  const service = opts.service ?? "unknown";
+  const rateLimit = opts.rateLimit ?? 0;
+  const rateLimitWindowMs = opts.rateLimitWindowMs ?? 60_000;
+
+  const startTime = Date.now();
+  let lastError = "";
+
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    if (attempt > 0) {
+      const delay = backoffMs * Math.pow(2, attempt - 1);
+      await new Promise((r) => setTimeout(r, delay));
+      recordRetry(service);
+    }
+
+    if (rateLimit > 0) {
+      if (!checkRateLimit(service, rateLimit, rateLimitWindowMs)) {
+        await waitForRateLimit(service, rateLimit, rateLimitWindowMs);
+      }
+    }
+
+    try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), timeout);
+
+      const res = await fetch(url, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json", ...headers },
+        body: JSON.stringify(body),
+        signal: controller.signal,
+      });
+      clearTimeout(timer);
+
+      if (!res.ok) {
+        lastError = `HTTP ${res.status}: ${res.statusText}`;
+        if (res.status >= 400 && res.status < 500 && res.status !== 429) {
+          recordFailure(service, lastError);
+          return {
+            data: null,
+            ok: false,
+            status: res.status,
+            error: lastError,
+            cached: false,
+            attempts: attempt + 1,
+            durationMs: Date.now() - startTime,
+          };
+        }
+        continue;
+      }
+
+      const data = (await res.json()) as T;
+      const durationMs = Date.now() - startTime;
+      recordSuccess(service, durationMs);
+
+      return {
+        data,
+        ok: true,
+        status: res.status,
+        cached: false,
+        attempts: attempt + 1,
+        durationMs,
+      };
+    } catch (err) {
+      lastError =
+        err instanceof Error ? err.message : "Unknown fetch error";
+      if (lastError.includes("abort")) {
+        lastError = `Timeout after ${timeout}ms`;
+      }
+    }
+  }
+
+  recordFailure(service, lastError);
+  return {
+    data: null,
+    ok: false,
+    error: lastError,
+    cached: false,
+    attempts: maxRetries + 1,
+    durationMs: Date.now() - startTime,
+  };
+}
+
 // ── Health check helpers ─────────────────────────────────────
 
 export interface ServiceHealth {

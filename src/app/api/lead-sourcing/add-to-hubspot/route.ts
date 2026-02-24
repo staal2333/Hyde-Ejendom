@@ -2,6 +2,8 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { createLeadCompany, createLeadContact } from "@/lib/hubspot";
+import { apiError } from "@/lib/api-error";
+import { isValidEmail } from "@/lib/validation";
 
 export async function POST(req: NextRequest) {
   try {
@@ -15,7 +17,7 @@ export async function POST(req: NextRequest) {
     };
 
     if (!company?.name) {
-      return NextResponse.json({ error: "company.name required" }, { status: 400 });
+      return apiError(400, "company.name required");
     }
 
     const companyId = await createLeadCompany({
@@ -29,8 +31,13 @@ export async function POST(req: NextRequest) {
     });
 
     const contactIds: string[] = [];
+    const skipped: string[] = [];
     for (const c of contacts) {
       if (!c.email) continue;
+      if (!isValidEmail(c.email)) {
+        skipped.push(c.email);
+        continue;
+      }
       const id = await createLeadContact({
         email: c.email,
         firstname: c.firstname,
@@ -45,11 +52,9 @@ export async function POST(req: NextRequest) {
       success: true,
       companyId,
       contactIds,
+      ...(skipped.length > 0 ? { skippedInvalidEmails: skipped } : {}),
     });
   } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Unknown error" },
-      { status: 500 }
-    );
+    return apiError(500, e instanceof Error ? e.message : "Unknown error");
   }
 }

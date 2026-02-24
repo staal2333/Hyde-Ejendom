@@ -11,6 +11,7 @@
 // ============================================================
 
 import { searchGoogle } from "./web-scraper";
+import { logger } from "../logger";
 
 /** OIS lookup result with owner and administrator data */
 export interface OisResult {
@@ -157,7 +158,7 @@ export async function lookupOis(
 
     return result;
   } catch (error) {
-    console.error("OIS lookup failed:", error);
+    logger.error(`OIS lookup failed: ${error instanceof Error ? error.message : error}`);
     emit({
       step: "ois_error",
       message: `OIS fejl: ${error instanceof Error ? error.message : "ukendt"}`,
@@ -307,7 +308,7 @@ async function findBfeViaDawa(
       emit({ step: "ois_bfe", message: "OIS: Jordstykke har intet BFE-nummer" });
       return { bfe: null, kommuneNavn: dawaKommuneNavn, kommuneKode: dawaKommuneKode };
     } catch (error) {
-      console.warn(`DAWA BFE via ${baseUrl} failed:`, error instanceof Error ? error.message : error);
+      logger.warn(`DAWA BFE via ${baseUrl} failed: ${error instanceof Error ? error.message : error}`);
       continue;
     }
   }
@@ -364,7 +365,7 @@ async function findBfeViaWebSearch(
 
     return null;
   } catch (error) {
-    console.warn("BFE web search failed:", error);
+    logger.warn(`BFE web search failed: ${error instanceof Error ? error.message : error}`);
     return null;
   }
 }
@@ -395,7 +396,7 @@ async function getOwnerAndAdmin(bfe: number): Promise<{
     clearTimeout(timeout);
 
     if (!response.ok) {
-      console.warn(`OIS ejer API returned ${response.status}`);
+      logger.warn(`OIS ejer API returned ${response.status}`);
       return null;
     }
 
@@ -427,7 +428,7 @@ async function getOwnerAndAdmin(bfe: number): Promise<{
 
     return { owners, administrators };
   } catch (error) {
-    console.warn("OIS ejer lookup failed:", error);
+    logger.warn(`OIS ejer lookup failed: ${error instanceof Error ? error.message : error}`);
     return null;
   }
 }

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getContacts, getContact, upsertContact, deleteContact } from "@/lib/ooh/store";
 import type { OOHContact } from "@/lib/ooh/types";
+import { logger } from "@/lib/logger";
 
 export const runtime = "nodejs";
 
@@ -15,7 +16,7 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({ contacts });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";
-    console.error("[contacts]", msg);
+    logger.error(msg, { service: "ooh-contacts" });
     return NextResponse.json({ error: msg }, { status: 500 });
   }
 }

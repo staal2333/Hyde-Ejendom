@@ -120,6 +120,8 @@ export interface PropertyItem {
     email: string | null;
     role: string | null;
   } | null;
+  /** Sidst opdateret i HubSpot (ISO timestamp) */
+  lastModifiedDate?: string | null;
 }
 
 export interface Toast {
@@ -167,7 +169,15 @@ export interface DashboardContextValue {
   fetchData: () => Promise<void>;
   systemHealth: {
     status: string;
-    pings: Record<string, { ok: boolean; service?: string; latencyMs?: number }>;
+    pings: Record<string, { ok: boolean; service?: string; latencyMs?: number; error?: string }>;
+    environment?: {
+      hubspot_token?: boolean;
+      openai_key?: boolean;
+      cron_secret?: boolean;
+      gmail_configured?: boolean;
+      meta_ad_library?: boolean;
+      supabase_configured?: boolean;
+    };
   } | null;
   toasts: Toast[];
   addToast: (message: string, type: Toast["type"], detail?: string) => void;

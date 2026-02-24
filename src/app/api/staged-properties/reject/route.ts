@@ -6,6 +6,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { updateStagedProperty } from "@/lib/staging/store";
+import { logger } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
   try {
@@ -33,7 +34,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ ok: true, rejected, failed });
   } catch (error) {
-    console.error("[staged-properties/reject] error:", error);
+    logger.error("Reject error", { service: "staged-properties-reject" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

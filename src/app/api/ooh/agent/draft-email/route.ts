@@ -10,6 +10,7 @@ export const runtime = "nodejs";
 import { NextRequest, NextResponse } from "next/server";
 import OpenAI from "openai";
 import { getContact, getFrame, getNetwork } from "@/lib/ooh/store";
+import { logger } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
   try {
@@ -121,7 +122,7 @@ Skriv en personlig outreach-email til denne kontakt.`,
       contactName: contact.name,
     });
   } catch (error) {
-    console.error("[agent/draft-email] Error:", error);
+    logger.error("Draft email error", { service: "ooh-agent-draft-email" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

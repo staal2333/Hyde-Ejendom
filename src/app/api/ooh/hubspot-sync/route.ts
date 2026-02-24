@@ -11,6 +11,7 @@ export const runtime = "nodejs";
 import { NextResponse } from "next/server";
 import { getContacts, upsertContact } from "@/lib/ooh/store";
 import type { OOHContact } from "@/lib/ooh/types";
+import { logger } from "@/lib/logger";
 
 const BASE_URL = "https://api.hubapi.com";
 
@@ -180,7 +181,7 @@ export async function POST() {
       totalOohContacts: existingByEmail.size,
     });
   } catch (error) {
-    console.error("[hubspot-sync] Error:", error);
+    logger.error("HubSpot sync error", { service: "hubspot-sync" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

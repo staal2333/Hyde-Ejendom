@@ -1,9 +1,19 @@
 "use client";
 
+import { useState, useEffect } from "react";
 import { useDashboard } from "@/contexts/DashboardContext";
 import type { TabId } from "@/contexts/DashboardContext";
 import { getStatusConfig } from "@/lib/statusConfig";
 import { formatPropertyTitle } from "@/lib/format-address";
+
+interface OOHProposalPreview {
+  id: string;
+  clientCompany: string;
+  mockupUrl?: string;
+  mockupBuffer?: string;
+  status?: string;
+  createdAt: string;
+}
 
 export interface HomeTabProps {
   discoveryRunning: boolean;
@@ -39,18 +49,37 @@ export function HomeTab({
 
   const stilladsSectionTitle = "Stilladser (dagen før)";
 
+  const hasScaffoldData = (dashboard?.scaffoldingNewApplications?.at ?? scaffoldPeriodCounts?.at) != null;
+  const scaffoldDisplayValue = (dashboard?.scaffoldingNewApplications?.previousDay ?? scaffoldPeriodCounts?.previousDay) ?? null;
+  const totalSent = dashboard?.analytics?.ooh?.totalSent ?? 0;
+  const showConversionRates = properties.length >= 5;
+
+  const [oohProposals, setOohProposals] = useState<OOHProposalPreview[]>([]);
+  useEffect(() => {
+    let cancelled = false;
+    fetch("/api/ooh/proposals?limit=6")
+      .then((r) => r.json())
+      .then((data: { items?: OOHProposalPreview[] }) => {
+        if (!cancelled && Array.isArray(data?.items)) setOohProposals(data.items);
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
+
+  const oohAnalytics = dashboard?.analytics?.ooh;
+
   return (
     <div className="animate-fade-in w-full max-w-full">
-      {/* Kun Full Circle-knap – sidens titel står i layout */}
-      <div className="flex justify-end mb-4">
+      {/* Full Circle – primær CTA */}
+      <div className="mb-6 flex justify-center">
         <button
           onClick={() => setFullCircleOpen(true)}
-          className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-xs font-semibold shadow-md hover:shadow-lg transition-all"
+          className="flex items-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-base font-bold shadow-lg hover:shadow-xl transition-all border border-white/20"
         >
-          <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 19.644l3.181-3.182" />
           </svg>
-          Full Circle
+          Full Circle – find leads, research, godkend og send
         </button>
       </div>
 
@@ -95,7 +124,7 @@ export function HomeTab({
           },
           {
             label: "Nye stillads ansøgninger (dagen før)",
-            value: dashboard?.scaffoldingNewApplications?.previousDay ?? scaffoldPeriodCounts?.previousDay ?? "—",
+            value: typeof scaffoldDisplayValue === "number" ? scaffoldDisplayValue : (hasScaffoldData ? 0 : "—"),
             icon: "M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18",
             gradient: "from-cyan-500 to-teal-600",
             ring: "ring-cyan-100",
@@ -123,8 +152,8 @@ export function HomeTab({
                       Live · opdateres hvert 10. min
                     </p>
                   )}
-                  {kpi.isStillads && !dashboard?.scaffoldingNewApplications && !scaffoldPeriodCounts && (
-                    <p className="text-[9px] text-slate-400 mt-0.5">Kør scan under Stilladser</p>
+                  {kpi.isStillads && !hasScaffoldData && (
+                    <p className="text-[9px] text-slate-400 mt-0.5">Scan ikke kørt endnu · Stilladser</p>
                   )}
                 </div>
                 <div
@@ -306,6 +335,71 @@ export function HomeTab({
         </div>
       </div>
 
+      {/* Seneste OOH-mockups */}
+      {oohProposals.length > 0 && (
+        <button
+          type="button"
+          onClick={() => setActiveTab("ooh")}
+          className="w-full rounded-2xl border border-violet-200/60 bg-violet-50/30 p-5 mb-6 text-left hover:bg-violet-50/50 hover:border-violet-200 transition-all card-hover"
+        >
+          <div className="flex items-center justify-between mb-3">
+            <h2 className="text-sm font-bold text-slate-900 flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center" aria-hidden>
+                <svg className="w-4 h-4 text-violet-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" />
+                </svg>
+              </span>
+              Seneste OOH-mockups
+            </h2>
+            <span className="text-[10px] text-violet-600 font-semibold">Klik for at åbne OOH</span>
+          </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
+            {oohProposals.slice(0, 6).map((p) => (
+              <div key={p.id} className="rounded-xl border border-violet-100 bg-white overflow-hidden aspect-square">
+                {p.mockupBuffer ? (
+                  <img src={p.mockupBuffer} alt="" className="w-full h-full object-cover" />
+                ) : p.mockupUrl ? (
+                  <a href={p.mockupUrl} target="_blank" rel="noopener noreferrer" className="block w-full h-full bg-violet-50 flex items-center justify-center" onClick={(e) => e.stopPropagation()}>
+                    <svg className="w-8 h-8 text-violet-300" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 003 8.25v10.5A2.25 2.25 0 005.25 21h10.5A2.25 2.25 0 0018 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" /></svg>
+                  </a>
+                ) : (
+                  <div className="w-full h-full bg-slate-50 flex items-center justify-center">
+                    <svg className="w-6 h-6 text-slate-300" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" /></svg>
+                  </div>
+                )}
+                <div className="p-1.5 bg-white border-t border-violet-50">
+                  <p className="text-[10px] font-semibold text-slate-700 truncate" title={p.clientCompany}>{p.clientCompany}</p>
+                </div>
+              </div>
+            ))}
+          </div>
+        </button>
+      )}
+
+      {/* OOH Kampagne-performance */}
+      {oohAnalytics && (oohAnalytics.totalSent > 0 || oohAnalytics.opened > 0) && (
+        <button
+          type="button"
+          onClick={() => setActiveTab("ooh")}
+          className="w-full rounded-2xl border border-slate-200/60 bg-white shadow-[var(--card-shadow)] p-4 mb-6 text-left hover:shadow-lg transition-all flex items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-violet-100 flex items-center justify-center">
+              <svg className="w-5 h-5 text-violet-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" /></svg>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-slate-900">OOH Kampagne-performance</p>
+              <p className="text-xs text-slate-500">
+                Sendt: {oohAnalytics.totalSent} · Åbnet: {oohAnalytics.opened ?? 0} · Klikket: {oohAnalytics.clicked ?? 0} · Svar: {oohAnalytics.replied ?? 0}
+                {(oohAnalytics.meetings ?? 0) > 0 && ` · Møder: ${oohAnalytics.meetings}`}
+                {(oohAnalytics.sold ?? 0) > 0 && ` · Solgt: ${oohAnalytics.sold}`}
+              </p>
+            </div>
+          </div>
+          <span className="text-[10px] text-violet-600 font-semibold shrink-0">Se i OOH →</span>
+        </button>
+      )}
+
       {/* Visual Pipeline */}
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-6 mb-6">
         <div className="flex items-center justify-between mb-5">
@@ -450,7 +544,7 @@ export function HomeTab({
             </div>
           );
         })()}
-        {properties.length > 0 && (
+        {properties.length > 0 && showConversionRates && (
           <div className="mt-5 pt-4 border-t border-slate-100 flex items-center justify-center gap-8 text-[10px] text-slate-500">
             {(() => {
               const total = properties.length || 1;
@@ -627,8 +721,8 @@ export function HomeTab({
         </div>
       </div>
 
-      {/* Analytics Overview */}
-      {dashboard?.analytics && (
+      {/* Analytics Overview – kun når der er sendt mails */}
+      {dashboard?.analytics && totalSent > 0 && (
         <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
           <h2 className="text-xs font-bold text-slate-900 mb-4 uppercase tracking-wide">Analytics</h2>
           <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4">

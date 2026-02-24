@@ -4,6 +4,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { updateEjendom } from "@/lib/hubspot";
+import { logger } from "@/lib/logger";
 
 export async function PATCH(
   request: NextRequest,
@@ -40,7 +41,7 @@ export async function PATCH(
     await updateEjendom(id, properties);
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error("[API] PATCH property failed:", error);
+    logger.error("PATCH property failed", { service: "properties-id" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Kunne ikke opdatere ejendom" },
       { status: 500 }

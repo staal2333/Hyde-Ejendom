@@ -18,6 +18,7 @@ import {
 } from "@/lib/ooh/store";
 import { compositeMultiplePlacements } from "@/lib/ooh/image-processor";
 import { loadImageBuffer } from "@/lib/ooh/load-image";
+import { logger } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
   try {
@@ -131,7 +132,7 @@ export async function POST(req: NextRequest) {
           try {
             embeddedImage = await pdfDoc.embedPng(processedBuffer);
           } catch (e2) {
-            console.error(`[generate-presentation] Could not embed image for slot ${slot.id}:`, e2);
+            logger.error(`Could not embed image for slot ${slot.id}`, { service: "generate-presentation" });
             continue;
           }
         }
@@ -221,7 +222,7 @@ export async function POST(req: NextRequest) {
       },
     });
   } catch (error) {
-    console.error("[generate-presentation] Error:", error);
+    logger.error("Presentation generation error", { service: "generate-presentation" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

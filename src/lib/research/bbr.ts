@@ -3,6 +3,7 @@
 // Uses Dataforsyningen's free API (dawa.aws.dk as primary)
 // ============================================================
 
+import { logger } from "../logger";
 import type { BbrResult } from "@/types";
 
 // Try dawa.aws.dk first (reliable DNS), fall back to api.dataforsyningen.dk
@@ -78,7 +79,7 @@ export async function lookupBbr(
       }
 
       if (!dawaData || dawaData.length === 0) {
-        console.warn(`No DAWA result for: ${fullAddress}`);
+        logger.warn(`No DAWA result for: ${fullAddress}`);
         return null;
       }
 
@@ -126,11 +127,11 @@ export async function lookupBbr(
         rawData: building,
       };
     } catch (error) {
-      console.warn(`BBR lookup via ${baseUrl} failed:`, error instanceof Error ? error.message : error);
+      logger.warn(`BBR lookup via ${baseUrl} failed: ${error instanceof Error ? error.message : error}`);
       continue; // Try next URL
     }
   }
 
-  console.error("BBR lookup failed: all DAWA URLs exhausted");
+  logger.error("BBR lookup failed: all DAWA URLs exhausted");
   return null;
 }

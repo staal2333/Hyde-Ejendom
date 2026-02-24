@@ -19,10 +19,9 @@ export async function GET() {
       getStagedCounts(),
     ]);
 
-    // Email queue stats (lightweight, in-memory)
-    const emailStats = getQueueStats();
+    const emailStats = await getQueueStats();
 
-    const scaffoldStats = getScaffoldStats();
+    const scaffoldStats = await getScaffoldStats();
 
     // OOH send analytics (track opens, clicks, etc.)
     let oohAnalytics = { totalSent: 0, opened: 0, clicked: 0, replied: 0, meetings: 0, sold: 0 };
@@ -93,10 +92,8 @@ export async function GET() {
       },
     });
   } catch (error) {
-    console.error("[API] Dashboard stats failed:", error);
-    // Return 200 with fallback so the app loads on Vercel when HubSpot/Supabase env is missing
     const msg = error instanceof Error ? error.message : "Unknown error";
-    const fallbackScaffold = getScaffoldStats();
+    const fallbackScaffold = await getScaffoldStats().catch(() => null);
     return NextResponse.json({
       error: msg,
       scaffoldingNewApplications: fallbackScaffold

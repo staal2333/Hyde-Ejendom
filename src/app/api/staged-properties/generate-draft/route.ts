@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStagedProperty, updateStagedProperty } from "@/lib/staging/store";
 import { generateEmailDraft } from "@/lib/llm";
 import type { Property, Contact, ResearchAnalysis } from "@/types";
+import { logger } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
   try {
@@ -89,7 +90,7 @@ export async function POST(req: NextRequest) {
 
         results.push({ id, success: true });
       } catch (e) {
-        console.error(`[generate-draft] Failed for ${id}:`, e);
+        logger.error(`Failed for ${id}`, { service: "staged-properties-generate-draft" });
         results.push({
           id,
           success: false,
@@ -108,7 +109,7 @@ export async function POST(req: NextRequest) {
       results,
     });
   } catch (error) {
-    console.error("[staged-properties/generate-draft] error:", error);
+    logger.error("Generate draft error", { service: "staged-properties-generate-draft" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

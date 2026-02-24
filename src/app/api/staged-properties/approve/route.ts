@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { getStagedProperty, updateStagedProperty } from "@/lib/staging/store";
 import { createEjendom, upsertContact, saveEmailDraft } from "@/lib/hubspot";
 import type { Contact } from "@/types";
+import { logger } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
   try {
@@ -65,7 +66,7 @@ export async function POST(req: NextRequest) {
             };
             await upsertContact(contact, hubspotId);
           } catch (e) {
-            console.warn(`[approve] Failed to create contact for ${staged.address}:`, e);
+            logger.warn(`Failed to create contact for ${staged.address}`, { service: "staged-properties-approve" });
           }
         }
 
@@ -79,7 +80,7 @@ export async function POST(req: NextRequest) {
               staged.emailDraftNote || ""
             );
           } catch (e) {
-            console.warn(`[approve] Failed to save email draft for ${staged.address}:`, e);
+            logger.warn(`Failed to save email draft for ${staged.address}`, { service: "staged-properties-approve" });
           }
         }
 
@@ -98,7 +99,7 @@ export async function POST(req: NextRequest) {
                 : "RESEARCH_DONE_CONTACT_PENDING",
             });
           } catch (e) {
-            console.warn(`[approve] Failed to update research for ${staged.address}:`, e);
+            logger.warn(`Failed to update research for ${staged.address}`, { service: "staged-properties-approve" });
           }
         }
 
@@ -110,7 +111,7 @@ export async function POST(req: NextRequest) {
 
         results.push({ id, success: true, hubspotId });
       } catch (e) {
-        console.error(`[approve] Failed to approve ${id}:`, e);
+        logger.error(`Failed to approve ${id}`, { service: "staged-properties-approve" });
         results.push({
           id,
           success: false,
@@ -129,7 +130,7 @@ export async function POST(req: NextRequest) {
       results,
     });
   } catch (error) {
-    console.error("[staged-properties/approve] error:", error);
+    logger.error("Approve error", { service: "staged-properties-approve" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

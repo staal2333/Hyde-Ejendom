@@ -25,9 +25,10 @@ export interface OOHTabProps {
   initialFrame: OOHInitialFrame | undefined;
   initialClient: OOHInitialClient | undefined;
   onToast: (message: string, type: "success" | "error" | "info") => void;
+  setActiveTab?: (tab: string) => void;
 }
 
-export function OOHTab({ initialFrame, initialClient, onToast }: OOHTabProps) {
+export function OOHTab({ initialFrame, initialClient, onToast, setActiveTab }: OOHTabProps) {
   const normalizedFrame = initialFrame
     ? { ...initialFrame, type: (initialFrame.type ?? "scaffolding") as "scaffolding" | "facade" | "gable" | "other" }
     : undefined;
@@ -38,6 +39,7 @@ export function OOHTab({ initialFrame, initialClient, onToast }: OOHTabProps) {
         initialFrame={normalizedFrame}
         initialClient={initialClient}
         onToast={onToast}
+        setActiveTab={setActiveTab}
       />
     </div>
   );

@@ -10,6 +10,7 @@
 export const runtime = "nodejs";
 
 import { NextRequest, NextResponse } from "next/server";
+import { logger } from "@/lib/logger";
 
 const BASE_URL = "https://api.hubapi.com";
 
@@ -73,7 +74,7 @@ export async function GET(req: NextRequest) {
         ejendomme = ejData.results || [];
       }
     } catch (e) {
-      console.warn("[hubspot-contacts] Could not fetch ejendomme:", e);
+      logger.warn("Could not fetch ejendomme", { service: "hubspot-contacts" });
     }
 
     // Map contacts
@@ -131,7 +132,7 @@ export async function GET(req: NextRequest) {
       totalProperties: properties.length,
     });
   } catch (error) {
-    console.error("[hubspot-contacts] Error:", error);
+    logger.error("HubSpot contacts error", { service: "hubspot-contacts" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error", contacts: [], properties: [] },
       { status: 500 }
@@ -188,7 +189,7 @@ export async function POST(req: NextRequest) {
           imported.push({ hubspotId: hsId, oohContactId: created.id, name });
         }
       } catch (err) {
-        console.error(`[hubspot-contacts] Error importing ${hsId}:`, err);
+        logger.error(`Error importing ${hsId}`, { service: "hubspot-contacts" });
       }
     }
 
@@ -198,7 +199,7 @@ export async function POST(req: NextRequest) {
       contacts: imported,
     });
   } catch (error) {
-    console.error("[hubspot-contacts] Import error:", error);
+    logger.error("Import error", { service: "hubspot-contacts" });
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Unknown error" },
       { status: 500 }

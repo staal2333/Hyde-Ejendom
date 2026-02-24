@@ -5,6 +5,7 @@
 import { NextResponse } from "next/server";
 import { listInboxThreads } from "@/lib/email-sender";
 import { getPropertyIdForThread, loadThreadPropertiesFromDb } from "@/lib/mail-threads";
+import { logger } from "@/lib/logger";
 
 export async function GET() {
   try {
@@ -16,7 +17,7 @@ export async function GET() {
     }));
     return NextResponse.json({ threads: withProperty });
   } catch (error) {
-    console.error("[API] Inbox list failed:", error);
+    logger.error("Inbox list failed", { service: "mail-inbox" });
     const message = error instanceof Error ? error.message : "Kunne ikke hente indbakke";
     const isScope =
       message.includes("insufficient") ||

@@ -7,6 +7,9 @@
 import { NextRequest, NextResponse } from "next/server";
 import { fetchAllEjendomme } from "@/lib/hubspot";
 import { insertStagedProperty, stagedExistsByAddress } from "@/lib/staging/store";
+import { apiError } from "@/lib/api-error";
+import { createPropertySchema, parseBody } from "@/lib/validation";
+import { logger } from "@/lib/logger";
 
 export async function GET() {
   try {
@@ -35,6 +38,7 @@ export async function GET() {
             role: null,
           }
         : null,
+      lastModifiedDate: p.updatedAt || null,
     }));
 
     return NextResponse.json({
@@ -42,13 +46,11 @@ export async function GET() {
       total: enriched.length,
     });
   } catch (error) {
-    console.error("[API] Failed to fetch ejendomme:", error);
-    // Return 200 with empty list so the app loads when HubSpot env is missing (e.g. on Vercel)
-    return NextResponse.json({
-      error: error instanceof Error ? error.message : "Unknown error",
-      properties: [],
-      total: 0,
+    logger.error("Failed to fetch ejendomme", {
+      service: "api-properties",
+      error: { message: error instanceof Error ? error.message : String(error) },
     });
+    return NextResponse.json({ properties: [], total: 0 });
   }
 }
 
@@ -59,26 +61,11 @@ export async function GET() {
  */
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const {
-      address,
-      city,
-      postalCode,
-      startResearch,
-      outdoorScore,
-      dailyTraffic,
-      trafficSource,
-      outdoorNotes,
-      source: bodySource,
-    } = body;
+    const raw = await request.json();
+    const parsed = parseBody(createPropertySchema, raw);
+    if (!parsed.ok) return apiError(400, parsed.error, parsed.detail);
 
-    if (!address || typeof address !== "string" || address.trim().length < 3) {
-      return NextResponse.json(
-        { error: "En gyldig adresse er påkrævet (min. 3 tegn)" },
-        { status: 400 }
-      );
-    }
-
+    const { address, city, postalCode, startResearch, outdoorScore, dailyTraffic, trafficSource, outdoorNotes, source: bodySource } = parsed.data;
     const trimmedAddress = address.trim();
 
     // Parse address components if not provided separately
@@ -86,7 +73,7 @@ export async function POST(request: NextRequest) {
     let parsedPostal = postalCode?.trim() || "";
 
     if (!parsedCity || !parsedPostal) {
-      const parts = trimmedAddress.split(",").map(s => s.trim());
+      const parts = trimmedAddress.split(",").map((s: string) => s.trim());
       if (parts.length >= 2) {
         const afterComma = parts[1];
         const postalMatch = afterComma.match(/^(\d{4})\s+(.+)$/);
@@ -102,10 +89,7 @@ export async function POST(request: NextRequest) {
     const streetAddress = trimmedAddress.split(",")[0].trim();
     const exists = await stagedExistsByAddress(streetAddress);
     if (exists) {
-      return NextResponse.json(
-        { error: `Ejendommen "${streetAddress}" eksisterer allerede i staging` },
-        { status: 409 }
-      );
+      return apiError(409, `Ejendommen "${streetAddress}" eksisterer allerede i staging`);
     }
 
     const source = bodySource === "discovery" ? "discovery" : "manual";
@@ -131,10 +115,10 @@ export async function POST(request: NextRequest) {
       staged: true,
     });
   } catch (error) {
-    console.error("[API] Failed to create ejendom:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Ukendt fejl ved oprettelse" },
-      { status: 500 }
-    );
+    logger.error("Failed to create ejendom", {
+      service: "api-properties",
+      error: { message: error instanceof Error ? error.message : String(error) },
+    });
+    return apiError(500, error instanceof Error ? error.message : "Ukendt fejl ved oprettelse");
   }
 }

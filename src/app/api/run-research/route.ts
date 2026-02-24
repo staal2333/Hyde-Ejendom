@@ -16,7 +16,8 @@ import {
 import type { WorkflowProgress } from "@/lib/workflow/engine";
 import { fetchEjendomById } from "@/lib/hubspot";
 import { getStagedProperty } from "@/lib/staging/store";
-import { config } from "@/lib/config";
+import { verifyCronSecret } from "@/lib/cron-auth";
+import { logger } from "@/lib/logger";
 
 /** SSE helper: create a streaming response */
 function createSSEStream(
@@ -72,13 +73,8 @@ function createSSEStream(
  * Batch research: all pending HubSpot properties + all "new" staged properties.
  */
 export async function GET(request: NextRequest) {
-  const cronSecret = config.cronSecret();
-  if (cronSecret) {
-    const authHeader = request.headers.get("authorization");
-    if (authHeader !== `Bearer ${cronSecret}`) {
-      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-    }
-  }
+  const authErr = verifyCronSecret(request);
+  if (authErr) return authErr;
 
   return createSSEStream(async (send, isCancelled) => {
     // Phase 1: HubSpot properties
@@ -178,7 +174,7 @@ export async function POST(request: NextRequest) {
       }
     });
   } catch (error) {
-    console.error("[API] Single ejendom research failed:", error);
+    logger.error("Single ejendom research failed", { service: "run-research" });
     return NextResponse.json(
       {
         success: false,

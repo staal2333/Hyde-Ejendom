@@ -6,6 +6,8 @@
 // - Gracefully fails (non-blocking) if HubSpot is not configured
 // ============================================================
 
+import { logger } from "../logger";
+
 const BASE_URL = "https://api.hubapi.com";
 
 function getToken(): string | null {
@@ -93,14 +95,11 @@ export async function createHubSpotNote(
     });
 
     if (!noteRes.ok) {
-      console.error(
-        "[hubspot-sync] Failed to create note:",
-        noteRes.status,
-        await noteRes.text().catch(() => "")
-      );
+      const errText = await noteRes.text().catch(() => "");
+      logger.error(`[hubspot-sync] Failed to create note: ${noteRes.status} ${errText}`);
     }
   } catch (err) {
-    console.error("[hubspot-sync] Error creating note:", err);
+    logger.error(`[hubspot-sync] Error creating note: ${err instanceof Error ? err.message : err}`);
   }
 }
 
@@ -146,7 +145,7 @@ export async function updateHubSpotOutreachStatus(
       const errText = await res.text().catch(() => "");
       // If the property doesn't exist, try creating it first
       if (errText.includes("outreach_status") && (errText.includes("not exist") || errText.includes("invalid"))) {
-        console.log("[hubspot-sync] Creating outreach_status property...");
+        logger.info("[hubspot-sync] Creating outreach_status property...");
         await ensureOutreachStatusProperty(token);
         // Retry the update
         await fetch(`${BASE_URL}/crm/v3/objects/contacts/${hsContactId}`, {
@@ -157,11 +156,11 @@ export async function updateHubSpotOutreachStatus(
           }),
         });
       } else {
-        console.error("[hubspot-sync] Failed to update status:", res.status, errText);
+        logger.error(`[hubspot-sync] Failed to update status: ${res.status} ${errText}`);
       }
     }
   } catch (err) {
-    console.error("[hubspot-sync] Error updating status:", err);
+    logger.error(`[hubspot-sync] Error updating status: ${err instanceof Error ? err.message : err}`);
   }
 }
 

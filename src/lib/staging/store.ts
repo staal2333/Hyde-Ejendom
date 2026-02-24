@@ -4,6 +4,7 @@
 // ============================================================
 
 import { supabase, HAS_SUPABASE } from "../supabase";
+import { logger } from "../logger";
 
 // ── Types ─────────────────────────────────────────────────
 
@@ -109,7 +110,7 @@ export async function listStagedProperties(opts?: {
   if (opts?.search) query = query.or(`name.ilike.%${opts.search}%,address.ilike.%${opts.search}%`);
 
   const { data, error } = await query.limit(500);
-  if (error) { console.error("[staging] list error:", error); return []; }
+  if (error) { logger.error(`[staging] list error: ${error.message}`); return []; }
   return (data || []).map(rowToStaged);
 }
 
@@ -224,7 +225,7 @@ export async function updateStagedProperty(
     .select()
     .single();
 
-  if (error) { console.error("[staging] update error:", error); return null; }
+  if (error) { logger.error(`[staging] update error: ${error.message}`); return null; }
   return rowToStaged(data);
 }
 
