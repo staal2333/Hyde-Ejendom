@@ -25,9 +25,6 @@ CREATE TABLE IF NOT EXISTS frames (
 -- Migration: add placements column to existing tables
 ALTER TABLE frames ADD COLUMN IF NOT EXISTS placements JSONB NOT NULL DEFAULT '[]';
 
--- Migration: add clicked_at column to sends
-ALTER TABLE ooh_sends ADD COLUMN IF NOT EXISTS clicked_at TIMESTAMPTZ;
-
 CREATE TABLE IF NOT EXISTS creatives (
   id              TEXT PRIMARY KEY,
   filename        TEXT NOT NULL,
@@ -166,6 +163,9 @@ CREATE TABLE IF NOT EXISTS staged_properties (
 
 CREATE INDEX IF NOT EXISTS idx_staged_properties_stage ON staged_properties(stage);
 CREATE INDEX IF NOT EXISTS idx_staged_properties_address ON staged_properties(address);
+
+-- Migration: add clicked_at column to sends (after ooh_sends is created)
+ALTER TABLE ooh_sends ADD COLUMN IF NOT EXISTS clicked_at TIMESTAMPTZ;
 
 -- Efficient count-by-stage RPC function (avoids full table scan)
 CREATE OR REPLACE FUNCTION staged_property_counts()

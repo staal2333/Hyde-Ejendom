@@ -21,7 +21,6 @@ export interface StagedProperty {
   outdoorNotes?: string;
   dailyTraffic?: number;
   trafficSource?: string;
-  // Research data
   ownerCompany?: string;
   ownerCvr?: string;
   researchSummary?: string;
@@ -32,7 +31,6 @@ export interface StagedProperty {
   emailDraftSubject?: string;
   emailDraftBody?: string;
   emailDraftNote?: string;
-  // Metadata
   source: StagedSource;
   stage: StagedStage;
   hubspotId?: string;
@@ -142,7 +140,6 @@ export async function stagedExistsByAddress(address: string): Promise<boolean> {
   return (data?.length || 0) > 0;
 }
 
-/** Normalize string fields for storage */
 function trim(s: string | undefined): string {
   return (s ?? "").trim();
 }
@@ -200,7 +197,6 @@ export async function updateStagedProperty(
 ): Promise<StagedProperty | null> {
   if (!HAS_SUPABASE) return null;
 
-  // Map camelCase to snake_case
   const row: Record<string, unknown> = { updated_at: new Date().toISOString() };
   if (updates.stage !== undefined) row.stage = updates.stage;
   if (updates.ownerCompany !== undefined) row.owner_company = updates.ownerCompany;
@@ -241,12 +237,11 @@ export async function deleteStagedProperty(id: string): Promise<boolean> {
   return !error;
 }
 
-/** Get counts by stage for dashboard – uses a single-column fetch for efficiency */
+/** Get counts by stage for dashboard */
 export async function getStagedCounts(): Promise<Record<StagedStage, number>> {
   const empty: Record<StagedStage, number> = { new: 0, researching: 0, researched: 0, approved: 0, rejected: 0, pushed: 0 };
   if (!HAS_SUPABASE) return empty;
 
-  // Try RPC (GROUP BY) first – falls back to client-side counting
   try {
     const { data: rpcData } = await supabase!.rpc("staged_property_counts");
     if (rpcData && Array.isArray(rpcData)) {
@@ -260,7 +255,6 @@ export async function getStagedCounts(): Promise<Record<StagedStage, number>> {
     // RPC not available – fallback below
   }
 
-  // Fallback: fetch only the stage column and count client-side
   const { data } = await supabase!
     .from("staged_properties")
     .select("stage")
