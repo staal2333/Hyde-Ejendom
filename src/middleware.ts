@@ -26,21 +26,32 @@ function hasBearerToken(req: NextRequest): boolean {
   return !!auth && auth.startsWith("Bearer ");
 }
 
-const MAX_BODY_BYTES = 2 * 1024 * 1024; // 2 MB
+const MAX_BODY_BYTES = 10 * 1024 * 1024; // 10 MB
+
+const LARGE_BODY_ROUTES = [
+  "/api/ooh/upload",
+  "/api/ooh/upload-template-pdf",
+  "/api/ooh/generate-presentation",
+  "/api/ooh/generate-pdf",
+  "/api/ooh/batch-mockup",
+];
 
 export async function middleware(req: NextRequest) {
   const { pathname } = req.nextUrl;
 
   if (!pathname.startsWith("/api/")) return NextResponse.next();
 
-  // Body size limit for POST/PUT/PATCH
+  // Body size limit for POST/PUT/PATCH (skip file-heavy routes)
   if (["POST", "PUT", "PATCH"].includes(req.method)) {
-    const contentLength = req.headers.get("content-length");
-    if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
-      return NextResponse.json(
-        { error: "Request body too large", detail: "Max 2 MB" },
-        { status: 413 },
-      );
+    const isLargeRoute = LARGE_BODY_ROUTES.some((r) => pathname.startsWith(r));
+    if (!isLargeRoute) {
+      const contentLength = req.headers.get("content-length");
+      if (contentLength && parseInt(contentLength, 10) > MAX_BODY_BYTES) {
+        return NextResponse.json(
+          { error: "Request body too large", detail: "Max 10 MB" },
+          { status: 413 },
+        );
+      }
     }
   }
 
