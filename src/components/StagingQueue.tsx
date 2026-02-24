@@ -55,18 +55,18 @@ interface ResearchProgress {
 // ─── Config ─────────────────────────────────────────────────
 
 const STAGE_CONFIG: Record<StagedStage, { label: string; color: string; bg: string; dot: string; icon: string }> = {
-  new:         { label: "Ny",            color: "text-amber-400",   bg: "bg-amber-500/10 border-amber-500/20",   dot: "bg-amber-400",                     icon: "M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" },
-  researching: { label: "Researcher...", color: "text-blue-400",    bg: "bg-blue-500/10 border-blue-500/20",     dot: "bg-blue-400 animate-pulse",        icon: "M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5" },
-  researched:  { label: "Researched",    color: "text-indigo-400",  bg: "bg-indigo-500/10 border-indigo-500/20", dot: "bg-indigo-400",                    icon: "M4.26 10.147a60.438 60.438 0 00-.491 6.347A48.62 48.62 0 0112 20.904" },
-  approved:    { label: "Godkendt",      color: "text-green-400",   bg: "bg-green-500/10 border-green-500/20",   dot: "bg-green-400",                     icon: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
-  rejected:    { label: "Afvist",        color: "text-red-400",     bg: "bg-red-500/10 border-red-500/20",       dot: "bg-red-400",                       icon: "M6 18L18 6M6 6l12 12" },
-  pushed:      { label: "I HubSpot",     color: "text-emerald-400", bg: "bg-emerald-500/10 border-emerald-500/20", dot: "bg-emerald-400",                 icon: "M4.5 12.75l6 6 9-13.5" },
+  new:         { label: "Ny",            color: "text-amber-700",   bg: "bg-amber-50 border-amber-200",     dot: "bg-amber-500",                     icon: "M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" },
+  researching: { label: "Researcher...", color: "text-blue-700",    bg: "bg-blue-50 border-blue-200",       dot: "bg-blue-500 animate-pulse",        icon: "M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5" },
+  researched:  { label: "Researched",    color: "text-indigo-700",  bg: "bg-indigo-50 border-indigo-200",   dot: "bg-indigo-500",                    icon: "M4.26 10.147a60.438 60.438 0 00-.491 6.347A48.62 48.62 0 0112 20.904" },
+  approved:    { label: "Godkendt",      color: "text-green-700",   bg: "bg-green-50 border-green-200",     dot: "bg-green-500",                     icon: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" },
+  rejected:    { label: "Afvist",        color: "text-red-700",     bg: "bg-red-50 border-red-200",         dot: "bg-red-500",                       icon: "M6 18L18 6M6 6l12 12" },
+  pushed:      { label: "I HubSpot",     color: "text-emerald-700", bg: "bg-emerald-50 border-emerald-200", dot: "bg-emerald-500",                   icon: "M4.5 12.75l6 6 9-13.5" },
 };
 
 const SOURCE_LABELS: Record<StagedSource, { label: string; color: string }> = {
-  discovery:    { label: "Discovery",    color: "text-blue-400 bg-blue-500/10" },
-  street_agent: { label: "Gade-Agent",   color: "text-violet-400 bg-violet-500/10" },
-  manual:       { label: "Manuel",       color: "text-slate-400 bg-slate-500/10" },
+  discovery:    { label: "Discovery",    color: "text-blue-700 bg-blue-50" },
+  street_agent: { label: "Gade-Agent",   color: "text-violet-700 bg-violet-50" },
+  manual:       { label: "Manuel",       color: "text-slate-600 bg-slate-100" },
 };
 
 // ─── SVG Icon ───────────────────────────────────────────────
@@ -381,7 +381,7 @@ export default function StagingQueue() {
             className={`pointer-events-auto animate-slide-down rounded-xl border px-4 py-3 shadow-xl backdrop-blur-sm max-w-sm ${
               t.type === "success" ? "bg-green-950/90 border-green-500/30 text-green-300"
               : t.type === "error" ? "bg-red-950/90 border-red-500/30 text-red-300"
-              : "bg-slate-900/90 border-slate-500/30 text-slate-300"
+              : "bg-slate-100 border-slate-200 text-slate-600"
             }`}
           >
             <div className="flex items-center gap-2">
@@ -407,8 +407,8 @@ export default function StagingQueue() {
             onClick={() => setFilter(filter === stage ? "all" : stage)}
             className={`group relative rounded-xl border p-3 text-left transition-all duration-200 ${
               filter === stage
-                ? `${cfg.bg} ring-1 ring-white/10`
-                : "bg-[#161923] border-white/[0.04] hover:border-white/[0.08] hover:bg-white/[0.02]"
+                ? `${cfg.bg} ring-1 ring-slate-300`
+                : "bg-white border-slate-200/60 hover:border-slate-300 hover:shadow-sm"
             }`}
           >
             <div className="flex items-center gap-1.5 mb-1.5">
@@ -417,7 +417,7 @@ export default function StagingQueue() {
                 {cfg.label}
               </span>
             </div>
-            <div className={`text-2xl font-bold tabular-nums ${filter === stage ? "text-white" : "text-slate-300"}`}>
+            <div className={`text-2xl font-bold tabular-nums ${filter === stage ? "text-slate-800" : "text-slate-700"}`}>
               {counts[stage]}
             </div>
           </button>
@@ -427,15 +427,15 @@ export default function StagingQueue() {
       {/* ── Action Banner ── */}
       {activeCount > 0 && (
         <div className="rounded-xl border overflow-hidden">
-          <div className="flex items-center gap-3 bg-gradient-to-r from-amber-500/[0.07] via-orange-500/[0.05] to-transparent border-amber-500/15 px-4 py-3">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-500/20 to-orange-500/20 flex items-center justify-center flex-shrink-0">
-              <Ic d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" className="w-4.5 h-4.5 text-amber-400" />
+          <div className="flex items-center gap-3 bg-gradient-to-r from-amber-50 via-orange-50/60 to-transparent border-amber-200 px-4 py-3">
+            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center flex-shrink-0">
+              <Ic d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" className="w-4.5 h-4.5 text-amber-600" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-amber-200">
+              <p className="text-sm font-semibold text-amber-800">
                 {activeCount} ejendom{activeCount !== 1 ? "me" : ""} afventer handling
               </p>
-              <p className="text-[11px] text-amber-300/50 mt-0.5">
+              <p className="text-[11px] text-amber-600 mt-0.5">
                 {counts.new > 0 && `${counts.new} nye`}
                 {counts.researching > 0 && ` · ${counts.researching} researcher`}
                 {counts.researched > 0 && ` · ${counts.researched} klar til godkendelse & mail-udkast`}
@@ -447,7 +447,7 @@ export default function StagingQueue() {
                 <button
                   onClick={handleBatchResearch}
                   disabled={batchResearching}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/20 text-blue-300 text-xs font-medium hover:bg-blue-500/30 transition-colors disabled:opacity-50"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 text-xs font-medium hover:bg-blue-200 transition-colors disabled:opacity-50"
                 >
                   <Ic d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5" className="w-3.5 h-3.5" />
                   {batchResearching ? "Researcher..." : `Research alle nye (${counts.new})`}
@@ -456,7 +456,7 @@ export default function StagingQueue() {
               {counts.researched > 0 && (
                 <button
                   onClick={() => setFilter("researched")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-500/20 text-indigo-300 text-xs font-medium hover:bg-indigo-500/30 transition-colors"
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-100 text-indigo-700 text-xs font-medium hover:bg-indigo-200 transition-colors"
                 >
                   <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-3.5 h-3.5" />
                   Godkend & generer mail ({counts.researched})
@@ -477,10 +477,10 @@ export default function StagingQueue() {
             placeholder="Søg adresse, ejer, by..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-8 py-2 rounded-lg bg-[#161923] border border-white/[0.06] text-sm text-white placeholder-slate-500 focus:outline-none focus:border-brand-500/40 focus:ring-1 focus:ring-brand-500/20 transition-colors"
+            className="w-full pl-9 pr-8 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-brand-500/40 focus:ring-1 focus:ring-brand-500/20 transition-colors"
           />
           {search && (
-            <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-300 transition-colors">
+            <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors">
               <Ic d="M6 18L18 6M6 6l12 12" className="w-3.5 h-3.5" />
             </button>
           )}
@@ -496,14 +496,14 @@ export default function StagingQueue() {
                 onClick={() => setFilter(f)}
                 className={`flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all duration-150 ${
                   filter === f
-                    ? "bg-brand-500/15 text-brand-300 border border-brand-500/25 shadow-sm"
-                    : "bg-white/[0.03] text-slate-500 border border-transparent hover:bg-white/[0.05] hover:text-slate-400"
+                    ? "bg-brand-50 text-brand-700 border border-brand-200 shadow-sm"
+                    : "bg-white text-slate-500 border border-slate-200 hover:bg-slate-50 hover:text-slate-700"
                 }`}
               >
                 {f === "all" ? "Alle" : STAGE_CONFIG[f].label}
                 {count > 0 && (
                   <span className={`text-[10px] px-1 py-0.5 rounded-full ${
-                    filter === f ? "bg-brand-500/20 text-brand-300" : "bg-white/[0.06] text-slate-500"
+                    filter === f ? "bg-brand-100 text-brand-700" : "bg-slate-100 text-slate-500"
                   }`}>
                     {count}
                   </span>
@@ -551,7 +551,7 @@ export default function StagingQueue() {
               </button>
               <button
                 onClick={() => setSelected(new Set())}
-                className="p-1.5 rounded-lg text-slate-500 hover:text-slate-300 hover:bg-white/[0.06] transition-colors"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
                 title="Ryd valg"
               >
                 <Ic d="M6 18L18 6M6 6l12 12" className="w-3.5 h-3.5" />
@@ -565,14 +565,14 @@ export default function StagingQueue() {
       {loading ? (
         <div className="space-y-3">
           {[1, 2, 3, 4, 5].map(i => (
-            <div key={i} className="rounded-xl border border-white/[0.04] bg-[#161923] overflow-hidden">
+            <div key={i} className="rounded-xl border border-slate-200/60 bg-white overflow-hidden">
               <div className="flex items-center gap-3 px-4 py-3.5">
-                <div className="w-10 h-10 rounded-lg bg-white/[0.04] animate-pulse" />
+                <div className="w-10 h-10 rounded-lg bg-slate-100 animate-pulse" />
                 <div className="flex-1 space-y-2">
-                  <div className="h-3.5 w-48 rounded bg-white/[0.04] animate-pulse" />
-                  <div className="h-2.5 w-32 rounded bg-white/[0.03] animate-pulse" />
+                  <div className="h-3.5 w-48 rounded bg-slate-100 animate-pulse" />
+                  <div className="h-2.5 w-32 rounded bg-slate-100 animate-pulse" />
                 </div>
-                <div className="h-3 w-16 rounded bg-white/[0.03] animate-pulse" />
+                <div className="h-3 w-16 rounded bg-slate-100 animate-pulse" />
               </div>
             </div>
           ))}
@@ -580,10 +580,10 @@ export default function StagingQueue() {
       ) : properties.length === 0 ? (
         /* ── Empty State ── */
         <div className="flex flex-col items-center justify-center py-24 text-center">
-          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-white/[0.03] to-white/[0.01] border border-white/[0.06] flex items-center justify-center mb-5">
+          <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-slate-100 to-slate-50 border border-slate-200 flex items-center justify-center mb-5">
             <Ic d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" className="w-9 h-9 text-slate-600" />
           </div>
-          <h3 className="text-base font-semibold text-slate-300 mb-2">
+          <h3 className="text-base font-semibold text-slate-700 mb-2">
             {filter !== "all" ? `Ingen ejendomme med status "${STAGE_CONFIG[filter].label}"` : "Staging er tom"}
           </h3>
           <p className="text-sm text-slate-500 max-w-sm leading-relaxed">
@@ -593,7 +593,7 @@ export default function StagingQueue() {
             }
           </p>
           {filter !== "all" && (
-            <button onClick={() => setFilter("all")} className="mt-4 px-4 py-2 rounded-lg bg-white/[0.06] text-slate-300 text-sm font-medium hover:bg-white/[0.08] transition-colors">
+            <button onClick={() => setFilter("all")} className="mt-4 px-4 py-2 rounded-lg bg-slate-100 text-slate-600 text-sm font-medium hover:bg-slate-200 transition-colors">
               Vis alle
             </button>
           )}
@@ -605,14 +605,14 @@ export default function StagingQueue() {
             <div className="flex items-center justify-between px-1 py-1">
               <button
                 onClick={toggleSelectAll}
-                className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-300 transition-colors"
+                className="flex items-center gap-2 text-xs text-slate-500 hover:text-slate-700 transition-colors"
               >
                 <div className={`w-4 h-4 rounded border-[1.5px] flex items-center justify-center transition-all ${
                   selected.size === selectableIds.length && selectableIds.length > 0
                     ? "bg-brand-500 border-brand-500 shadow-sm shadow-brand-500/30"
                     : selected.size > 0
                       ? "bg-brand-500/30 border-brand-500/50"
-                      : "border-slate-600 hover:border-slate-400"
+                      : "border-slate-300 hover:border-slate-400"
                 }`}>
                   {selected.size > 0 && <Ic d="M4.5 12.75l6 6 9-13.5" className="w-3 h-3 text-white" />}
                 </div>
@@ -637,10 +637,10 @@ export default function StagingQueue() {
                 key={prop.id}
                 className={`group rounded-xl border transition-all duration-200 ${
                   isResearching
-                    ? "bg-blue-500/[0.03] border-blue-500/20"
+                    ? "bg-blue-50/50 border-blue-200"
                     : selected.has(prop.id)
-                      ? "bg-brand-500/[0.04] border-brand-500/25"
-                      : "bg-[#161923] border-white/[0.05] hover:border-white/[0.09]"
+                      ? "bg-brand-50 border-brand-200"
+                      : "bg-white border-slate-200/60 hover:border-slate-300 hover:shadow-sm"
                 }`}
               >
                 {/* Research progress bar */}
@@ -661,7 +661,7 @@ export default function StagingQueue() {
                       <div className={`w-4 h-4 rounded border-[1.5px] flex items-center justify-center transition-all ${
                         selected.has(prop.id)
                           ? "bg-brand-500 border-brand-500 shadow-sm shadow-brand-500/30"
-                          : "border-slate-600 hover:border-slate-400"
+                          : "border-slate-300 hover:border-slate-400"
                       }`}>
                         {selected.has(prop.id) && <Ic d="M4.5 12.75l6 6 9-13.5" className="w-3 h-3 text-white" />}
                       </div>
@@ -676,7 +676,7 @@ export default function StagingQueue() {
                       ? "bg-green-500/10 text-green-400 border-green-500/20"
                       : (prop.outdoorScore || 0) >= 6
                         ? "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                        : "bg-white/[0.03] text-slate-500 border-white/[0.06]"
+                        : "bg-slate-50 text-slate-500 border-slate-200"
                   }`}>
                     {prop.outdoorScore != null ? prop.outdoorScore.toFixed(0) : "–"}
                   </div>
@@ -684,7 +684,7 @@ export default function StagingQueue() {
                   {/* Info */}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
-                      <span className="text-sm font-medium text-white truncate" title={formatAddressLine(prop.address, prop.postalCode, prop.city)}>
+                      <span className="text-sm font-medium text-slate-800 truncate" title={formatAddressLine(prop.address, prop.postalCode, prop.city)}>
                         {formatPropertyTitle(prop.name, prop.address, prop.postalCode, prop.city)}
                       </span>
                       <span className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold ${cfg.bg} ${cfg.color} border`}>
@@ -716,7 +716,7 @@ export default function StagingQueue() {
 
                   {/* Completeness */}
                   <div className="flex-shrink-0 w-14 hidden sm:block">
-                    <div className="h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                    <div className="h-1.5 rounded-full bg-slate-200 overflow-hidden">
                       <div
                         className={`h-full rounded-full transition-all duration-500 ${
                           completeness >= 80 ? "bg-gradient-to-r from-green-500 to-emerald-400"
@@ -766,7 +766,7 @@ export default function StagingQueue() {
                     <button
                       onClick={() => setExpandedId(isExpanded ? null : prop.id)}
                       className={`p-1.5 rounded-lg transition-all ${
-                        isExpanded ? "text-slate-300 bg-white/[0.06]" : "text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]"
+                        isExpanded ? "text-slate-700 bg-slate-100" : "text-slate-400 hover:text-slate-600 hover:bg-slate-100"
                       }`}
                     >
                       <Ic d={isExpanded ? "M4.5 15.75l7.5-7.5 7.5 7.5" : "M19.5 8.25l-7.5 7.5-7.5-7.5"} className="w-4 h-4" />
@@ -776,23 +776,23 @@ export default function StagingQueue() {
 
                 {/* ── Expanded Detail Panel ── */}
                 {isExpanded && (
-                  <div className="px-4 pb-4 pt-2 border-t border-white/[0.04] animate-fade-in">
+                  <div className="px-4 pb-4 pt-2 border-t border-slate-100 animate-fade-in">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
                       {/* Left column: Research data */}
                       <div className="space-y-3">
                         <div className="flex items-center gap-2 mb-1">
-                          <Ic d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" className="w-3.5 h-3.5 text-slate-500" />
-                          <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Research data</h4>
+                          <Ic d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" className="w-3.5 h-3.5 text-slate-400" />
+                          <h4 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Research data</h4>
                         </div>
 
                         {!prop.ownerCompany && !prop.researchSummary && !prop.contactPerson ? (
-                          <div className="rounded-lg bg-white/[0.02] border border-dashed border-white/[0.06] p-4 text-center">
-                            <Ic d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5" className="w-6 h-6 text-slate-600 mx-auto mb-2" />
+                          <div className="rounded-lg bg-slate-50 border border-dashed border-slate-200 p-4 text-center">
+                            <Ic d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5" className="w-6 h-6 text-slate-400 mx-auto mb-2" />
                             <p className="text-xs text-slate-500 mb-2">Ingen research data endnu</p>
                             {prop.stage === "new" && (
                               <button
                                 onClick={() => handleResearch(prop.id)}
-                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-500/15 text-blue-400 text-xs font-medium hover:bg-blue-500/25 transition-colors"
+                                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-50 text-blue-600 text-xs font-medium hover:bg-blue-100 transition-colors"
                               >
                                 <Ic d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5" className="w-3.5 h-3.5" />
                                 Kør research nu
@@ -802,24 +802,24 @@ export default function StagingQueue() {
                         ) : (
                           <>
                             {prop.ownerCompany && (
-                              <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] p-3">
+                              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
                                 <span className="text-[10px] text-slate-500 uppercase font-semibold">Ejer</span>
-                                <p className="text-sm text-white mt-0.5">{prop.ownerCompany} {prop.ownerCvr && <span className="text-slate-500 text-xs">(CVR: {prop.ownerCvr})</span>}</p>
+                                <p className="text-sm text-slate-800 mt-0.5">{prop.ownerCompany} {prop.ownerCvr && <span className="text-slate-500 text-xs">(CVR: {prop.ownerCvr})</span>}</p>
                               </div>
                             )}
 
                             {prop.contactPerson && (
-                              <div className="rounded-lg bg-white/[0.02] border border-white/[0.04] p-3">
+                              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
                                 <span className="text-[10px] text-slate-500 uppercase font-semibold">Kontaktperson</span>
                                 <div className="flex items-center gap-2 mt-1">
-                                  <div className="w-7 h-7 rounded-full bg-brand-500/15 flex items-center justify-center text-brand-400 text-xs font-bold">
+                                  <div className="w-7 h-7 rounded-full bg-brand-50 flex items-center justify-center text-brand-600 text-xs font-bold">
                                     {(prop.contactPerson || "?")[0]?.toUpperCase()}
                                   </div>
                                   <div>
-                                    <p className="text-sm text-white">{prop.contactPerson}</p>
+                                    <p className="text-sm text-slate-800">{prop.contactPerson}</p>
                                     <div className="flex gap-2 text-[11px]">
-                                      {prop.contactEmail && <span className="text-brand-400">{prop.contactEmail}</span>}
-                                      {prop.contactPhone && <span className="text-slate-400">{prop.contactPhone}</span>}
+                                      {prop.contactEmail && <span className="text-brand-600">{prop.contactEmail}</span>}
+                                      {prop.contactPhone && <span className="text-slate-500">{prop.contactPhone}</span>}
                                     </div>
                                   </div>
                                 </div>
@@ -829,15 +829,15 @@ export default function StagingQueue() {
                             {prop.researchSummary && (
                               <div>
                                 <span className="text-[10px] text-slate-500 uppercase font-semibold">Resume</span>
-                                <p className="text-xs text-slate-300 leading-relaxed whitespace-pre-wrap mt-0.5">{prop.researchSummary}</p>
+                                <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap mt-0.5">{prop.researchSummary}</p>
                               </div>
                             )}
 
                             {prop.dailyTraffic != null && prop.dailyTraffic > 0 && (
                               <div className="flex items-center gap-2 text-xs">
-                                <Ic d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" className="w-4 h-4 text-slate-500" />
-                                <span className="text-slate-400">Daglig trafik:</span>
-                                <span className="text-white font-medium">~{prop.dailyTraffic.toLocaleString("da-DK")}</span>
+                                <Ic d="M15 19.128a9.38 9.38 0 002.625.372 9.337 9.337 0 004.121-.952 4.125 4.125 0 00-7.533-2.493M15 19.128v-.003c0-1.113-.285-2.16-.786-3.07M15 19.128v.106A12.318 12.318 0 018.624 21c-2.331 0-4.512-.645-6.374-1.766l-.001-.109a6.375 6.375 0 0111.964-3.07M12 6.375a3.375 3.375 0 11-6.75 0 3.375 3.375 0 016.75 0zm8.25 2.25a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" className="w-4 h-4 text-slate-400" />
+                                <span className="text-slate-500">Daglig trafik:</span>
+                                <span className="text-slate-800 font-medium">~{prop.dailyTraffic.toLocaleString("da-DK")}</span>
                               </div>
                             )}
                           </>
@@ -849,28 +849,28 @@ export default function StagingQueue() {
                         {prop.emailDraftSubject ? (
                           <div>
                             <div className="flex items-center gap-2 mb-2">
-                              <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-3.5 h-3.5 text-slate-500" />
-                              <h4 className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Email-udkast</h4>
+                              <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-3.5 h-3.5 text-slate-400" />
+                              <h4 className="text-[11px] font-semibold text-slate-500 uppercase tracking-wider">Email-udkast</h4>
                             </div>
-                            <div className="rounded-lg bg-white/[0.025] border border-white/[0.05] p-3.5">
-                              <p className="text-xs font-semibold text-white mb-1.5">{prop.emailDraftSubject}</p>
-                              <p className="text-[11px] text-slate-400 whitespace-pre-wrap leading-relaxed line-clamp-8">{prop.emailDraftBody}</p>
+                            <div className="rounded-lg bg-slate-50 border border-slate-200 p-3.5">
+                              <p className="text-xs font-semibold text-slate-800 mb-1.5">{prop.emailDraftSubject}</p>
+                              <p className="text-[11px] text-slate-500 whitespace-pre-wrap leading-relaxed line-clamp-8">{prop.emailDraftBody}</p>
                             </div>
                           </div>
                         ) : (
-                          <div className="rounded-lg bg-white/[0.02] border border-dashed border-white/[0.06] p-4 text-center">
-                            <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-6 h-6 text-slate-600 mx-auto mb-2" />
+                          <div className="rounded-lg bg-slate-50 border border-dashed border-slate-200 p-4 text-center">
+                            <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-6 h-6 text-slate-400 mx-auto mb-2" />
                             <p className="text-xs text-slate-500">Intet email-udkast endnu</p>
-                            <p className="text-[10px] text-slate-600 mt-0.5">Kør research for at generere et udkast</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">Kør research for at generere et udkast</p>
                           </div>
                         )}
 
                         {/* Action Buttons */}
-                        <div className="flex flex-wrap gap-2 pt-3 border-t border-white/[0.04]">
+                        <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-100">
                           {prop.stage === "new" && !rp && (
                             <button
                               onClick={() => handleResearch(prop.id)}
-                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600/80 text-white text-xs font-semibold hover:bg-blue-500 transition-colors shadow-sm"
+                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-blue-600 text-white text-xs font-semibold hover:bg-blue-500 transition-colors shadow-sm"
                             >
                               <Ic d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5" className="w-3.5 h-3.5" />
                               Kør research
@@ -900,21 +900,21 @@ export default function StagingQueue() {
                             <button
                               onClick={() => handleReject([prop.id])}
                               disabled={rejecting}
-                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-red-500/15 text-red-400 text-xs font-medium hover:bg-red-500/25 transition-colors disabled:opacity-50"
+                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-medium hover:bg-red-100 transition-colors disabled:opacity-50"
                             >
                               <Ic d="M6 18L18 6M6 6l12 12" className="w-3.5 h-3.5" />
                               Afvis
                             </button>
                           )}
                           {prop.stage === "pushed" && prop.hubspotId && (
-                            <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-500/10 text-emerald-400 text-xs font-medium">
+                            <span className="inline-flex items-center gap-1.5 px-3 py-2 rounded-lg bg-emerald-50 text-emerald-700 text-xs font-medium">
                               <Ic d="M4.5 12.75l6 6 9-13.5" className="w-3.5 h-3.5" />
                               I HubSpot · ID: {prop.hubspotId}
                             </span>
                           )}
                           <button
                             onClick={() => handleDelete(prop.id)}
-                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-white/[0.03] text-slate-500 text-xs hover:text-red-400 hover:bg-red-500/10 transition-colors ml-auto"
+                            className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-50 text-slate-500 text-xs hover:text-red-600 hover:bg-red-50 transition-colors ml-auto"
                           >
                             <Ic d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" className="w-3.5 h-3.5" />
                             Slet
