@@ -944,6 +944,9 @@ function DashboardContent() {
       { street: agentStreet.trim(), city: agentCity.trim() },
       setAgentEvents, setAgentPct, setAgentPhaseLabel,
       (pe) => {
+        // Use agentPhase for the step indicator (discovery/research/done)
+        const agentPhase = (pe as unknown as Record<string, unknown>).agentPhase as string | undefined;
+        if (agentPhase) setAgentPhaseLabel(agentPhase);
         if (pe.stats) setAgentStats(pe.stats as Record<string, number>);
         if (pe.phase === "agent_done") {
           addToast(pe.message || "Agent faerdig!", "success");

@@ -168,10 +168,10 @@ export function StreetAgentTab({
               <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" />
             </svg>
             <p className="text-xs text-amber-800 leading-relaxed">
-              <span className="font-semibold">Kun research (intet push til HubSpot endnu):</span> Agenten finder bygninger, gemmer dem internt i staging,
-              og koerer dyb research (OIS/CVR/web). Du godkender i{" "}
+              <span className="font-semibold">Auto-pipeline:</span> Agenten finder bygninger, researcher ejere (OIS/CVR/web) og genererer email-udkast automatisk.
+              Ejendomme lander i{" "}
               <button onClick={() => setActiveTab("staging")} className="underline font-semibold hover:text-amber-900">Staging</button>
-              {" "}og genererer mail-udkast der – push til HubSpot sker først når du trykker &quot;Push til HubSpot&quot;.
+              {" "}hvor du godkender og sender med ét klik.
             </p>
           </div>
         </div>
@@ -202,6 +202,33 @@ export function StreetAgentTab({
             })}
           </div>
 
+          {/* Per-property research counter */}
+          {agentRunning && agentPhaseLabel === "research" && (() => {
+            const lastEvent = agentEvents.filter(e => (e as unknown as Record<string, unknown>).researchIndex).at(-1);
+            const idx = (lastEvent as unknown as Record<string, unknown> | undefined)?.researchIndex as number | undefined;
+            const total = (lastEvent as unknown as Record<string, unknown> | undefined)?.researchTotal as number | undefined;
+            if (!idx || !total) return null;
+            return (
+              <div className="mb-3 flex items-center gap-3 p-3 rounded-xl bg-blue-50 border border-blue-200/60">
+                <div className="animate-spin rounded-full h-5 w-5 border-2 border-blue-300 border-t-blue-600 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-sm font-semibold text-blue-800">
+                      Researcher ejendom {idx} af {total}
+                    </span>
+                    <span className="text-xs font-mono text-blue-600 tabular-nums">{idx}/{total}</span>
+                  </div>
+                  <div className="w-full h-1.5 bg-blue-200 rounded-full overflow-hidden">
+                    <div
+                      className="h-full bg-blue-500 rounded-full transition-all duration-500"
+                      style={{ width: `${Math.round((idx / total) * 100)}%` }}
+                    />
+                  </div>
+                </div>
+              </div>
+            );
+          })()}
+
           <ProgressBar pct={agentPct} running={agentRunning} phase={agentPhaseLabel} />
           <LogPanel logRef={agentLogRef} events={agentEvents} running={agentRunning} maxHeight="max-h-[500px]" />
         </div>
@@ -217,21 +244,24 @@ export function StreetAgentTab({
             <ResultStat label="Fejlet" value={agentStats.researchFailed || 0} icon="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" color={agentStats.researchFailed ? "red" : undefined} />
           </div>
 
-          {(agentStats.emailDraftsGenerated || 0) > 0 && (
+          {(agentStats.researchCompleted || 0) > 0 && (
             <div className="bg-green-50 border border-green-200/80 rounded-2xl p-5">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-xl bg-green-100 flex items-center justify-center">
                   <svg className="w-5 h-5 text-green-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" />
                   </svg>
                 </div>
                 <div className="flex-1">
-                  <h3 className="font-bold text-green-900">{agentStats.emailDraftsGenerated} email-udkast klar til godkendelse</h3>
-                  <p className="text-sm text-green-700 mt-0.5">Ga til Outreach-fanen for at gennemga og sende mails</p>
+                  <h3 className="font-bold text-green-900">
+                    {agentStats.researchCompleted} ejendomme researched
+                    {(agentStats.emailDraftsGenerated || 0) > 0 && ` · ${agentStats.emailDraftsGenerated} email-udkast`}
+                  </h3>
+                  <p className="text-sm text-green-700 mt-0.5">Gå til Staging for at godkende og sende</p>
                 </div>
-                <button onClick={() => { setActiveTab("outreach"); fetchOutreachData(); }}
+                <button onClick={() => setActiveTab("staging")}
                   className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-semibold rounded-xl transition-colors">
-                  Ga til Outreach &rarr;
+                  Gå til Staging &rarr;
                 </button>
               </div>
             </div>

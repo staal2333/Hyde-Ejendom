@@ -108,12 +108,18 @@ export async function POST(req: NextRequest) {
         // Fetch the newly staged properties from Supabase
         const allStaged = await listStagedProperties({ stage: "new" });
 
-        // Filter to only properties from this street
-        const streetLower = street.toLowerCase();
-        const newProperties = allStaged.filter(p =>
-          p.address?.toLowerCase().includes(streetLower) ||
-          p.name?.toLowerCase().includes(streetLower)
-        );
+        // Match by street name (normalize spaces, hyphens, accents)
+        const streetLower = street.toLowerCase().trim();
+        const streetWords = streetLower.split(/[\s,]+/).filter((w: string) => w.length > 2);
+        const newProperties = allStaged.filter(p => {
+          const addr = (p.address || "").toLowerCase();
+          const name = (p.name || "").toLowerCase();
+          // Direct includes match
+          if (addr.includes(streetLower) || name.includes(streetLower)) return true;
+          // Word-based match (all significant words must appear)
+          if (streetWords.length > 0 && streetWords.every((w: string) => addr.includes(w) || name.includes(w))) return true;
+          return false;
+        });
 
         if (newProperties.length === 0) {
           send({
@@ -126,6 +132,13 @@ export async function POST(req: NextRequest) {
           return;
         }
 
+        send({
+          phase: "research_count",
+          message: `Fandt ${newProperties.length} ejendomme til research`,
+          progress: 31,
+          agentPhase: "research",
+        });
+
         let researchCompleted = 0;
         let researchFailed = 0;
         let emailDraftsGenerated = 0;
@@ -134,22 +147,30 @@ export async function POST(req: NextRequest) {
           if (cancelled) break;
 
           const stagedProp = newProperties[i];
-          const propPct = 31 + Math.round((i / newProperties.length) * 60); // 31-91%
+          const propStartPct = 31 + Math.round((i / newProperties.length) * 64);
+          const propEndPct = 31 + Math.round(((i + 1) / newProperties.length) * 64);
 
           send({
             phase: "research_property",
-            message: `Researcher ${i + 1}/${newProperties.length}: ${stagedProp.address}`,
-            progress: propPct,
+            message: `[${i + 1}/${newProperties.length}] Researcher: ${stagedProp.address}`,
+            detail: `Ejendom ${i + 1} af ${newProperties.length} – OIS → CVR → web → AI → email-udkast`,
+            progress: propStartPct,
             agentPhase: "research",
+            researchIndex: i + 1,
+            researchTotal: newProperties.length,
           });
 
           const run = await processStagedProperty(
             stagedProp,
             (event) => {
+              const subPct = event.progress || 0;
+              const scaledPct = propStartPct + Math.round((subPct / 100) * (propEndPct - propStartPct));
               send({
                 ...event,
                 agentPhase: "research",
-                progress: propPct + Math.round((event.progress || 0) / newProperties.length * 0.6),
+                progress: scaledPct,
+                researchIndex: i + 1,
+                researchTotal: newProperties.length,
               });
             },
             isCancelled,
@@ -158,7 +179,6 @@ export async function POST(req: NextRequest) {
 
           if (run.status === "completed") {
             researchCompleted++;
-            // Check if an email draft was generated
             const hasDraft = run.steps.some(
               s => s.stepId === "generate_email_draft" && s.status === "completed"
             );
@@ -166,17 +186,21 @@ export async function POST(req: NextRequest) {
 
             send({
               phase: "research_property_done",
-              message: `${stagedProp.address}: Research fuldført${hasDraft ? " + email-udkast genereret" : ""}`,
-              progress: propPct,
+              message: `[${i + 1}/${newProperties.length}] ${stagedProp.address}: Research OK${hasDraft ? " + email-udkast" : ""}`,
+              progress: propEndPct,
               agentPhase: "research",
+              researchIndex: i + 1,
+              researchTotal: newProperties.length,
             });
           } else {
             researchFailed++;
             send({
               phase: "research_property_failed",
-              message: `${stagedProp.address}: Research fejlede – ${run.error || "ukendt fejl"}`,
-              progress: propPct,
+              message: `[${i + 1}/${newProperties.length}] ${stagedProp.address}: Fejl – ${run.error || "ukendt"}`,
+              progress: propEndPct,
               agentPhase: "research",
+              researchIndex: i + 1,
+              researchTotal: newProperties.length,
             });
           }
         }
@@ -186,14 +210,15 @@ export async function POST(req: NextRequest) {
         // ══════════════════════════════════════════════════
         send({
           phase: "agent_done",
-          message: `Agent færdig! ${researchCompleted} researched i staging – godkend i Staging og generer mail-udkast (intet push til HubSpot endnu)`,
+          message: `Agent færdig! ${researchCompleted} researched, ${emailDraftsGenerated} email-udkast genereret – godkend & send i Staging`,
           detail: [
             `Gade: ${street}, ${city}`,
             `Bygninger fundet: ${totalCandidates}`,
-            `Nye ejendomme: ${createdCount}`,
+            `Nye ejendomme staged: ${createdCount}`,
             `Research fuldført: ${researchCompleted}`,
+            `Email-udkast: ${emailDraftsGenerated}`,
             `Research fejlet: ${researchFailed}`,
-            "Godkend i Staging → generer mail-udkast → push til HubSpot når du er klar",
+            "Gå til Staging → Godkend & Send",
           ].join("\n"),
           progress: 100,
           agentPhase: "done",
@@ -203,7 +228,7 @@ export async function POST(req: NextRequest) {
             alreadyExists: discoveryResult.alreadyExists,
             researchCompleted,
             researchFailed,
-            emailDraftsGenerated: 0,
+            emailDraftsGenerated,
           },
         });
       } catch (error) {
