@@ -90,16 +90,22 @@ export async function enrichLeadContact(
           }
 
           // Extract phones
-          if (!result.contact_phone && scraped.text) {
-            const phones = extractPhones(scraped.text);
-            if (phones.length > 0) {
-              result.contact_phone = phones[0];
+          if (!result.contact_phone && scraped.phones.length > 0) {
+            result.contact_phone = scraped.phones[0];
+          } else if (!result.contact_phone) {
+            const textContent = [scraped.contactPageText, scraped.aboutPageText, ...scraped.relevantSnippets].filter(Boolean).join(" ");
+            if (textContent) {
+              const phones = extractPhones(textContent);
+              if (phones.length > 0) {
+                result.contact_phone = phones[0];
+              }
             }
           }
 
           // Extract contact person
-          if (!result.contact_name && scraped.text) {
-            const person = extractContactPerson(scraped.text);
+          const textContent = [scraped.contactPageText, scraped.aboutPageText, ...scraped.relevantSnippets].filter(Boolean).join(" ");
+          if (!result.contact_name && textContent) {
+            const person = extractContactPerson(textContent);
             if (person) {
               result.contact_name = person.name;
               result.contact_role = person.role;
