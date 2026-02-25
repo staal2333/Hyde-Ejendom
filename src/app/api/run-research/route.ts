@@ -71,10 +71,14 @@ function createSSEStream(
 /**
  * GET /api/run-research
  * Batch research: all pending HubSpot properties + all "new" staged properties.
+ * Accessible by authenticated users (session cookie) or cron jobs (Bearer token).
  */
 export async function GET(request: NextRequest) {
-  const authErr = verifyCronSecret(request);
-  if (authErr) return authErr;
+  const hasBearerToken = request.headers.get("authorization")?.startsWith("Bearer ");
+  if (hasBearerToken) {
+    const authErr = verifyCronSecret(request);
+    if (authErr) return authErr;
+  }
 
   return createSSEStream(async (send, isCancelled) => {
     // Phase 1: HubSpot properties
