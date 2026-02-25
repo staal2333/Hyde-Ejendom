@@ -256,35 +256,48 @@ export async function searchGoogle(
 
 // ─── Helpers ────────────────────────────────────────────────
 
-async function fetchPage(url: string): Promise<string | null> {
-  try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
+async function fetchPage(url: string, retries = 2): Promise<string | null> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT);
 
-    const response = await fetch(url, {
-      headers: {
-        "User-Agent":
-          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        Accept:
-          "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        "Accept-Language": "da-DK,da;q=0.9,en;q=0.8",
-      },
-      signal: controller.signal,
-    });
+      const response = await fetch(url, {
+        headers: {
+          "User-Agent":
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+          Accept:
+            "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+          "Accept-Language": "da-DK,da;q=0.9,en;q=0.8",
+        },
+        signal: controller.signal,
+      });
 
-    clearTimeout(timeout);
+      clearTimeout(timeout);
 
-    if (!response.ok) return null;
+      if (!response.ok) {
+        if (response.status >= 500 && attempt < retries) {
+          await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+          continue;
+        }
+        return null;
+      }
 
-    const contentType = response.headers.get("content-type") || "";
-    if (!contentType.includes("text/html") && !contentType.includes("text/plain")) {
+      const contentType = response.headers.get("content-type") || "";
+      if (!contentType.includes("text/html") && !contentType.includes("text/plain")) {
+        return null;
+      }
+
+      return await response.text();
+    } catch {
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+        continue;
+      }
       return null;
     }
-
-    return await response.text();
-  } catch {
-    return null;
   }
+  return null;
 }
 
 function resolveUrl(href: string, baseUrl: string): string {

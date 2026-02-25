@@ -150,6 +150,8 @@ export interface ResearchAnalysis {
   recommendedContacts: Contact[];
   outdoorPotentialScore: number;
   keyInsights: string;
+  /** Source-attributed evidence chain explaining how owner was identified */
+  evidenceChain: string;
   /** Data quality assessment from LLM */
   dataQuality: "high" | "medium" | "low";
   dataQualityReason: string;

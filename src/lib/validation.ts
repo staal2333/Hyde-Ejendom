@@ -57,11 +57,11 @@ export const stagedPropertyCreateSchema = z.object({
 });
 
 export const leadDiscoverSchema = z.object({
-  source: z.literal("meta").optional().default("meta"),
-  query: z.string().min(1, "query is required"),
+  source: z.enum(["meta", "tiktok", "linkedin", "google", "all"]).optional().default("meta"),
+  sources: z.array(z.enum(["meta", "tiktok", "linkedin", "google"])).optional(),
+  query: z.string().optional().default(""),
   country: z.string().length(2).optional().default("DK"),
-  limit: z.number().min(1).max(100).optional().default(30),
-  platform: z.enum(["all", "instagram"]).optional().default("all"),
+  limit: z.number().min(1).max(200).optional().default(50),
 });
 
 export const leadCompaniesSchema = z.object({

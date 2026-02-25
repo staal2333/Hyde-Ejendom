@@ -10,6 +10,7 @@ import { getStagedCounts } from "@/lib/staging/store";
 import { getQueueStats } from "@/lib/email-queue";
 import { getSends } from "@/lib/ooh/store";
 import { getScaffoldStats } from "@/lib/scaffold-stats";
+import { getAnalyticsTrend, saveAnalyticsSnapshot } from "@/lib/analytics-store";
 
 export async function GET() {
   try {
@@ -39,6 +40,19 @@ export async function GET() {
       // OOH sends table may not exist yet
     }
 
+    const funnelDiscovered = stagingCounts.new + stagingCounts.researching + stagingCounts.researched + stagingCounts.approved + stagingCounts.rejected + stagingCounts.pushed;
+
+    // Fire-and-forget: save today's analytics snapshot
+    saveAnalyticsSnapshot({
+      discovered: funnelDiscovered,
+      staged: stagingCounts.new + stagingCounts.researched,
+      inHubspot: stats.total,
+      ready: stats.byStatus["KLAR_TIL_UDSENDELSE"] || 0,
+      sent: stats.byStatus["FOERSTE_MAIL_SENDT"] || 0,
+      replied: stats.byStatus["SVAR_MODTAGET_POSITIV"] || 0,
+      meetings: stats.byStatus["MOEDE_AFTALT"] || 0,
+    }).catch(() => {});
+
     return NextResponse.json({
       totalProperties: stats.total,
       pendingResearch: stats.byStatus["NY_KRAEVER_RESEARCH"] || 0,
@@ -50,7 +64,6 @@ export async function GET() {
       byStatus: stats.byStatus,
       recentRuns: recentRuns.slice(0, 10),
       lastRunAt: recentRuns.length > 0 ? recentRuns[0].startedAt : null,
-      // Staging counts
       staging: {
         new: stagingCounts.new,
         researching: stagingCounts.researching,
@@ -80,15 +93,15 @@ export async function GET() {
           rateLimitPerHour: emailStats.rateLimitPerHour,
         },
         ooh: oohAnalytics,
-        // Conversion funnel
         funnel: {
-          discovered: (stagingCounts.new + stagingCounts.researching + stagingCounts.researched + stagingCounts.approved + stagingCounts.rejected + stagingCounts.pushed),
+          discovered: funnelDiscovered,
           staged: stagingCounts.new + stagingCounts.researched,
           approved: stagingCounts.pushed,
           inHubSpot: stats.total,
           ready: stats.byStatus["KLAR_TIL_UDSENDELSE"] || 0,
           sent: stats.byStatus["FOERSTE_MAIL_SENDT"] || 0,
         },
+        trend: await getAnalyticsTrend(14).catch(() => []),
       },
     });
   } catch (error) {

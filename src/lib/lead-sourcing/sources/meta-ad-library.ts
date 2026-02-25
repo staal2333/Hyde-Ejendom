@@ -1,35 +1,50 @@
 // ============================================================
-// Meta Ad Library – fetch advertisers (page_name) from ads_archive API
-// Requires META_AD_LIBRARY_ACCESS_TOKEN (Meta App with Ad Library API access)
+// Meta Ad Library via SearchAPI.io – fetch advertisers (page_name)
+// Requires SEARCHAPI_API_KEY (free signup at searchapi.io)
 // ============================================================
 
 import { config } from "@/lib/config";
+import { logger } from "@/lib/logger";
+import { type Advertiser } from "./types";
 
-const BASE = "https://graph.facebook.com";
+export type { Advertiser };
+/** @deprecated Use Advertiser instead */
+export type MetaAdvertiser = Advertiser;
 
-export interface MetaAdvertiser {
-  pageId: string;
-  pageName: string;
-}
+const BASE = "https://www.searchapi.io/api/v1/search";
 
 export interface MetaAdLibraryOptions {
   searchTerms?: string;
-  /** ISO country code, e.g. "DK" */
   adReachedCountries?: string[];
-  /** Max number of unique advertisers to return */
   limit?: number;
-  /** Filter by platform: INSTAGRAM, FACEBOOK, etc. Omit = all platforms */
   publisherPlatforms?: string[];
 }
 
-/**
- * Fetch unique advertisers (Facebook Pages) that ran ads matching the search.
- * Uses Graph API ads_archive. Returns page_id + page_name for CVR resolution.
- */
-export async function fetchMetaAdLibrary(options: MetaAdLibraryOptions = {}): Promise<MetaAdvertiser[]> {
-  const token = config.metaAdLibrary.accessToken();
-  if (!token) {
-    throw new Error("META_AD_LIBRARY_ACCESS_TOKEN is not set. Add it in .env to use Meta Ad Library.");
+interface RawAd {
+  page_id?: string;
+  page_name?: string;
+  collation_count?: number;
+  publisher_platform?: string[];
+  snapshot?: {
+    page_id?: string;
+    page_name?: string;
+    page_categories?: string[];
+    page_like_count?: number;
+  };
+}
+
+interface AdvertiserAccum {
+  pageName: string;
+  pageCategory: string | null;
+  pageLikes: number | null;
+  adCount: number;
+  platforms: Set<string>;
+}
+
+export async function fetchMetaAdLibrary(options: MetaAdLibraryOptions = {}): Promise<Advertiser[]> {
+  const apiKey = config.searchApi.apiKey();
+  if (!apiKey) {
+    throw new Error("SEARCHAPI_API_KEY er ikke sat. Opret en konto på searchapi.io og tilføj API-nøglen i .env.local.");
   }
 
   const {
@@ -39,75 +54,113 @@ export async function fetchMetaAdLibrary(options: MetaAdLibraryOptions = {}): Pr
     publisherPlatforms,
   } = options;
 
-  const version = config.metaAdLibrary.apiVersion;
-  const seen = new Map<string, string>(); // page_id -> page_name
-  let after: string | undefined;
-  let requested = 0;
-  const maxPages = 10; // limit API pages to avoid rate limit
+  const accum = new Map<string, AdvertiserAccum>();
+  let nextPageToken: string | undefined;
+  const maxPages = Math.min(Math.ceil(limit / 20), 8);
 
-  const buildParams = (apiVersion: string, includeExtra: boolean) => {
+  for (let page = 0; page < maxPages && accum.size < limit; page++) {
     const params = new URLSearchParams({
-      access_token: token,
-      ad_reached_countries: JSON.stringify(adReachedCountries),
-      search_terms: searchTerms.trim() || "reklame",
-      fields: "id,page_id,page_name",
-      limit: String(Math.min(25, limit + 5)),
+      engine: "meta_ad_library",
+      q: searchTerms.trim() || "reklame",
+      country: (adReachedCountries[0] || "DK").toLowerCase(),
+      active_status: "active",
+      ad_type: "all",
+      api_key: apiKey,
     });
-    if (includeExtra) {
-      params.set("ad_type", "ALL");
-      params.set("ad_active_status", "ACTIVE");
-    }
-    if (publisherPlatforms?.length) {
-      params.set("publisher_platforms", JSON.stringify(publisherPlatforms));
-    }
-    if (after) params.set("after", after);
-    return `${BASE}/${apiVersion}/ads_archive?${params.toString()}`;
-  };
 
-  while (seen.size < limit && requested < maxPages) {
-    let url = buildParams(version, true);
+    if (publisherPlatforms?.length) {
+      params.set("platforms", publisherPlatforms.map(p => p.toLowerCase()).join(","));
+    }
+
+    if (nextPageToken) {
+      params.set("next_page_token", nextPageToken);
+    }
+
+    const url = `${BASE}?${params.toString()}`;
+    logger.info(`[searchapi] GET page ${page + 1} — q="${searchTerms.trim() || "reklame"}", country=${adReachedCountries[0] || "DK"}`, { service: "lead-sourcing" });
+
     let res: Response;
     try {
       res = await fetch(url);
     } catch (networkErr) {
       const msg = networkErr instanceof Error ? networkErr.message : String(networkErr);
-      throw new Error(
-        `Meta Ad Library: netværksfejl (${msg}). Tjek at serveren kan nå graph.facebook.com (firewall, proxy, internet).`
-      );
+      logger.error(`[searchapi] Network error: ${msg}`, { service: "lead-sourcing" });
+      throw new Error(`SearchAPI.io: netværksfejl (${msg}). Tjek internet-forbindelsen.`);
     }
+
+    logger.info(`[searchapi] Response: ${res.status} ${res.statusText}`, { service: "lead-sourcing" });
 
     if (!res.ok) {
       const errText = await res.text();
-      const isCode1 = errText.includes('"code":1');
-      if (isCode1 && requested === 0) {
-        res = await fetch(buildParams("v21.0", false));
+      logger.error(`[searchapi] Error body: ${errText.slice(0, 500)}`, { service: "lead-sourcing" });
+      if (res.status === 401 || res.status === 403) {
+        throw new Error("SearchAPI.io: Ugyldig API-nøgle. Tjek SEARCHAPI_API_KEY i .env.local.");
       }
-      if (!res.ok) {
-        const err = await res.text();
-        throw new Error(`Meta Ad Library API error (${res.status}): ${err}`);
+      if (res.status === 429) {
+        throw new Error("SearchAPI.io: Rate limit nået. Vent et øjeblik og prøv igen.");
       }
+      throw new Error(`SearchAPI.io API fejl (${res.status}): ${errText.slice(0, 300)}`);
     }
+
     const data = (await res.json()) as {
-      data?: { id?: string; page_id?: string; page_name?: string }[];
-      paging?: { cursors?: { after?: string }; next?: string };
+      ads?: RawAd[];
+      pagination?: { next_page_token?: string };
+      search_information?: { total_results?: number };
     };
 
-    requested++;
-    const list = data.data || [];
-    for (const ad of list) {
-      const pageId = ad.page_id || ad.id;
-      const pageName = (ad.page_name || "").trim();
-      if (pageId && pageName && pageName.length > 1) {
-        seen.set(String(pageId), pageName);
+    const totalResults = data.search_information?.total_results ?? 0;
+    const ads = data.ads || [];
+    logger.info(`[searchapi] Got ${ads.length} ads (total: ${totalResults})`, { service: "lead-sourcing" });
+
+    for (const ad of ads) {
+      const pageId = ad.page_id || ad.snapshot?.page_id;
+      const pageName = (ad.page_name || ad.snapshot?.page_name || "").trim();
+      if (!pageId || !pageName || pageName.length < 2) continue;
+
+      const key = String(pageId);
+      const existing = accum.get(key);
+
+      if (existing) {
+        existing.adCount += ad.collation_count || 1;
+        if (ad.publisher_platform) {
+          for (const p of ad.publisher_platform) existing.platforms.add(p);
+        }
+        if (!existing.pageCategory && ad.snapshot?.page_categories?.length) {
+          existing.pageCategory = ad.snapshot.page_categories[0];
+        }
+        if (existing.pageLikes === null && ad.snapshot?.page_like_count) {
+          existing.pageLikes = ad.snapshot.page_like_count;
+        }
+      } else {
+        const platforms = new Set<string>();
+        if (ad.publisher_platform) {
+          for (const p of ad.publisher_platform) platforms.add(p);
+        }
+        accum.set(key, {
+          pageName,
+          pageCategory: ad.snapshot?.page_categories?.[0] ?? null,
+          pageLikes: ad.snapshot?.page_like_count ?? null,
+          adCount: ad.collation_count || 1,
+          platforms,
+        });
       }
+
+      if (accum.size >= limit) break;
     }
 
-    if (list.length === 0 || !data.paging?.cursors?.after) break;
-    after = data.paging.cursors.after;
+    nextPageToken = data.pagination?.next_page_token;
+    if (!nextPageToken || ads.length === 0) break;
   }
 
-  return Array.from(seen.entries()).slice(0, limit).map(([pageId, pageName]) => ({
+  logger.info(`[searchapi] Found ${accum.size} unique advertisers`, { service: "lead-sourcing" });
+
+  return Array.from(accum.entries()).slice(0, limit).map(([pageId, a]) => ({
     pageId,
-    pageName,
+    pageName: a.pageName,
+    pageCategory: a.pageCategory,
+    pageLikes: a.pageLikes,
+    adCount: a.adCount,
+    platforms: Array.from(a.platforms),
+    sourcePlatform: "meta" as const,
   }));
 }

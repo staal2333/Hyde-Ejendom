@@ -484,26 +484,50 @@ function parseAddress(address: string): { vejnavn: string | null; husnr: string 
   return { vejnavn: null, husnr: null };
 }
 
-/** Safe JSON fetch with timeout. Returns parsed JSON or null on any error. */
+/** Fetch with retry + exponential backoff. Returns parsed JSON or null. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export async function fetchWithRetry(
+  url: string,
+  opts: { timeoutMs?: number; retries?: number; label?: string } = {}
+): Promise<any> {
+  const { timeoutMs = 20000, retries = 2, label = "fetch" } = opts;
+
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), timeoutMs);
+
+    try {
+      const response = await fetch(url, {
+        signal: controller.signal,
+        headers: {
+          "Accept": "application/json",
+          "User-Agent": "Mozilla/5.0 (compatible; EjendomAI/1.0)",
+        },
+      });
+      clearTimeout(timer);
+      if (!response.ok) {
+        if (attempt < retries) {
+          await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+          continue;
+        }
+        return null;
+      }
+      return await response.json();
+    } catch {
+      clearTimeout(timer);
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+        continue;
+      }
+      logger.warn(`${label}: all ${retries + 1} attempts failed for ${url.slice(0, 120)}`, { service: "research" });
+      return null;
+    }
+  }
+  return null;
+}
+
+/** Safe JSON fetch with timeout (uses retry internally). */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 async function fetchSafe(url: string, timeoutMs: number): Promise<any> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), timeoutMs);
-
-  try {
-    const response = await fetch(url, {
-      signal: controller.signal,
-      headers: {
-        "Accept": "application/json",
-        "User-Agent": "Mozilla/5.0 (compatible; EjendomAI/1.0)",
-      },
-    });
-    clearTimeout(timeout);
-
-    if (!response.ok) return null;
-    return await response.json();
-  } catch {
-    clearTimeout(timeout);
-    return null;
-  }
+  return fetchWithRetry(url, { timeoutMs, retries: 2, label: "OIS" });
 }

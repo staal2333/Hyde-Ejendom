@@ -242,35 +242,96 @@ export function HomeTab({
       )}
 
       {/* Funnel */}
-      {dashboard?.analytics?.funnel && (
-        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
-          <h2 className="text-sm font-bold text-slate-900 mb-3 flex items-center gap-2">
-            <span className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
-              <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
-              </svg>
-            </span>
-            Funnel
-          </h2>
-          <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-            {[
-              { key: "discovered", label: "Fundet", value: dashboard.analytics.funnel.discovered, color: "bg-slate-100 text-slate-700" },
-              { key: "staged", label: "Staging", value: dashboard.analytics.funnel.staged, color: "bg-amber-100 text-amber-700" },
-              { key: "inHubSpot", label: "HubSpot", value: dashboard.analytics.funnel.inHubSpot, color: "bg-blue-100 text-blue-700" },
-              { key: "ready", label: "Klar", value: dashboard.analytics.funnel.ready, color: "bg-emerald-100 text-emerald-700" },
-              { key: "sent", label: "Sendt", value: dashboard.analytics.funnel.sent, color: "bg-violet-100 text-violet-700" },
-            ].map((step, i) => (
-              <div key={step.key} className="flex items-center gap-1.5">
-                {i > 0 && <span className="text-slate-300 hidden sm:inline">→</span>}
-                <span className={`px-2.5 py-1 rounded-lg text-xs font-bold tabular-nums ${step.color}`}>
-                  {step.label}: {step.value}
-                </span>
-              </div>
-            ))}
+      {dashboard?.analytics?.funnel && (() => {
+        const f = dashboard.analytics.funnel;
+        const steps = [
+          { key: "discovered", label: "Fundet", value: f.discovered, bar: "bg-slate-400" },
+          { key: "staged", label: "Staging", value: f.staged, bar: "bg-amber-400" },
+          { key: "inHubSpot", label: "HubSpot", value: f.inHubSpot, bar: "bg-blue-400" },
+          { key: "ready", label: "Klar", value: f.ready, bar: "bg-emerald-400" },
+          { key: "sent", label: "Sendt", value: f.sent, bar: "bg-violet-400" },
+        ];
+        const maxVal = Math.max(...steps.map(s => s.value), 1);
+        return (
+          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
+            <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
+                </svg>
+              </span>
+              Konverteringstragt
+            </h2>
+            <div className="space-y-2.5">
+              {steps.map((step, i) => {
+                const pct = maxVal > 0 ? Math.round((step.value / maxVal) * 100) : 0;
+                const prevVal = i > 0 ? steps[i - 1].value : 0;
+                const convRate = i > 0 && prevVal > 0 ? Math.round((step.value / prevVal) * 100) : null;
+                return (
+                  <div key={step.key}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-semibold text-slate-700 w-16">{step.label}</span>
+                        <span className="text-xs font-bold text-slate-900 tabular-nums">{step.value}</span>
+                      </div>
+                      {convRate !== null && (
+                        <span className={`text-[10px] font-semibold tabular-nums ${convRate >= 50 ? "text-green-600" : convRate >= 20 ? "text-amber-600" : "text-red-500"}`}>
+                          {convRate}%
+                        </span>
+                      )}
+                    </div>
+                    <div className="h-2.5 bg-slate-100 rounded-full overflow-hidden">
+                      <div className={`h-full rounded-full ${step.bar} transition-all duration-700`} style={{ width: `${pct}%` }} />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <p className="text-[10px] text-slate-400 mt-3">Procenttal viser konverteringsrate fra forrige trin</p>
           </div>
-          <p className="text-[10px] text-slate-400 mt-2">Sendt = antal med første mail sendt (hele tiden)</p>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* Trend (14 dage) */}
+      {dashboard?.analytics?.trend && dashboard.analytics.trend.length > 1 && (() => {
+        const trend = dashboard.analytics.trend as { snapshotDate: string; discovered: number; staged: number; sent: number }[];
+        const maxV = Math.max(...trend.map(t => t.discovered), 1);
+        return (
+          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
+            <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center">
+                <svg className="w-4 h-4 text-cyan-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" />
+                </svg>
+              </span>
+              Udvikling (14 dage)
+            </h2>
+            <div className="flex items-end gap-1 h-24">
+              {trend.map((day, i) => {
+                const h1 = Math.max(4, (day.discovered / maxV) * 100);
+                const h2 = Math.max(2, (day.sent / maxV) * 100);
+                const dateStr = day.snapshotDate.split("-").slice(1).join("/");
+                return (
+                  <div key={i} className="flex-1 flex flex-col items-center gap-0.5 group relative">
+                    <div className="w-full flex flex-col items-center gap-0.5">
+                      <div className="w-full bg-slate-200 rounded-t" style={{ height: `${h1}%` }} title={`Fundet: ${day.discovered}`} />
+                      <div className="w-full bg-violet-400 rounded-b" style={{ height: `${h2}%` }} title={`Sendt: ${day.sent}`} />
+                    </div>
+                    <span className="text-[8px] text-slate-400 mt-1 hidden sm:block">{dateStr}</span>
+                    <div className="absolute -top-8 left-1/2 -translate-x-1/2 bg-slate-800 text-white text-[9px] px-1.5 py-0.5 rounded opacity-0 group-hover:opacity-100 whitespace-nowrap pointer-events-none z-10">
+                      {dateStr}: {day.discovered} fundet, {day.sent} sendt
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+            <div className="flex gap-4 mt-2">
+              <span className="flex items-center gap-1 text-[10px] text-slate-500"><span className="w-2 h-2 rounded-sm bg-slate-200 inline-block" /> Fundet</span>
+              <span className="flex items-center gap-1 text-[10px] text-slate-500"><span className="w-2 h-2 rounded-sm bg-violet-400 inline-block" /> Sendt</span>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* I dag – Hvad skal jeg gøre i dag? */}
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">

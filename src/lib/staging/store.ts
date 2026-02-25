@@ -24,10 +24,13 @@ export interface StagedProperty {
   ownerCompany?: string;
   ownerCvr?: string;
   researchSummary?: string;
+  researchReasoning?: string;
   researchLinks?: string;
+  dataQuality?: string;
   contactPerson?: string;
   contactEmail?: string;
   contactPhone?: string;
+  contactReasoning?: string;
   emailDraftSubject?: string;
   emailDraftBody?: string;
   emailDraftNote?: string;
@@ -69,10 +72,13 @@ function rowToStaged(r: any): StagedProperty {
     ownerCompany: r.owner_company ?? undefined,
     ownerCvr: r.owner_cvr ?? undefined,
     researchSummary: r.research_summary ?? undefined,
+    researchReasoning: r.research_reasoning ?? undefined,
     researchLinks: r.research_links ?? undefined,
+    dataQuality: r.data_quality ?? undefined,
     contactPerson: r.contact_person ?? undefined,
     contactEmail: r.contact_email ?? undefined,
     contactPhone: r.contact_phone ?? undefined,
+    contactReasoning: r.contact_reasoning ?? undefined,
     emailDraftSubject: r.email_draft_subject ?? undefined,
     emailDraftBody: r.email_draft_body ?? undefined,
     emailDraftNote: r.email_draft_note ?? undefined,
@@ -182,10 +188,13 @@ export async function updateStagedProperty(
     ownerCompany: string;
     ownerCvr: string;
     researchSummary: string;
+    researchReasoning: string;
     researchLinks: string;
+    dataQuality: string;
     contactPerson: string;
     contactEmail: string;
     contactPhone: string;
+    contactReasoning: string;
     emailDraftSubject: string;
     emailDraftBody: string;
     emailDraftNote: string;
@@ -202,10 +211,13 @@ export async function updateStagedProperty(
   if (updates.ownerCompany !== undefined) row.owner_company = updates.ownerCompany;
   if (updates.ownerCvr !== undefined) row.owner_cvr = updates.ownerCvr;
   if (updates.researchSummary !== undefined) row.research_summary = updates.researchSummary;
+  if (updates.researchReasoning !== undefined) row.research_reasoning = updates.researchReasoning;
   if (updates.researchLinks !== undefined) row.research_links = updates.researchLinks;
+  if (updates.dataQuality !== undefined) row.data_quality = updates.dataQuality;
   if (updates.contactPerson !== undefined) row.contact_person = updates.contactPerson;
   if (updates.contactEmail !== undefined) row.contact_email = updates.contactEmail;
   if (updates.contactPhone !== undefined) row.contact_phone = updates.contactPhone;
+  if (updates.contactReasoning !== undefined) row.contact_reasoning = updates.contactReasoning;
   if (updates.emailDraftSubject !== undefined) row.email_draft_subject = updates.emailDraftSubject;
   if (updates.emailDraftBody !== undefined) row.email_draft_body = updates.emailDraftBody;
   if (updates.emailDraftNote !== undefined) row.email_draft_note = updates.emailDraftNote;

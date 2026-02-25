@@ -75,7 +75,8 @@ export async function POST(req: NextRequest) {
           recommendedContacts: [contact],
           outdoorPotentialScore: staged.outdoorScore ?? 5,
           keyInsights: staged.researchSummary || "Research gennemført.",
-          dataQuality: "medium",
+          evidenceChain: staged.researchReasoning || "",
+          dataQuality: (staged.dataQuality as "high" | "medium" | "low") || "medium",
           dataQualityReason: "Fra staging",
         };
 

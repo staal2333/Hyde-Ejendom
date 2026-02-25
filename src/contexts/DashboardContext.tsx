@@ -79,6 +79,7 @@ export interface DashboardData {
       ready: number;
       sent: number;
     };
+    trend?: { snapshotDate: string; discovered: number; staged: number; inHubspot: number; ready: number; sent: number; replied: number; meetings: number }[];
   };
 }
 
@@ -176,6 +177,7 @@ export interface DashboardContextValue {
       cron_secret?: boolean;
       gmail_configured?: boolean;
       meta_ad_library?: boolean;
+      searchapi_configured?: boolean;
       supabase_configured?: boolean;
     };
   } | null;

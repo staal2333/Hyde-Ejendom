@@ -22,10 +22,13 @@ interface StagedProperty {
   ownerCompany?: string;
   ownerCvr?: string;
   researchSummary?: string;
+  researchReasoning?: string;
   researchLinks?: string;
+  dataQuality?: string;
   contactPerson?: string;
   contactEmail?: string;
   contactPhone?: string;
+  contactReasoning?: string;
   emailDraftSubject?: string;
   emailDraftBody?: string;
   emailDraftNote?: string;
@@ -108,6 +111,7 @@ export default function StagingQueue() {
   const [researchProgress, setResearchProgress] = useState<Record<string, ResearchProgress>>({});
   const [batchResearching, setBatchResearching] = useState(false);
   const [approveSending, setApproveSending] = useState(false);
+  const [confirmAction, setConfirmAction] = useState<{ type: "delete" | "reject"; ids: string[]; label: string } | null>(null);
   const abortRef = useRef<Record<string, AbortController>>({});
   const [counts, setCounts] = useState<Record<StagedStage, number>>({
     new: 0, researching: 0, researched: 0, approved: 0, rejected: 0, pushed: 0,
@@ -392,16 +396,21 @@ export default function StagingQueue() {
     }
   }, [selected, properties, addToast, fetchProperties, fetchDashboard]);
 
-  // ── Reject ──
-  const handleReject = useCallback(async (ids?: string[]) => {
+  // ── Reject (with confirmation) ──
+  const askReject = useCallback((ids?: string[]) => {
     const toReject = ids || Array.from(selected);
     if (toReject.length === 0) return;
+    const n = toReject.length;
+    setConfirmAction({ type: "reject", ids: toReject, label: `Afvis ${n} ejendom${n !== 1 ? "me" : ""}?` });
+  }, [selected]);
+
+  const executeReject = useCallback(async (ids: string[]) => {
     setRejecting(true);
     try {
       const res = await fetch("/api/staged-properties/reject", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ ids: toReject }),
+        body: JSON.stringify({ ids }),
       });
       const data = await res.json();
       if (data.ok) {
@@ -415,12 +424,17 @@ export default function StagingQueue() {
     } finally {
       setRejecting(false);
     }
-  }, [selected, addToast, fetchProperties, fetchDashboard]);
+  }, [addToast, fetchProperties, fetchDashboard]);
 
-  // ── Delete ──
-  const handleDelete = useCallback(async (id: string) => {
+  // ── Delete (with confirmation) ──
+  const askDelete = useCallback((id: string) => {
+    const prop = properties.find(p => p.id === id);
+    setConfirmAction({ type: "delete", ids: [id], label: `Slet "${prop?.name || prop?.address || "ejendom"}" permanent?` });
+  }, [properties]);
+
+  const executeDelete = useCallback(async (ids: string[]) => {
     try {
-      await fetch(`/api/staged-properties?id=${id}`, { method: "DELETE" });
+      await fetch(`/api/staged-properties?id=${ids[0]}`, { method: "DELETE" });
       addToast("Ejendom slettet", "info");
       await fetchProperties();
       fetchDashboard();
@@ -428,6 +442,13 @@ export default function StagingQueue() {
       addToast("Sletning fejlede", "error", (e as Error).message);
     }
   }, [addToast, fetchProperties, fetchDashboard]);
+
+  const executeConfirmAction = useCallback(async () => {
+    if (!confirmAction) return;
+    setConfirmAction(null);
+    if (confirmAction.type === "reject") await executeReject(confirmAction.ids);
+    else if (confirmAction.type === "delete") await executeDelete(confirmAction.ids);
+  }, [confirmAction, executeReject, executeDelete]);
 
   const activeCount = counts.new + counts.researching + counts.researched;
 
@@ -460,6 +481,45 @@ export default function StagingQueue() {
           </div>
         ))}
       </div>
+
+      {/* ── Confirmation dialog ── */}
+      {confirmAction && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-[2px] animate-fade-in">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 max-w-sm w-full mx-4">
+            <div className="flex items-center gap-3 mb-4">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${confirmAction.type === "delete" ? "bg-red-100" : "bg-amber-100"}`}>
+                <Ic d={confirmAction.type === "delete"
+                  ? "M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                  : "M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z"
+                } className={`w-5 h-5 ${confirmAction.type === "delete" ? "text-red-600" : "text-amber-600"}`} />
+              </div>
+              <div>
+                <h3 className="text-sm font-bold text-slate-800">Er du sikker?</h3>
+                <p className="text-xs text-slate-500 mt-0.5">{confirmAction.label}</p>
+              </div>
+            </div>
+            <p className="text-xs text-slate-500 mb-5">
+              {confirmAction.type === "delete" ? "Denne handling kan ikke fortrydes." : "Afviste ejendomme fjernes fra den aktive liste."}
+            </p>
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setConfirmAction(null)}
+                className="px-4 py-2 rounded-lg text-xs font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 transition-colors"
+              >
+                Annuller
+              </button>
+              <button
+                onClick={executeConfirmAction}
+                className={`px-4 py-2 rounded-lg text-xs font-semibold text-white transition-colors shadow-sm ${
+                  confirmAction.type === "delete" ? "bg-red-600 hover:bg-red-500" : "bg-amber-600 hover:bg-amber-500"
+                }`}
+              >
+                {confirmAction.type === "delete" ? "Slet permanent" : "Ja, afvis"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Stats Row ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
@@ -637,7 +697,7 @@ export default function StagingQueue() {
                 ) : null;
               })()}
               <button
-                onClick={() => handleReject()}
+                onClick={() => askReject()}
                 disabled={rejecting}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-red-600/70 text-white text-xs font-semibold hover:bg-red-500 transition-colors disabled:opacity-50 shadow-sm"
               >
@@ -806,6 +866,12 @@ export default function StagingQueue() {
                       {prop.contactEmail && (
                         <span className="text-brand-400 truncate max-w-[160px]">· {prop.contactEmail}</span>
                       )}
+                      {prop.dataQuality && (
+                        <span className={`w-1.5 h-1.5 rounded-full flex-shrink-0 ${
+                          prop.dataQuality === "high" ? "bg-emerald-500" :
+                          prop.dataQuality === "medium" ? "bg-amber-500" : "bg-red-500"
+                        }`} title={`Datakvalitet: ${prop.dataQuality}`} />
+                      )}
                     </div>
                     {/* Research progress message */}
                     {rp && (
@@ -942,10 +1008,25 @@ export default function StagingQueue() {
                           </div>
                         ) : (
                           <>
+                            {/* Data quality badge */}
+                            {prop.dataQuality && (
+                              <div className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[10px] font-bold uppercase tracking-wide ${
+                                prop.dataQuality === "high" ? "bg-emerald-50 text-emerald-700 border border-emerald-200" :
+                                prop.dataQuality === "medium" ? "bg-amber-50 text-amber-700 border border-amber-200" :
+                                "bg-red-50 text-red-700 border border-red-200"
+                              }`}>
+                                <span className={`w-1.5 h-1.5 rounded-full ${
+                                  prop.dataQuality === "high" ? "bg-emerald-500" :
+                                  prop.dataQuality === "medium" ? "bg-amber-500" : "bg-red-500"
+                                }`} />
+                                Datakvalitet: {prop.dataQuality === "high" ? "Høj" : prop.dataQuality === "medium" ? "Middel" : "Lav"}
+                              </div>
+                            )}
+
                             {prop.ownerCompany && (
                               <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-                                <span className="text-[10px] text-slate-500 uppercase font-semibold">Ejer</span>
-                                <p className="text-sm text-slate-800 mt-0.5">{prop.ownerCompany} {prop.ownerCvr && <span className="text-slate-500 text-xs">(CVR: {prop.ownerCvr})</span>}</p>
+                                <span className="text-[10px] text-slate-500 uppercase font-semibold">Ejer / Bygherre</span>
+                                <p className="text-sm text-slate-800 mt-0.5 font-medium">{prop.ownerCompany} {prop.ownerCvr && <span className="text-slate-500 text-xs font-normal">(CVR: {prop.ownerCvr})</span>}</p>
                               </div>
                             )}
 
@@ -964,6 +1045,12 @@ export default function StagingQueue() {
                                     </div>
                                   </div>
                                 </div>
+                                {prop.contactReasoning && (
+                                  <div className="mt-2 pt-2 border-t border-slate-200/60">
+                                    <span className="text-[9px] text-slate-400 uppercase font-semibold">Hvorfor denne kontakt?</span>
+                                    <p className="text-[11px] text-slate-500 leading-relaxed mt-0.5">{prop.contactReasoning}</p>
+                                  </div>
+                                )}
                               </div>
                             )}
 
@@ -972,6 +1059,40 @@ export default function StagingQueue() {
                                 <span className="text-[10px] text-slate-500 uppercase font-semibold">Resume</span>
                                 <p className="text-xs text-slate-600 leading-relaxed whitespace-pre-wrap mt-0.5">{prop.researchSummary}</p>
                               </div>
+                            )}
+
+                            {prop.researchReasoning && (
+                              <details className="group">
+                                <summary className="flex items-center gap-1.5 cursor-pointer text-[10px] text-indigo-600 font-semibold uppercase tracking-wide hover:text-indigo-700 transition-colors">
+                                  <Ic d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m5.231 13.481L15 17.25m-4.5-15H5.625c-.621 0-1.125.504-1.125 1.125v16.5c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9zm3.75 11.625a2.625 2.625 0 11-5.25 0 2.625 2.625 0 015.25 0z" className="w-3.5 h-3.5" />
+                                  Kildekæde &amp; evidens
+                                  <Ic d="M8.25 4.5l7.5 7.5-7.5 7.5" className="w-3 h-3 transition-transform group-open:rotate-90" />
+                                </summary>
+                                <div className="mt-2 rounded-lg bg-indigo-50/50 border border-indigo-100 p-3">
+                                  <p className="text-[11px] text-slate-600 leading-relaxed whitespace-pre-wrap">{prop.researchReasoning}</p>
+                                </div>
+                              </details>
+                            )}
+
+                            {prop.researchLinks && (
+                              <details className="group">
+                                <summary className="flex items-center gap-1.5 cursor-pointer text-[10px] text-slate-500 font-semibold uppercase tracking-wide hover:text-slate-700 transition-colors">
+                                  <Ic d="M13.19 8.688a4.5 4.5 0 011.242 7.244l-4.5 4.5a4.5 4.5 0 01-6.364-6.364l1.757-1.757m9.86-9.86a4.5 4.5 0 00-6.364 0l-4.5 4.5a4.5 4.5 0 006.364 6.364l1.757-1.757" className="w-3.5 h-3.5" />
+                                  Kilder ({prop.researchLinks.split("\n").filter(Boolean).length})
+                                  <Ic d="M8.25 4.5l7.5 7.5-7.5 7.5" className="w-3 h-3 transition-transform group-open:rotate-90" />
+                                </summary>
+                                <div className="mt-2 space-y-1">
+                                  {prop.researchLinks.split("\n").filter(Boolean).map((link, i) => (
+                                    <div key={i} className="text-[11px]">
+                                      {link.startsWith("http") ? (
+                                        <a href={link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-700 hover:underline truncate block">{link}</a>
+                                      ) : (
+                                        <span className="text-slate-500">{link}</span>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              </details>
                             )}
 
                             {prop.dailyTraffic != null && prop.dailyTraffic > 0 && (
@@ -1049,7 +1170,7 @@ export default function StagingQueue() {
                           )}
                           {prop.stage !== "pushed" && prop.stage !== "rejected" && !rp && (
                             <button
-                              onClick={() => handleReject([prop.id])}
+                              onClick={() => askReject([prop.id])}
                               disabled={rejecting}
                               className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-red-50 text-red-600 text-xs font-medium hover:bg-red-100 transition-colors disabled:opacity-50"
                             >
@@ -1064,7 +1185,7 @@ export default function StagingQueue() {
                             </span>
                           )}
                           <button
-                            onClick={() => handleDelete(prop.id)}
+                            onClick={() => askDelete(prop.id)}
                             className="flex items-center gap-1.5 px-3 py-2 rounded-lg bg-slate-50 text-slate-500 text-xs hover:text-red-600 hover:bg-red-50 transition-colors ml-auto"
                           >
                             <Ic d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0" className="w-3.5 h-3.5" />

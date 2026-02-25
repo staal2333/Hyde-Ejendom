@@ -63,7 +63,7 @@ export async function GET() {
     openai_key: !!process.env.OPENAI_API_KEY,
     cron_secret: !!process.env.CRON_SECRET,
     gmail_configured: !!(process.env.GMAIL_CLIENT_ID && process.env.GMAIL_REFRESH_TOKEN),
-    meta_ad_library: !!process.env.META_AD_LIBRARY_ACCESS_TOKEN,
+    searchapi_configured: !!process.env.SEARCHAPI_API_KEY,
     supabase_configured: !!process.env.NEXT_PUBLIC_SUPABASE_URL,
     node_env: process.env.NODE_ENV || "development",
   };

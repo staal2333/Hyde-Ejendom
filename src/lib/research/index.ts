@@ -87,20 +87,32 @@ export async function researchProperty(
   }
 
   // ══════════════════════════════════════════════════════════
-  // Step 0: OIS.dk – Official owner/administrator lookup
+  // Step 0: OIS.dk + BBR in PARALLEL (independent lookups)
   // ══════════════════════════════════════════════════════════
   emit({
     step: "ois",
-    message: "📋 OIS.dk: Søger officielle ejer- og administratordata...",
+    message: "📋 OIS + BBR: Starter parallelle opslag...",
     detail: `Slår op: ${property.address}, ${property.postalCode} ${property.city}`,
   });
 
-  const oisData = await lookupOis(
-    property.address,
-    property.postalCode,
-    property.city,
-    (event) => emit({ step: event.step, message: event.message, detail: event.detail })
-  );
+  const [oisData, bbrData] = await Promise.all([
+    lookupOis(
+      property.address,
+      property.postalCode,
+      property.city,
+      (event) => emit({ step: event.step, message: event.message, detail: event.detail })
+    ),
+    lookupBbr(property.address, property.postalCode, property.city),
+  ]);
+
+  if (bbrData) {
+    emit({
+      step: "bbr",
+      message: `BBR-data fundet: ${bbrData.area || "?"}m², ${bbrData.floors || "?"} etager, bygget ${bbrData.buildingYear || "ukendt"}`,
+    });
+  } else {
+    emit({ step: "bbr", message: "Ingen BBR-data fundet" });
+  }
 
   let oisOwnerName: string | null = null;
   let oisAdminName: string | null = null;
@@ -313,29 +325,7 @@ export async function researchProperty(
     });
   }
 
-  // ── Step 2: BBR lookup ──
-  emit({
-    step: "bbr",
-    message: "Henter bygningsdata fra BBR...",
-    detail: `Opslag: ${property.address}, ${property.postalCode} ${property.city}`,
-  });
-
-  const bbrData = await lookupBbr(
-    property.address,
-    property.postalCode,
-    property.city
-  );
-
-  if (bbrData) {
-    emit({
-      step: "bbr",
-      message: `BBR-data fundet: ${bbrData.area || "?"}m², ${bbrData.floors || "?"} etager, bygget ${bbrData.buildingYear || "ukendt"}`,
-    });
-  } else {
-    emit({ step: "bbr", message: "Ingen BBR-data fundet" });
-  }
-
-  // ── Step 3: Deep web search ──
+  // ── Step 2: Deep web search ──
   const searchQueries = buildSearchQueries(property, cvrData, bbrData, oisOwnerName, oisAdminName, ownershipType);
 
   emit({
@@ -345,28 +335,30 @@ export async function researchProperty(
   });
 
   const allSearchResults: WebSearchResult[] = [];
+  const SEARCH_CONCURRENCY = 2;
 
-  for (let i = 0; i < searchQueries.length; i++) {
-    const query = searchQueries[i];
+  for (let i = 0; i < searchQueries.length; i += SEARCH_CONCURRENCY) {
+    const batch = searchQueries.slice(i, i + SEARCH_CONCURRENCY);
     emit({
       step: "search_query",
-      message: `Søger: "${query}"`,
-      detail: `Søgning ${i + 1} af ${searchQueries.length}`,
+      message: `Søger batch ${Math.floor(i / SEARCH_CONCURRENCY) + 1}: ${batch.map(q => `"${q.substring(0, 30)}..."`).join(", ")}`,
+      detail: `Søgning ${i + 1}–${Math.min(i + SEARCH_CONCURRENCY, searchQueries.length)} af ${searchQueries.length}`,
     });
 
-    const results = await searchGoogle(query, 4);
-    allSearchResults.push(...results);
-
-    if (results.length > 0) {
-      emit({
-        step: "search_result",
-        message: `Fandt ${results.length} resultater for "${query.substring(0, 40)}..."`,
-        detail: results.slice(0, 2).map((r) => `→ ${r.title}`).join("\n"),
-      });
+    const batchResults = await Promise.all(batch.map(q => searchGoogle(q, 4)));
+    for (let j = 0; j < batch.length; j++) {
+      const results = batchResults[j];
+      allSearchResults.push(...results);
+      if (results.length > 0) {
+        emit({
+          step: "search_result",
+          message: `Fandt ${results.length} resultater for "${batch[j].substring(0, 40)}..."`,
+        });
+      }
     }
 
-    if (i < searchQueries.length - 1) {
-      await new Promise((r) => setTimeout(r, 500));
+    if (i + SEARCH_CONCURRENCY < searchQueries.length) {
+      await new Promise((r) => setTimeout(r, 400));
     }
   }
 
@@ -424,30 +416,35 @@ export async function researchProperty(
   }
 
   let mergedWebsite = null;
+  const SCRAPE_CONCURRENCY = 3;
 
-  for (let i = 0; i < websiteUrls.length; i++) {
-    const url = websiteUrls[i];
-    emit({
-      step: "scrape_site",
-      message: `Scraper website ${i + 1}/${websiteUrls.length}: ${new URL(url).hostname}`,
-    });
+  emit({
+    step: "scrape_sites",
+    message: `Scraper ${websiteUrls.length} websites parallelt...`,
+  });
 
-    const content = await scrapeCompanyWebsite(url);
-    if (!content) continue;
+  for (let i = 0; i < websiteUrls.length; i += SCRAPE_CONCURRENCY) {
+    const batch = websiteUrls.slice(i, i + SCRAPE_CONCURRENCY);
+    const results = await Promise.all(batch.map(url => scrapeCompanyWebsite(url)));
 
-    emit({
-      step: "scrape_result",
-      message: `Fandt ${content.emails.length} emails, ${content.phones.length} tlf på ${new URL(url).hostname}`,
-    });
+    for (let j = 0; j < batch.length; j++) {
+      const content = results[j];
+      if (!content) continue;
 
-    if (!mergedWebsite) {
-      mergedWebsite = content;
-    } else {
-      mergedWebsite.emails.push(...content.emails);
-      mergedWebsite.phones.push(...content.phones);
-      mergedWebsite.relevantSnippets.push(...content.relevantSnippets);
-      if (content.aboutPageText && !mergedWebsite.aboutPageText) {
-        mergedWebsite.aboutPageText = content.aboutPageText;
+      emit({
+        step: "scrape_result",
+        message: `Fandt ${content.emails.length} emails, ${content.phones.length} tlf på ${new URL(batch[j]).hostname}`,
+      });
+
+      if (!mergedWebsite) {
+        mergedWebsite = content;
+      } else {
+        mergedWebsite.emails.push(...content.emails);
+        mergedWebsite.phones.push(...content.phones);
+        mergedWebsite.relevantSnippets.push(...content.relevantSnippets);
+        if (content.aboutPageText && !mergedWebsite.aboutPageText) {
+          mergedWebsite.aboutPageText = content.aboutPageText;
+        }
       }
     }
   }

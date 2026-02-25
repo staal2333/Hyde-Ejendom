@@ -412,6 +412,36 @@ export async function createFollowUpTask(
 // ─── Lead Sourcing: Contact blocklist (from Contacts, not Ejendomme) ───
 
 /**
+ * Fetch all HubSpot Companies (name + domain). For CRM cross-matching.
+ */
+export async function listHubSpotCompanies(): Promise<{ id: string; name: string; domain: string | null }[]> {
+  const companies: { id: string; name: string; domain: string | null }[] = [];
+  let after: string | undefined;
+
+  do {
+    const url = `${BASE_URL}/crm/v3/objects/companies?limit=100${after ? `&after=${after}` : ""}&properties=name,domain`;
+    const res = await fetch(url, { headers: authHeaders() });
+    if (!res.ok) break;
+    const json = await res.json() as {
+      results?: { id: string; properties?: Record<string, string> }[];
+      paging?: { next?: { after: string } };
+    };
+    for (const c of json.results || []) {
+      if (c.properties?.name) {
+        companies.push({
+          id: c.id,
+          name: c.properties.name,
+          domain: c.properties.domain || null,
+        });
+      }
+    }
+    after = json.paging?.next?.after;
+  } while (after);
+
+  return companies;
+}
+
+/**
  * Fetch all contact email domains (and optional company IDs) for lead dedupe.
  * Used to exclude companies we already have in CRM (via contacts).
  */

@@ -9,6 +9,24 @@ import { logger } from "../logger";
 import { scoreCvrMatch, CVR_MATCH_THRESHOLD, type CvrCandidate } from "./validator";
 import type { CvrResult } from "@/types";
 
+async function fetchCvrWithRetry(url: string, headers: Record<string, string>, retries = 2): Promise<Response | null> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      const response = await fetch(url, { headers, signal: AbortSignal.timeout(15000) });
+      if (response.ok || response.status < 500) return response;
+      if (attempt < retries) await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+    } catch {
+      if (attempt < retries) {
+        await new Promise(r => setTimeout(r, 1000 * Math.pow(2, attempt)));
+        continue;
+      }
+      logger.warn(`CVR fetch failed after ${retries + 1} attempts: ${url.slice(0, 100)}`, { service: "cvr" });
+      return null;
+    }
+  }
+  return null;
+}
+
 /**
  * Options for CVR lookup behavior.
  */
@@ -69,13 +87,11 @@ export async function lookupCvrScored(
 
     const url = `${config.cvr.apiUrl}?${params}`;
 
-    const response = await fetch(url, {
-      headers: { "User-Agent": config.cvr.userAgent },
-    });
+    const response = await fetchCvrWithRetry(url, { "User-Agent": config.cvr.userAgent });
 
-    if (!response.ok) {
-      logger.warn(`CVR API returned ${response.status} for query: ${query}`, { service: "cvr" });
-      return { result: null, score: 0, reasons: [`HTTP ${response.status}`] };
+    if (!response || !response.ok) {
+      logger.warn(`CVR API returned ${response?.status ?? "no response"} for query: ${query}`, { service: "cvr" });
+      return { result: null, score: 0, reasons: [`HTTP ${response?.status ?? "timeout"}`] };
     }
 
     const data = await response.json();

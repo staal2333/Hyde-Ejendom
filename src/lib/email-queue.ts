@@ -450,6 +450,89 @@ async function processNext() {
   scheduleNext();
 }
 
+/**
+ * Process a batch of queued emails (for cron/serverless).
+ * Sends up to `batchSize` emails respecting rate limits.
+ */
+export async function processQueueBatch(batchSize = 20): Promise<{ sent: number; failed: number; skipped: number }> {
+  await ensureBooted();
+  resetHourlyCounterIfNeeded();
+
+  const rateLimit = config.emailRateLimitPerHour;
+  const available = Math.max(0, rateLimit - hourlyCounter);
+  const limit = Math.min(batchSize, available);
+
+  if (limit === 0) {
+    return { sent: 0, failed: 0, skipped: 0 };
+  }
+
+  const pending = HAS_SUPABASE
+    ? await (async () => {
+        const { data } = await supabase!
+          .from("email_queue")
+          .select("*")
+          .eq("status", "queued")
+          .order("queued_at", { ascending: true })
+          .limit(limit);
+        return (data || []).map(mapRow);
+      })()
+    : memQueue.filter(q => q.status === "queued").slice(0, limit);
+
+  let sent = 0, failed = 0;
+
+  for (const item of pending) {
+    resetHourlyCounterIfNeeded();
+    if (hourlyCounter >= rateLimit) break;
+
+    item.status = "sending";
+    await persist(item);
+
+    try {
+      const result = await sendEmail({
+        to: item.to,
+        subject: item.subject,
+        body: item.body,
+        contactName: item.contactName,
+        propertyId: item.propertyId,
+        attachments: item.attachments,
+      });
+
+      if (result.success) {
+        item.status = "sent";
+        item.sentAt = new Date().toISOString();
+        item.messageId = result.messageId;
+        hourlyCounter++;
+        sent++;
+
+        if (result.threadId) recordThreadProperty(result.threadId, item.propertyId);
+        try { await updateEjendom(item.propertyId, { outreach_status: "FOERSTE_MAIL_SENDT" }); } catch { /* ignore */ }
+      } else {
+        if (item.retries < MAX_RETRIES) {
+          item.retries++;
+          item.status = "queued";
+          item.error = result.error;
+        } else {
+          item.status = "failed";
+          item.error = result.error;
+          failed++;
+          try { await updateEjendom(item.propertyId, { outreach_status: "FEJL" }); } catch { /* ignore */ }
+        }
+      }
+      await persist(item);
+    } catch (error) {
+      item.status = "failed";
+      item.error = error instanceof Error ? error.message : String(error);
+      await persist(item);
+      failed++;
+    }
+
+    // Small delay between sends
+    await new Promise(r => setTimeout(r, 500));
+  }
+
+  return { sent, failed, skipped: pending.length - sent - failed };
+}
+
 async function persist(item: QueuedEmail): Promise<void> {
   if (HAS_SUPABASE) {
     await dbUpsert(item);

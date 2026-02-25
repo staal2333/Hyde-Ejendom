@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useCallback, useEffect } from "react";
+import { useState, useCallback, useEffect, useMemo } from "react";
 import { useDashboard } from "@/contexts/DashboardContext";
 
+/* ─── Types ─── */
 export interface LeadCompany {
   cvr: string;
   name: string;
@@ -14,233 +15,438 @@ export interface LeadCompany {
   resultat: number | null;
   omsaetning: number | null;
   inCrm: boolean;
-  source: string;
+  source: "cvr" | "ad";
+  sourcePlatform?: string;
+  pageCategory: string | null;
+  pageLikes: number | null;
+  adCount: number;
+  platforms: string[];
+  oohScore: number;
+  oohReason: string;
 }
 
+interface LeadRow {
+  id: string;
+  name: string;
+  cvr: string | null;
+  address: string | null;
+  industry: string | null;
+  website: string | null;
+  domain: string | null;
+  egenkapital: number | null;
+  resultat: number | null;
+  omsaetning: number | null;
+  page_category: string | null;
+  page_likes: number | null;
+  ad_count: number;
+  platforms: string[];
+  ooh_score: number;
+  ooh_reason: string | null;
+  source_platform: string;
+  status: string;
+  hubspot_company_id: string | null;
+  contact_email: string | null;
+  contact_phone: string | null;
+  last_contacted_at: string | null;
+  next_followup_at: string | null;
+  notes: { text: string; created_at: string; author?: string }[];
+  discovered_at: string;
+  updated_at: string;
+}
+
+interface CustomerActivity {
+  hubspotId: string;
+  companyName: string;
+  domain: string | null;
+  advertising: boolean;
+  platforms: string[];
+  totalAdCount: number;
+  matchedAdvertisers: { platform: string; pageName: string; adCount: number }[];
+}
+
+type PipelineTab = "nye" | "kvalificerede" | "kontaktet" | "kunder" | "hubspot";
+type SortKey = "oohScore" | "name" | "egenkapital";
+type AdPlatform = "meta" | "tiktok" | "linkedin" | "google";
+
+const PLATFORM_LABELS: Record<AdPlatform, string> = {
+  meta: "Meta",
+  tiktok: "TikTok",
+  linkedin: "LinkedIn",
+  google: "Google/YouTube",
+};
+
+const PLATFORM_COLORS: Record<AdPlatform, string> = {
+  meta: "bg-blue-100 text-blue-700",
+  tiktok: "bg-gray-900 text-white",
+  linkedin: "bg-sky-100 text-sky-700",
+  google: "bg-red-100 text-red-700",
+};
+
+const TAB_STATUS_MAP: Record<PipelineTab, string | null> = {
+  nye: "new",
+  kvalificerede: "qualified",
+  kontaktet: "contacted",
+  kunder: "customer",
+  hubspot: null,
+};
+
+function formatNumber(n: number | null) {
+  if (n == null) return "—";
+  return new Intl.NumberFormat("da-DK", { maximumFractionDigits: 0 }).format(n);
+}
+
+/* ─── OOH Score Badge ─── */
+function OohScoreBadge({ score }: { score: number }) {
+  const color =
+    score >= 60
+      ? "text-emerald-700 bg-emerald-100 border-emerald-200"
+      : score >= 30
+        ? "text-amber-700 bg-amber-100 border-amber-200"
+        : "text-red-700 bg-red-100 border-red-200";
+  const ring =
+    score >= 60 ? "stroke-emerald-500" : score >= 30 ? "stroke-amber-500" : "stroke-red-400";
+  const pct = score / 100;
+  const circumference = 2 * Math.PI * 18;
+
+  return (
+    <div className={`relative inline-flex items-center justify-center w-12 h-12 rounded-full border ${color}`}>
+      <svg className="absolute inset-0 w-12 h-12 -rotate-90" viewBox="0 0 40 40">
+        <circle cx="20" cy="20" r="18" fill="none" strokeWidth="3" className="stroke-slate-200" />
+        <circle
+          cx="20" cy="20" r="18" fill="none" strokeWidth="3"
+          className={ring}
+          strokeDasharray={`${circumference * pct} ${circumference * (1 - pct)}`}
+          strokeLinecap="round"
+        />
+      </svg>
+      <span className="relative text-xs font-bold tabular-nums">{score}</span>
+    </div>
+  );
+}
+
+/* ─── Platform Icon ─── */
+function PlatformBadge({ platform }: { platform: string }) {
+  const p = platform.toLowerCase();
+  let label = platform;
+  let cls = "bg-slate-100 text-slate-600";
+  if (p.includes("meta") || p.includes("facebook") || p.includes("instagram")) {
+    label = "Meta"; cls = PLATFORM_COLORS.meta;
+  } else if (p.includes("tiktok")) {
+    label = "TikTok"; cls = PLATFORM_COLORS.tiktok;
+  } else if (p.includes("linkedin")) {
+    label = "LinkedIn"; cls = PLATFORM_COLORS.linkedin;
+  } else if (p.includes("google") || p.includes("youtube")) {
+    label = "Google"; cls = PLATFORM_COLORS.google;
+  }
+  return <span className={`text-[10px] font-semibold px-1.5 py-0.5 rounded-md ${cls}`}>{label}</span>;
+}
+
+/* ─── Main Component ─── */
 export function LeadSourcingTab() {
-  const { addToast, setActiveTab } = useDashboard();
-  const [input, setInput] = useState("");
-  const [loading, setLoading] = useState(false);
+  const { addToast } = useDashboard();
+
+  /* Discovery state */
   const [discoverQuery, setDiscoverQuery] = useState("");
   const [discoverCountry, setDiscoverCountry] = useState("DK");
-  const [discoverPlatform, setDiscoverPlatform] = useState<"all" | "instagram">("all");
+  const [selectedPlatforms, setSelectedPlatforms] = useState<Set<AdPlatform>>(new Set(["meta"]));
   const [discoverLoading, setDiscoverLoading] = useState(false);
-  const [companies, setCompanies] = useState<LeadCompany[]>([]);
-  const [addingId, setAddingId] = useState<string | null>(null);
-  const [contactEmail, setContactEmail] = useState<Record<string, string>>({});
-  const [metaOk, setMetaOk] = useState<boolean | null>(null);
-  const [blocklistInfo, setBlocklistInfo] = useState<{ domains: number; companyIds: number; count: number } | null>(null);
+  const [discoverPhase, setDiscoverPhase] = useState("");
 
-  const DISCOVERIES_KEY = "ejendom_lead_discoveries";
-  const MAX_DISCOVERIES = 10;
-  const [discoveryHistory, setDiscoveryHistory] = useState<{ query: string; country: string; platform: string; count: number; date: string }[]>(() => {
-    if (typeof window === "undefined") return [];
-    try {
-      const raw = localStorage.getItem(DISCOVERIES_KEY);
-      if (!raw) return [];
-      const arr = JSON.parse(raw);
-      return Array.isArray(arr) ? arr.slice(0, MAX_DISCOVERIES) : [];
-    } catch {
-      return [];
-    }
-  });
+  /* Pipeline state */
+  const [activeTab, setActiveTab] = useState<PipelineTab>("nye");
+  const [leads, setLeads] = useState<LeadRow[]>([]);
+  const [leadsLoading, setLeadsLoading] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [sortKey, setSortKey] = useState<SortKey>("oohScore");
+  const [sortAsc, setSortAsc] = useState(false);
+  const [actionLoading, setActionLoading] = useState<string | null>(null);
+  const [noteInputs, setNoteInputs] = useState<Record<string, string>>({});
 
+  /* Customer monitoring */
+  const [customers, setCustomers] = useState<CustomerActivity[]>([]);
+  const [customersLoading, setCustomersLoading] = useState(false);
+
+  /* API status */
+  const [apiOk, setApiOk] = useState<boolean | null>(null);
+  const [apiError, setApiError] = useState<{ errorType: string; hint?: string } | null>(null);
+
+  /* Check API on mount */
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [metaRes, blockRes] = await Promise.all([
-          fetch("/api/lead-sourcing/test-meta"),
-          fetch("/api/lead-sourcing/blocklist"),
-        ]);
+        const res = await fetch("/api/lead-sourcing/test-meta");
         if (cancelled) return;
-        const metaData = await metaRes.json();
-        setMetaOk(metaData.ok === true);
-        const blockData = await blockRes.json();
-        if (blockRes.ok && !blockData.error) {
-          const domains = Array.isArray(blockData.domains) ? blockData.domains.length : 0;
-          const companyIds = Array.isArray(blockData.companyIds) ? blockData.companyIds.length : 0;
-          setBlocklistInfo({ domains, companyIds, count: blockData.count ?? domains + companyIds });
-        }
+        const data = await res.json();
+        setApiOk(data.ok === true);
+        if (!data.ok) setApiError({ errorType: data.errorType || "unknown", hint: data.hint });
       } catch {
-        if (!cancelled) setMetaOk(false);
+        if (!cancelled) setApiOk(false);
       }
     })();
     return () => { cancelled = true; };
   }, []);
 
-  const formatNumber = (n: number | null) =>
-    n == null ? "—" : new Intl.NumberFormat("da-DK", { maximumFractionDigits: 0 }).format(n);
-
-  const fetchCompanies = useCallback(async () => {
-    const raw = input.trim().replace(/\s+/g, "\n");
-    const lines = raw.split("\n").map((l) => l.trim().replace(/\D/g, "")).filter(Boolean);
-    const cvrs = [...new Set(lines)];
-    if (cvrs.length === 0) {
-      addToast("Indtast mindst ét CVR-nummer (én per linje eller kommasepareret)", "info");
-      return;
-    }
-    setLoading(true);
+  /* Load pipeline leads */
+  const loadLeads = useCallback(async (status?: string) => {
+    setLeadsLoading(true);
     try {
-      const res = await fetch("/api/lead-sourcing/companies", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cvrs }),
-      });
+      const params = new URLSearchParams({ limit: "200" });
+      if (status) params.set("status", status);
+      const res = await fetch(`/api/leads?${params}`);
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Kunne ikke hente virksomheder");
-      setCompanies(data.companies || []);
-      addToast(`${data.companies?.length ?? 0} virksomheder hentet (Proff: egenkapital/resultat; dedupe fra Contacts)`, "success");
-    } catch (e) {
-      addToast(e instanceof Error ? e.message : "Fejl ved hentning", "error");
+      setLeads(data.leads || []);
+    } catch {
+      /* ignore */
     } finally {
-      setLoading(false);
+      setLeadsLoading(false);
     }
-  }, [input, addToast]);
+  }, []);
 
-  const runDiscover = useCallback(async () => {
+  useEffect(() => {
+    if (activeTab === "hubspot") return;
+    const status = TAB_STATUS_MAP[activeTab];
+    if (status) loadLeads(status);
+  }, [activeTab, loadLeads]);
+
+  /* Toggle platform */
+  const togglePlatform = (p: AdPlatform) => {
+    setSelectedPlatforms(prev => {
+      const next = new Set(prev);
+      if (next.has(p)) { next.delete(p); } else { next.add(p); }
+      if (next.size === 0) next.add("meta");
+      return next;
+    });
+  };
+
+  /* Run discovery */
+  const runDiscover = useCallback(async (batch = false) => {
     setDiscoverLoading(true);
+    const sources = Array.from(selectedPlatforms);
+    setDiscoverPhase(batch ? `Fuld scanning: ${sources.map(s => PLATFORM_LABELS[s]).join(", ")}…` : `Søger på ${sources.map(s => PLATFORM_LABELS[s]).join(", ")}…`);
     try {
       const res = await fetch("/api/lead-sourcing/discover", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          source: "meta",
+          source: sources.length === 1 ? sources[0] : "all",
+          sources,
           query: discoverQuery.trim() || undefined,
           country: discoverCountry.trim() || "DK",
-          limit: 40,
-          platform: discoverPlatform,
+          limit: 80,
+          batch,
         }),
       });
       const data = await res.json();
       if (!res.ok) {
-        addToast(data.error || "Kunne ikke køre discovery", "error");
-        if (data.hint) addToast(data.hint, "info");
+        addToast((data.error || "Discovery fejlede").slice(0, 200), "error");
         return;
       }
-      setCompanies(data.companies || []);
-      if (data.platformFallback) {
-        addToast("Instagram-filter gav API-fejl hos Meta; viste annoncører fra alle platforme i stedet.", "info");
+      const companies: LeadCompany[] = data.companies || [];
+      if (companies.length === 0) {
+        addToast("Ingen nye leads fundet. Prøv andre søgeord eller platforme.", "info");
+        return;
       }
-      const sourceLabel = discoverPlatform === "instagram" && !data.platformFallback ? "Instagram" : "Meta (Facebook + Instagram)";
-      addToast(
-        data.companies?.length
-          ? `${data.companies.length} leads fundet via ${sourceLabel} Ad Library (CVR + Proff + dedupe)`
-          : "Ingen nye leads fundet. Prøv andre søgeord.",
-        data.companies?.length ? "success" : "info"
-      );
-      // Historik: gem discovery
-      const entry = {
-        query: discoverQuery.trim() || "(ingen søgeord)",
-        country: discoverCountry.trim() || "DK",
-        platform: discoverPlatform,
-        count: data.companies?.length ?? 0,
-        date: new Date().toISOString(),
-      };
-      setDiscoveryHistory((prev) => {
-        const next = [entry, ...prev.filter((r) => !(r.query === entry.query && r.country === entry.country && r.date === entry.date))].slice(0, MAX_DISCOVERIES);
-        try {
-          localStorage.setItem(DISCOVERIES_KEY, JSON.stringify(next));
-        } catch {}
-        return next;
+
+      setDiscoverPhase("Gemmer leads i pipeline…");
+      const saveRes = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companies }),
       });
+      const saveData = await saveRes.json();
+
+      addToast(
+        `${companies.length} leads fundet fra ${(data.sources || sources).join(", ")}. ${saveData.saved || 0} gemt i pipeline.`,
+        "success"
+      );
+
+      setActiveTab("nye");
+      await loadLeads("new");
     } catch (e) {
-      addToast(e instanceof Error ? e.message : "Fejl ved discovery", "error");
+      console.error("[Lead Discovery]", e);
+      addToast(e instanceof Error ? e.message.slice(0, 200) : "Fejl ved discovery", "error");
     } finally {
       setDiscoverLoading(false);
+      setDiscoverPhase("");
     }
-  }, [discoverQuery, discoverCountry, discoverPlatform, addToast]);
+  }, [discoverQuery, discoverCountry, selectedPlatforms, addToast, loadLeads]);
 
-  const addToHubSpot = useCallback(
-    async (company: LeadCompany) => {
-      setAddingId(company.cvr);
-      try {
-        const email = contactEmail[company.cvr]?.trim() || undefined;
-        const contacts = email ? [{ email, firstname: "", lastname: "" }] : [];
-        const res = await fetch("/api/lead-sourcing/add-to-hubspot", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            company: {
-              name: company.name,
-              domain: company.domain || company.website,
-              address: company.address,
-              website: company.website,
-              cvr: company.cvr,
-            },
-            contacts: contacts.map((c) => ({ email: c.email, firstname: c.firstname, lastname: c.lastname })),
-          }),
-        });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Kunne ikke oprette i HubSpot");
-        addToast(`${company.name} tilføjet til HubSpot (Company + ${contacts.length ? "Contact" : "0 kontakter"})`, "success");
-        setCompanies((prev) => prev.filter((c) => c.cvr !== company.cvr));
-        setContactEmail((prev) => ({ ...prev, [company.cvr]: "" }));
-      } catch (e) {
-        addToast(e instanceof Error ? e.message : "Fejl ved tilføjelse", "error");
-      } finally {
-        setAddingId(null);
-      }
-    },
-    [contactEmail, addToast]
-  );
+  /* Pipeline actions */
+  const updateLeadStatus = useCallback(async (id: string, status: string) => {
+    setActionLoading(id);
+    try {
+      const res = await fetch(`/api/leads/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ status }),
+      });
+      if (!res.ok) throw new Error("Kunne ikke opdatere status");
+      addToast(`Lead flyttet til "${status}"`, "success");
+      const currentStatus = TAB_STATUS_MAP[activeTab];
+      if (currentStatus) await loadLeads(currentStatus);
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : "Fejl", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  }, [activeTab, addToast, loadLeads]);
 
-  const handleFileUpload = useCallback((e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = () => {
-      const text = String(reader.result ?? "");
-      const lines = text.split(/[\r\n]+/).map((l) => l.trim());
-      const first = lines[0] ?? "";
-      const maybeHeader = /^[a-zæøå\s,;]+$/i.test(first);
-      const start = maybeHeader && lines.length > 1 ? 1 : 0;
-      const cvrs = lines.slice(start).map((l) => l.replace(/^[^0-9]*([0-9]{8})[^0-9]*.*/, "$1").trim()).filter((c) => c.length === 8);
-      setInput(cvrs.join("\n"));
-      addToast(`${cvrs.length} CVR-numre indlæst fra fil`, "success");
-    };
-    reader.readAsText(file);
-    e.target.value = "";
+  const qualifyLead = useCallback(async (id: string) => {
+    setActionLoading(id);
+    try {
+      const res = await fetch(`/api/leads/${id}/qualify`, { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kvalificering fejlede");
+      addToast(`Lead kvalificeret${data.hubspotId ? " og synkroniseret til HubSpot" : ""}`, "success");
+      await loadLeads("new");
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : "Fejl", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  }, [addToast, loadLeads]);
+
+  const addNoteTo = useCallback(async (id: string) => {
+    const text = noteInputs[id]?.trim();
+    if (!text) return;
+    setActionLoading(id);
+    try {
+      const res = await fetch(`/api/leads/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ note: text }),
+      });
+      if (!res.ok) throw new Error("Kunne ikke tilføje note");
+      setNoteInputs(prev => ({ ...prev, [id]: "" }));
+      const currentStatus = TAB_STATUS_MAP[activeTab];
+      if (currentStatus) await loadLeads(currentStatus);
+      addToast("Note tilføjet", "success");
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : "Fejl", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  }, [noteInputs, activeTab, addToast, loadLeads]);
+
+  const deleteLead = useCallback(async (id: string) => {
+    setActionLoading(id);
+    try {
+      const res = await fetch(`/api/leads/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Sletning fejlede");
+      addToast("Lead slettet", "success");
+      const currentStatus = TAB_STATUS_MAP[activeTab];
+      if (currentStatus) await loadLeads(currentStatus);
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : "Fejl", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  }, [activeTab, addToast, loadLeads]);
+
+  /* Customer monitoring */
+  const runCustomerScan = useCallback(async () => {
+    setCustomersLoading(true);
+    try {
+      const res = await fetch("/api/lead-sourcing/monitor-customers", { method: "POST" });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Scanning fejlede");
+      setCustomers(data.customers || []);
+      addToast(`${data.advertising} af ${data.total} kunder annoncerer aktivt`, "success");
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : "Fejl", "error");
+    } finally {
+      setCustomersLoading(false);
+    }
   }, [addToast]);
 
-  return (
-    <div className="animate-fade-in space-y-6">
-      <p className="text-xs text-slate-500 mb-2">Meta Ad Library eller CVR → Proff + dedupe mod kontakter.</p>
+  /* Sorted leads */
+  const sortedLeads = useMemo(() => {
+    const dir = sortAsc ? 1 : -1;
+    return [...leads].sort((a, b) => {
+      if (sortKey === "oohScore") return dir * (a.ooh_score - b.ooh_score);
+      if (sortKey === "name") return dir * a.name.localeCompare(b.name, "da");
+      if (sortKey === "egenkapital") return dir * ((a.egenkapital ?? -Infinity) - (b.egenkapital ?? -Infinity));
+      return 0;
+    });
+  }, [leads, sortKey, sortAsc]);
 
-      {metaOk === false && (
-        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <p className="text-sm font-semibold text-amber-900">Meta Ad Library er ikke konfigureret</p>
-            <p className="text-xs text-amber-800 mt-0.5">Sæt <code className="bg-amber-100/80 px-1 rounded">META_AD_LIBRARY_ACCESS_TOKEN</code> i Indstillinger for at bruge AI Lead Discovery.</p>
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) setSortAsc(!sortAsc);
+    else { setSortKey(key); setSortAsc(key === "name"); }
+  };
+
+  /* Counts for tabs */
+  const [tabCounts, setTabCounts] = useState<Record<string, number>>({});
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch("/api/leads?limit=5000");
+        const data = await res.json();
+        const allLeads: LeadRow[] = data.leads || [];
+        const counts: Record<string, number> = {};
+        for (const l of allLeads) counts[l.status] = (counts[l.status] || 0) + 1;
+        setTabCounts(counts);
+      } catch { /* ignore */ }
+    })();
+  }, [leads]);
+
+  return (
+    <div className="animate-fade-in space-y-5">
+      {/* API Status Warning */}
+      {apiOk === false && (
+        <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4">
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-xl bg-amber-100 flex items-center justify-center shrink-0">
+              <svg className="w-4 h-4 text-amber-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
+              </svg>
+            </div>
+            <div>
+              <p className="text-sm font-bold text-amber-900">
+                {apiError?.errorType === "no_token" ? "SearchAPI.io er ikke konfigureret" : "Ad Library API fejl"}
+              </p>
+              <p className="text-xs mt-0.5 text-amber-800">
+                {apiError?.hint || "Tilføj SEARCHAPI_API_KEY i .env.local"}
+              </p>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => setActiveTab("settings")}
-            className="px-4 py-2 bg-amber-600 text-white text-sm font-semibold rounded-xl hover:bg-amber-700"
-          >
-            Gå til Indstillinger
-          </button>
         </div>
       )}
 
-      {blocklistInfo != null && blocklistInfo.count > 0 && (
-        <p className="text-[11px] text-slate-500">
-          Dedupe: <span className="font-medium text-slate-600">{blocklistInfo.domains} domæner</span>, <span className="font-medium text-slate-600">{blocklistInfo.companyIds} virksomheder</span> fra HubSpot Contacts bruges til at markere &quot;Allerede i CRM&quot;.
-        </p>
-      )}
-
-      {/* 1. AI Lead Discovery – Meta Ad Library */}
+      {/* ═══════ DISCOVERY BAR ═══════ */}
       <div className="bg-gradient-to-br from-indigo-50 to-violet-50 rounded-2xl border border-indigo-200/60 shadow-[var(--card-shadow)] p-5">
-        <h2 className="text-sm font-bold text-slate-800 mb-2 flex items-center gap-2">
-          <span className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center text-white text-xs font-bold">1</span>
-          <span className="w-7 h-7 rounded-lg bg-indigo-500 flex items-center justify-center">
-            <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-            </svg>
-          </span>
-          AI Lead Discovery (Meta Ad Library)
+        <h2 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
+          <svg className="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+          </svg>
+          Lead Discovery
         </h2>
-        <p className="text-xs text-slate-600 mb-4">Find virksomheder der annoncerer på Meta (Facebook/Instagram). Systemet henter annoncører, matcher til CVR, beriger med Proff og ekskluderer jeres eksisterende kontakter.</p>
+
+        {/* Platform selector */}
+        <div className="flex flex-wrap gap-2 mb-4">
+          {(Object.keys(PLATFORM_LABELS) as AdPlatform[]).map((p) => (
+            <button
+              key={p}
+              type="button"
+              onClick={() => togglePlatform(p)}
+              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
+                selectedPlatforms.has(p)
+                  ? `${PLATFORM_COLORS[p]} border-current`
+                  : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
+              }`}
+            >
+              {selectedPlatforms.has(p) && (
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+              )}
+              {PLATFORM_LABELS[p]}
+            </button>
+          ))}
+        </div>
+
+        {/* Search fields */}
         <div className="flex flex-wrap items-end gap-3">
           <div>
             <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Søgeord (valgfri)</label>
@@ -251,17 +457,6 @@ export function LeadSourcingTab() {
               placeholder="fx reklame, marketing, retail"
               className="w-56 px-3 py-2 border border-slate-200 rounded-xl text-sm"
             />
-          </div>
-          <div>
-            <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Kilde</label>
-            <select
-              value={discoverPlatform}
-              onChange={(e) => setDiscoverPlatform(e.target.value as "all" | "instagram")}
-              className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white"
-            >
-              <option value="all">Meta (Facebook + Instagram)</option>
-              <option value="instagram">Kun Instagram</option>
-            </select>
           </div>
           <div>
             <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Land</label>
@@ -277,7 +472,7 @@ export function LeadSourcingTab() {
           </div>
           <button
             type="button"
-            onClick={runDiscover}
+            onClick={() => runDiscover(false)}
             disabled={discoverLoading}
             className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-lg hover:bg-indigo-700 disabled:opacity-50"
           >
@@ -288,156 +483,408 @@ export function LeadSourcingTab() {
                 <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
               </svg>
             )}
-            Kør lead discovery
+            {discoverLoading ? "Kører…" : "Søg"}
+          </button>
+          <button
+            type="button"
+            onClick={() => runDiscover(true)}
+            disabled={discoverLoading}
+            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-sm font-bold rounded-xl shadow-lg hover:from-violet-700 hover:to-purple-700 disabled:opacity-50"
+          >
+            {discoverLoading ? (
+              <span className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
+            ) : (
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
+              </svg>
+            )}
+            Fuld scanning (15 brancher)
           </button>
         </div>
-        <p className="text-[10px] text-slate-500 mt-3">Kræver <code className="bg-white/80 px-1 rounded">META_AD_LIBRARY_ACCESS_TOKEN</code> i Indstillinger (Meta App med Ad Library API).</p>
+        {discoverLoading && discoverPhase && (
+          <div className="mt-3 flex items-center gap-2">
+            <span className="animate-spin rounded-full h-3 w-3 border-2 border-indigo-300 border-t-indigo-600" />
+            <span className="text-xs text-indigo-700 font-medium">{discoverPhase}</span>
+          </div>
+        )}
       </div>
 
-      {/* Seneste discoveries (historik) */}
-      {discoveryHistory.length > 0 && (
-        <div className="rounded-2xl border border-slate-200/60 bg-slate-50/50 p-4">
-          <h3 className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-3">Seneste discoveries</h3>
-          <ul className="space-y-2">
-            {discoveryHistory.slice(0, 5).map((run, i) => (
-              <li key={`${run.date}-${i}`} className="flex items-center justify-between gap-3 py-2 px-3 rounded-xl bg-white border border-slate-100">
-                <div className="min-w-0">
-                  <span className="text-sm font-semibold text-slate-800 truncate block">{run.query}</span>
-                  <span className="text-[10px] text-slate-500">{run.country} · {run.platform === "instagram" ? "Instagram" : "Meta"} · {run.count} leads</span>
-                </div>
-                <div className="flex items-center gap-2 shrink-0">
-                  <span className="text-[10px] text-slate-400">{new Date(run.date).toLocaleDateString("da-DK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setDiscoverQuery(run.query === "(ingen søgeord)" ? "" : run.query);
-                      setDiscoverCountry(run.country);
-                      setDiscoverPlatform(run.platform as "all" | "instagram");
-                    }}
-                    className="text-[10px] font-semibold text-indigo-600 hover:text-indigo-700"
-                  >
-                    Brug igen
-                  </button>
-                </div>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
+      {/* ═══════ PIPELINE TABS ═══════ */}
+      <div className="flex items-center gap-1 overflow-x-auto pb-1">
+        {([
+          { key: "nye", label: "Nye", status: "new" },
+          { key: "kvalificerede", label: "Kvalificerede", status: "qualified" },
+          { key: "kontaktet", label: "Kontaktet", status: "contacted" },
+          { key: "kunder", label: "Kunder", status: "customer" },
+          { key: "hubspot", label: "Mine HubSpot-kunder", status: null },
+        ] as { key: PipelineTab; label: string; status: string | null }[]).map(({ key, label, status }) => {
+          const count = status ? (tabCounts[status] || 0) : customers.length;
+          return (
+            <button
+              key={key}
+              type="button"
+              onClick={() => setActiveTab(key)}
+              className={`shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition ${
+                activeTab === key
+                  ? "bg-indigo-600 text-white shadow-lg"
+                  : "bg-white text-slate-600 border border-slate-200 hover:border-indigo-200 hover:text-indigo-700"
+              }`}
+            >
+              {label}
+              {count > 0 && (
+                <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full tabular-nums ${
+                  activeTab === key ? "bg-white/20 text-white" : "bg-slate-100 text-slate-600"
+                }`}>
+                  {count}
+                </span>
+              )}
+            </button>
+          );
+        })}
+      </div>
 
-      {/* 2. CVR-opslag (Proff + dedupe) */}
-      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5">
-        <h2 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-          <span className="w-6 h-6 rounded-lg bg-slate-600 text-white text-xs font-bold flex items-center justify-center">2</span>
-          CVR-opslag (Proff + dedupe)
-        </h2>
-        <p className="text-xs text-slate-500 mb-3">Én per linje eller kommasepareret. Du kan også uploade en CSV (første kolonne eller linje med 8-cifrede CVR bruges).</p>
-        <div className="flex flex-col sm:flex-row gap-3">
-          <textarea
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            placeholder="35236175&#10;12345678&#10;..."
-            rows={4}
-            className="flex-1 min-w-0 p-3 border border-slate-200 rounded-xl text-sm font-mono placeholder:text-slate-400"
-          />
-          <div className="flex flex-col gap-2">
-            <label className="cursor-pointer inline-flex items-center gap-2 px-4 py-2 border border-slate-200 rounded-xl text-sm font-semibold text-slate-700 hover:bg-slate-50">
-              <input type="file" accept=".csv,.txt" className="sr-only" onChange={handleFileUpload} />
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
-              </svg>
-              Upload CSV
-            </label>
+      {/* ═══════ PIPELINE CONTENT ═══════ */}
+      {activeTab !== "hubspot" ? (
+        <>
+          {/* Sort controls */}
+          {leads.length > 0 && (
+            <div className="flex items-center gap-2 text-[10px]">
+              <span className="text-slate-500 font-medium uppercase tracking-wide">Sortér:</span>
+              {(["oohScore", "name", "egenkapital"] as SortKey[]).map((k) => (
+                <button
+                  key={k}
+                  onClick={() => handleSort(k)}
+                  className={`px-2.5 py-1 rounded-lg font-semibold transition ${sortKey === k ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                >
+                  {k === "oohScore" ? "OOH Score" : k === "name" ? "Navn" : "Egenkapital"}
+                  {sortKey === k ? (sortAsc ? " ↑" : " ↓") : ""}
+                </button>
+              ))}
+              <span className="ml-auto text-slate-400 tabular-nums">{leads.length} leads</span>
+            </div>
+          )}
+
+          {leadsLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <span className="animate-spin rounded-full h-6 w-6 border-2 border-indigo-300 border-t-indigo-600" />
+            </div>
+          ) : leads.length === 0 ? (
+            <div className="bg-slate-50 rounded-2xl border border-slate-200/60 p-8 text-center">
+              <p className="text-sm text-slate-500">
+                {activeTab === "nye"
+                  ? "Ingen nye leads. Kør Lead Discovery ovenfor for at finde annoncører."
+                  : "Ingen leads i denne kategori."}
+              </p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {sortedLeads.map((lead) => (
+                <PipelineLeadCard
+                  key={lead.id}
+                  lead={lead}
+                  tab={activeTab}
+                  expanded={expandedId === lead.id}
+                  onToggle={() => setExpandedId(expandedId === lead.id ? null : lead.id)}
+                  actionLoading={actionLoading === lead.id}
+                  noteValue={noteInputs[lead.id] || ""}
+                  onNoteChange={(v) => setNoteInputs(prev => ({ ...prev, [lead.id]: v }))}
+                  onQualify={() => qualifyLead(lead.id)}
+                  onStatusChange={(s) => updateLeadStatus(lead.id, s)}
+                  onAddNote={() => addNoteTo(lead.id)}
+                  onDelete={() => deleteLead(lead.id)}
+                />
+              ))}
+            </div>
+          )}
+        </>
+      ) : (
+        /* ═══════ HUBSPOT CUSTOMERS TAB ═══════ */
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <p className="text-xs text-slate-600">Scan dine eksisterende HubSpot-kunder for at se deres annonceaktivitet på tværs af alle platforme.</p>
             <button
               type="button"
-              onClick={fetchCompanies}
-              disabled={loading}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-sm font-bold rounded-xl shadow-lg disabled:opacity-50"
+              onClick={runCustomerScan}
+              disabled={customersLoading}
+              className="inline-flex items-center gap-2 px-4 py-2 bg-emerald-600 text-white text-sm font-bold rounded-xl shadow-lg hover:bg-emerald-700 disabled:opacity-50"
             >
-              {loading ? (
+              {customersLoading ? (
                 <span className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
               ) : (
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M7.5 21L3 16.5m0 0L7.5 12M3 16.5h13.5m0-13.5L21 7.5m0 0L16.5 12M21 7.5H7.5" />
                 </svg>
               )}
-              Hent virksomheder
+              {customersLoading ? "Scanner…" : "Overvåg annoncer"}
             </button>
           </div>
-        </div>
-      </div>
 
-      {companies.length > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] overflow-hidden">
-          <div className="px-4 py-3 border-b border-slate-100 flex items-center justify-between">
-            <h2 className="text-sm font-bold text-slate-800">Virksomheder ({companies.length})</h2>
-            <span className="text-[10px] text-slate-400">Egenkapital/resultat fra Proff · allerede i CRM (Contacts) er markeret</span>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="w-full text-left text-sm">
-              <thead>
-                <tr className="bg-slate-50 border-b border-slate-100">
-                  <th className="px-4 py-2.5 font-semibold text-slate-700">Virksomhed</th>
-                  <th className="px-4 py-2.5 font-semibold text-slate-700">CVR</th>
-                  <th className="px-4 py-2.5 font-semibold text-slate-700">Egenkapital</th>
-                  <th className="px-4 py-2.5 font-semibold text-slate-700">Resultat</th>
-                  <th className="px-4 py-2.5 font-semibold text-slate-700">Adresse</th>
-                  <th className="px-4 py-2.5 font-semibold text-slate-700">CRM</th>
-                  <th className="px-4 py-2.5 font-semibold text-slate-700">Kontakt (valgfri)</th>
-                  <th className="px-4 py-2.5 font-semibold text-slate-700">Handling</th>
-                </tr>
-              </thead>
-              <tbody>
-                {companies.map((c) => (
-                  <tr key={c.cvr} className={`border-b border-slate-50 ${c.inCrm ? "bg-amber-50/50" : ""}`}>
-                    <td className="px-4 py-2.5 font-medium text-slate-900">{c.name}</td>
-                    <td className="px-4 py-2.5 text-slate-600 font-mono text-xs">{c.cvr}</td>
-                    <td className="px-4 py-2.5 text-slate-700 tabular-nums">{formatNumber(c.egenkapital)}</td>
-                    <td className="px-4 py-2.5 text-slate-700 tabular-nums">{formatNumber(c.resultat)}</td>
-                    <td className="px-4 py-2.5 text-slate-500 max-w-[180px] truncate">{c.address}</td>
-                    <td className="px-4 py-2.5">
-                      {c.inCrm ? (
-                        <span className="text-[10px] font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded">Allerede i CRM</span>
-                      ) : (
-                        <span className="text-[10px] text-slate-400">—</span>
-                      )}
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <input
-                        type="email"
-                        placeholder="email@firma.dk"
-                        value={contactEmail[c.cvr] ?? ""}
-                        onChange={(e) => setContactEmail((prev) => ({ ...prev, [c.cvr]: e.target.value }))}
-                        className="w-40 px-2 py-1 border border-slate-200 rounded text-xs"
-                      />
-                    </td>
-                    <td className="px-4 py-2.5">
-                      <button
-                        type="button"
-                        onClick={() => addToHubSpot(c)}
-                        disabled={addingId === c.cvr || c.inCrm}
-                        className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 text-white text-xs font-bold rounded-lg hover:bg-emerald-700 disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        {addingId === c.cvr ? (
-                          <span className="animate-spin rounded-full h-3 w-3 border-2 border-white/30 border-t-white" />
+          {customers.length > 0 && (
+            <>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                <div className="rounded-2xl border border-slate-200 bg-white p-3 text-center">
+                  <div className="text-2xl font-bold tabular-nums text-slate-800">{customers.length}</div>
+                  <div className="text-[10px] font-semibold uppercase text-slate-500">Kunder i alt</div>
+                </div>
+                <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-3 text-center">
+                  <div className="text-2xl font-bold tabular-nums text-emerald-800">{customers.filter(c => c.advertising).length}</div>
+                  <div className="text-[10px] font-semibold uppercase text-emerald-600">Annoncerer</div>
+                </div>
+                <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-center">
+                  <div className="text-2xl font-bold tabular-nums text-amber-800">{customers.filter(c => !c.advertising).length}</div>
+                  <div className="text-[10px] font-semibold uppercase text-amber-600">Ingen annoncer</div>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                {customers
+                  .sort((a, b) => (b.advertising ? 1 : 0) - (a.advertising ? 1 : 0) || b.totalAdCount - a.totalAdCount)
+                  .map((c) => (
+                  <div key={c.hubspotId} className={`rounded-2xl border p-4 transition ${c.advertising ? "border-emerald-200 bg-emerald-50/50" : "border-slate-200 bg-white"}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <h4 className="text-sm font-bold text-slate-900 truncate">{c.companyName}</h4>
+                        {c.domain && <p className="text-[10px] text-slate-500">{c.domain}</p>}
+                      </div>
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {c.advertising ? (
+                          <>
+                            {c.platforms.map(p => <PlatformBadge key={p} platform={p} />)}
+                            <span className="text-[10px] font-bold text-emerald-700 ml-1">{c.totalAdCount} ads</span>
+                          </>
                         ) : (
-                          "Tilføj til HubSpot"
+                          <span className="text-[10px] text-slate-400 font-medium">Ingen annoncer fundet</span>
                         )}
-                      </button>
-                    </td>
-                  </tr>
+                      </div>
+                    </div>
+                    {c.matchedAdvertisers.length > 0 && (
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {c.matchedAdvertisers.map((m, i) => (
+                          <span key={i} className="text-[10px] bg-white border border-slate-200 px-2 py-0.5 rounded-lg text-slate-600">
+                            {m.pageName} ({m.platform}, {m.adCount} ads)
+                          </span>
+                        ))}
+                      </div>
+                    )}
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
-      )}
+              </div>
+            </>
+          )}
 
-      {companies.length === 0 && !loading && (
-        <div className="bg-slate-50 rounded-2xl border border-slate-200/60 p-8 text-center">
-          <p className="text-sm text-slate-500">Indtast CVR-numre ovenfor og klik «Hent virksomheder». Virksomheder som allerede findes blandt jeres HubSpot-kontakter vises som «Allerede i CRM».</p>
+          {customers.length === 0 && !customersLoading && (
+            <div className="bg-slate-50 rounded-2xl border border-slate-200/60 p-8 text-center">
+              <p className="text-sm text-slate-500">Klik &quot;Overvåg annoncer&quot; for at scanne dine HubSpot-kunder.</p>
+            </div>
+          )}
         </div>
       )}
     </div>
+  );
+}
+
+/* ─── Pipeline Lead Card ─── */
+function PipelineLeadCard({
+  lead,
+  tab,
+  expanded,
+  onToggle,
+  actionLoading,
+  noteValue,
+  onNoteChange,
+  onQualify,
+  onStatusChange,
+  onAddNote,
+  onDelete,
+}: {
+  lead: LeadRow;
+  tab: PipelineTab;
+  expanded: boolean;
+  onToggle: () => void;
+  actionLoading: boolean;
+  noteValue: string;
+  onNoteChange: (v: string) => void;
+  onQualify: () => void;
+  onStatusChange: (status: string) => void;
+  onAddNote: () => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div className="rounded-2xl border border-slate-200 bg-white shadow-[var(--card-shadow)]">
+      {/* Header */}
+      <button type="button" onClick={onToggle} className="w-full text-left p-4 flex items-start gap-4">
+        <OohScoreBadge score={lead.ooh_score} />
+        <div className="flex-1 min-w-0">
+          <div className="flex items-center gap-2 flex-wrap">
+            <h3 className="text-sm font-bold text-slate-900 truncate">{lead.name}</h3>
+            {lead.industry && (
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0">{lead.industry}</span>
+            )}
+            {lead.page_category && lead.page_category !== lead.industry && (
+              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 shrink-0">{lead.page_category}</span>
+            )}
+          </div>
+          <p className="text-xs text-slate-500 mt-1">{lead.ooh_reason || "Ingen scoring-data"}</p>
+          <div className="flex items-center gap-3 mt-2 flex-wrap">
+            {/* Platform badges */}
+            {lead.platforms.length > 0 && lead.platforms.map(p => <PlatformBadge key={p} platform={p} />)}
+            {lead.ad_count > 0 && (
+              <span className="text-[10px] text-slate-600"><span className="font-semibold">{lead.ad_count}</span> annoncer</span>
+            )}
+            {lead.egenkapital != null && (
+              <span className="text-[10px] text-slate-600"><span className="font-semibold">Egenkapital:</span> {formatNumber(lead.egenkapital)} DKK</span>
+            )}
+            {(lead.page_likes ?? 0) > 0 && (
+              <span className="text-[10px] text-slate-500">{formatNumber(lead.page_likes)} følgere</span>
+            )}
+          </div>
+        </div>
+        <div className="flex flex-col items-end gap-1.5 shrink-0">
+          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+            lead.source_platform === "meta" ? PLATFORM_COLORS.meta
+              : lead.source_platform === "tiktok" ? PLATFORM_COLORS.tiktok
+              : lead.source_platform === "linkedin" ? PLATFORM_COLORS.linkedin
+              : lead.source_platform === "google" ? PLATFORM_COLORS.google
+              : "bg-slate-100 text-slate-600"
+          }`}>
+            {PLATFORM_LABELS[lead.source_platform as AdPlatform] || lead.source_platform}
+          </span>
+          <svg className={`w-4 h-4 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+          </svg>
+        </div>
+      </button>
+
+      {/* Expanded */}
+      {expanded && (
+        <div className="border-t border-slate-100 p-4 bg-slate-50/50 space-y-4">
+          {/* Details grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
+            <div>
+              <span className="text-slate-500 font-medium block">CVR</span>
+              <span className="font-mono text-slate-800">{lead.cvr || <span className="text-slate-400 font-sans">Ikke fundet</span>}</span>
+            </div>
+            <div>
+              <span className="text-slate-500 font-medium block">Adresse</span>
+              <span className="text-slate-800">{lead.address || "—"}</span>
+            </div>
+            <div>
+              <span className="text-slate-500 font-medium block">Website</span>
+              {lead.website ? (
+                <a href={lead.website.startsWith("http") ? lead.website : `https://${lead.website}`} target="_blank" rel="noopener" className="text-indigo-600 underline truncate block">{lead.domain || lead.website}</a>
+              ) : (
+                <span className="text-slate-400">—</span>
+              )}
+            </div>
+            <div>
+              <span className="text-slate-500 font-medium block">Omsætning</span>
+              <span className="text-slate-800">{formatNumber(lead.omsaetning)} DKK</span>
+            </div>
+          </div>
+
+          {/* Contact info */}
+          {(lead.contact_email || lead.contact_phone || lead.hubspot_company_id) && (
+            <div className="flex flex-wrap gap-3 text-xs">
+              {lead.contact_email && <span className="text-slate-600"><span className="font-medium">Email:</span> {lead.contact_email}</span>}
+              {lead.contact_phone && <span className="text-slate-600"><span className="font-medium">Tlf:</span> {lead.contact_phone}</span>}
+              {lead.hubspot_company_id && <span className="text-indigo-600 font-medium">HubSpot ID: {lead.hubspot_company_id}</span>}
+            </div>
+          )}
+
+          {/* Last contacted / follow-up */}
+          {(lead.last_contacted_at || lead.next_followup_at) && (
+            <div className="flex flex-wrap gap-4 text-xs text-slate-600">
+              {lead.last_contacted_at && <span>Sidst kontaktet: {new Date(lead.last_contacted_at).toLocaleDateString("da-DK")}</span>}
+              {lead.next_followup_at && <span>Næste opfølgning: {new Date(lead.next_followup_at).toLocaleDateString("da-DK")}</span>}
+            </div>
+          )}
+
+          {/* Notes */}
+          {lead.notes.length > 0 && (
+            <div className="space-y-1.5">
+              <span className="text-[10px] font-semibold text-slate-500 uppercase">Noter</span>
+              {lead.notes.map((n, i) => (
+                <div key={i} className="bg-white rounded-xl border border-slate-100 px-3 py-2">
+                  <p className="text-xs text-slate-700">{n.text}</p>
+                  <p className="text-[10px] text-slate-400 mt-0.5">{new Date(n.created_at).toLocaleDateString("da-DK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add note */}
+          <div className="flex items-center gap-2">
+            <input
+              type="text"
+              placeholder="Tilføj note…"
+              value={noteValue}
+              onChange={(e) => onNoteChange(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") onAddNote(); }}
+              className="flex-1 min-w-0 px-3 py-2 border border-slate-200 rounded-xl text-sm"
+              onClick={(e) => e.stopPropagation()}
+            />
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onAddNote(); }}
+              disabled={actionLoading || !noteValue.trim()}
+              className="px-3 py-2 bg-slate-600 text-white text-sm font-semibold rounded-xl hover:bg-slate-700 disabled:opacity-50 shrink-0"
+            >
+              Tilføj
+            </button>
+          </div>
+
+          {/* Status-based actions */}
+          <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100">
+            {tab === "nye" && (
+              <>
+                <ActionButton label="Kvalificér" color="emerald" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onQualify(); }} />
+                <ActionButton label="Slet" color="red" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onDelete(); }} />
+              </>
+            )}
+            {tab === "kvalificerede" && (
+              <>
+                <ActionButton label="Marker kontaktet" color="blue" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onStatusChange("contacted"); }} />
+                <ActionButton label="Tilbage til Nye" color="slate" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onStatusChange("new"); }} />
+              </>
+            )}
+            {tab === "kontaktet" && (
+              <>
+                <ActionButton label="Marker som kunde" color="emerald" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onStatusChange("customer"); }} />
+                <ActionButton label="Mistet" color="red" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onStatusChange("lost"); }} />
+              </>
+            )}
+            {tab === "kunder" && (
+              <ActionButton label="Tilbage til kontaktet" color="slate" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onStatusChange("contacted"); }} />
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Action Button ─── */
+function ActionButton({ label, color, loading, onClick }: {
+  label: string;
+  color: string;
+  loading: boolean;
+  onClick: (e: React.MouseEvent) => void;
+}) {
+  const colors: Record<string, string> = {
+    emerald: "bg-emerald-600 hover:bg-emerald-700 text-white",
+    blue: "bg-blue-600 hover:bg-blue-700 text-white",
+    red: "bg-red-500 hover:bg-red-600 text-white",
+    slate: "bg-slate-200 hover:bg-slate-300 text-slate-700",
+  };
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      disabled={loading}
+      className={`inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-bold rounded-xl disabled:opacity-50 ${colors[color] || colors.slate}`}
+    >
+      {loading && <span className="animate-spin rounded-full h-3 w-3 border-2 border-white/30 border-t-white" />}
+      {label}
+    </button>
   );
 }

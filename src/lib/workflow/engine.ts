@@ -1059,10 +1059,13 @@ export async function processStagedProperty(
       ownerCvr: analysis.ownerCompanyCvr || undefined,
       outdoorScore: analysis.outdoorPotentialScore,
       researchSummary: analysis.keyInsights,
+      researchReasoning: analysis.evidenceChain || undefined,
       researchLinks: sourceLinks,
+      dataQuality: analysis.dataQuality,
       contactPerson: bestContact?.fullName || undefined,
       contactEmail: bestContact?.email || undefined,
       contactPhone: bestContact?.phone || undefined,
+      contactReasoning: bestContact?.relevanceReason || undefined,
     });
 
     emit({

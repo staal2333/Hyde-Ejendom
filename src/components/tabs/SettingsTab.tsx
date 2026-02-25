@@ -506,7 +506,7 @@ export function SettingsTab() {
         if (!env.openai_key) missing.push({ key: "OPENAI_API_KEY", label: "OpenAI / GPT" });
         if (!env.cron_secret) missing.push({ key: "CRON_SECRET", label: "Cron / auto-research" });
         if (!env.gmail_configured) missing.push({ key: "GMAIL_CLIENT_ID + GMAIL_REFRESH_TOKEN", label: "Gmail (email-kø)" });
-        if (!env.meta_ad_library) missing.push({ key: "META_AD_LIBRARY_ACCESS_TOKEN", label: "Meta Ad Library (Lead Sourcing)" });
+        if (!env.searchapi_configured) missing.push({ key: "SEARCHAPI_API_KEY", label: "SearchAPI.io (Lead Sourcing)" });
         if (!env.supabase_configured) missing.push({ key: "NEXT_PUBLIC_SUPABASE_URL", label: "Supabase" });
         if (missing.length === 0) return null;
         return (

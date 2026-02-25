@@ -49,6 +49,7 @@ async function assessOwnerAndQuality(
   ownerCompanyCvr: string | null;
   outdoorPotentialScore: number;
   keyInsights: string;
+  evidenceChain: string;
   dataQuality: "high" | "medium" | "low";
   dataQualityReason: string;
 }> {
@@ -101,21 +102,25 @@ Baseret KUN på OIS, CVR og BBR data ovenfor:
 1. Hvem ejer denne ejendom? Brug OIS som primær kilde.
 2. Vurder data_quality baseret på hvad vi HAR (ikke hvad vi mangler).
 3. Giv en outdoor_potential_score 1-10 baseret på bygningsdata.
+4. Lav en detaljeret KILDEKÆDE der forklarer PRÆCIS hvordan du nåede frem til ejeren, trin for trin.
 
 Svar i JSON:
 {
   "owner_company_name": "Ejerens navn fra OIS/CVR, eller 'Ukendt'",
   "owner_company_cvr": "CVR-nummer eller null",
   "outdoor_potential_score": 1-10,
-  "key_insights": "3-5 sætninger om ejendommen",
+  "key_insights": "3-5 sætninger om ejendommen – inkl. hvad vi ved om bygningen, området og potentialet.",
+  "evidence_chain": "Struktureret forklaring i punktform:\\n• KILDE: OIS.dk → [hvad vi fandt]\\n• KILDE: CVR → [hvad vi fandt]\\n• KONKLUSION: [hvorfor vi mener X er ejer/bygherre]\\n• USIKKERHEDER: [hvad vi ikke kunne bekræfte]",
   "data_quality": "high | medium | low",
-  "data_quality_reason": "Kort forklaring"
+  "data_quality_reason": "Kort forklaring med reference til hvilke kilder der bekræfter/mangler"
 }
 
 REGLER:
 - "high" KUN hvis OIS + CVR begge bekræfter ejerskab
 - "medium" hvis kun OIS eller kun CVR
 - "low" hvis ingen af delene har pålidelig data
+- evidence_chain SKAL forklare HVER kilde der blev brugt, hvad den sagde, og hvordan kilderne hænger sammen
+- Nævn specifikt om OIS-ejer matcher CVR-virksomhed, og om adressen stemmer overens
 - Opfind ALDRIG navne eller CVR-numre
 - Hvis usikker: "Ukendt" er altid bedre end et gæt`;
 
@@ -145,6 +150,7 @@ Temperature: 0.1 – vær så deterministisk som muligt.`,
     ownerCompanyCvr: parsed.owner_company_cvr || parsed.ownerCompanyCvr || null,
     outdoorPotentialScore: parsed.outdoor_potential_score || parsed.outdoorPotentialScore || 5,
     keyInsights: parsed.key_insights || parsed.keyInsights || "",
+    evidenceChain: parsed.evidence_chain || parsed.evidenceChain || "",
     dataQuality: (parsed.data_quality || parsed.dataQuality || "medium") as "high" | "medium" | "low",
     dataQualityReason: (parsed.data_quality_reason || parsed.dataQualityReason || "") as string,
   };
@@ -196,7 +202,10 @@ ${contactList}
 Rangér kontakterne efter relevans for DENNE ejendom. For HVER kontakt du vælger:
 1. Referer til kontaktens INDEX-nummer [0], [1], etc.
 2. Angiv confidence 0.0-1.0 og relevance "direct"/"indirect"
-3. Forklar HVORFOR denne kontakt er relevant
+3. Forklar DETALJERET i relevance_reason:
+   - HVILKEN KILDE bekræfter denne person (OIS, CVR, website, søgeresultat)?
+   - HVORFOR er personen relevant for denne specifikke ejendom?
+   - Er der en DIREKTE forbindelse (f.eks. "nævnt som ejer i OIS") eller INDIREKTE (f.eks. "direktør i firmaet der ejer bygningen ifølge CVR")?
 
 DU MÅ IKKE:
 - Opfinde nye kontakter
@@ -210,7 +219,7 @@ Svar i JSON:
       "index": 0,
       "confidence": 0.0-1.0,
       "relevance": "direct | indirect",
-      "relevance_reason": "Hvorfor",
+      "relevance_reason": "Detaljeret forklaring med kildehenvisning, f.eks.: 'Registreret som primær ejer i OIS.dk. CVR-opslag bekræfter at virksomheden X (CVR: Y) er ejet af denne person. Email fundet på virksomhedens hjemmeside.'",
       "role": "ejer | administrator | bestyrelses_formand | driftschef | direktør | anden"
     }
   ]
@@ -221,7 +230,8 @@ REGLER:
 - confidence 0.3-0.6 for sandsynlige kontakter
 - confidence <= 0.3 for generiske emails (info@, kontakt@)
 - Udelad kontakter der er irrelevante
-- Bedre med 0 kontakter end forkerte`;
+- Bedre med 0 kontakter end forkerte
+- relevance_reason SKAL altid nævne den specifikke kilde (OIS, CVR, website URL, osv.)`;
 
   const response = await client.chat.completions.create({
     model: config.openai.model,
@@ -403,6 +413,7 @@ export async function summarizeResearch(
     recommendedContacts: rankedContacts,
     outdoorPotentialScore: ownerAssessment.outdoorPotentialScore,
     keyInsights: ownerAssessment.keyInsights,
+    evidenceChain: ownerAssessment.evidenceChain,
     dataQuality: ownerAssessment.dataQuality,
     dataQualityReason: ownerAssessment.dataQualityReason,
   };
