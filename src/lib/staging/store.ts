@@ -233,7 +233,30 @@ export async function updateStagedProperty(
     .select()
     .single();
 
-  if (error) { logger.error(`[staging] update error: ${error.message}`); return null; }
+  if (error) {
+    logger.error(`[staging] update error: ${error.message}`, { service: "staging" });
+
+    // If columns don't exist yet, retry without the optional columns
+    if (error.message.includes("column") || error.code === "PGRST204") {
+      const safeRow: Record<string, unknown> = { updated_at: new Date().toISOString() };
+      const optionalCols = new Set(["research_reasoning", "data_quality", "contact_reasoning"]);
+      for (const [k, v] of Object.entries(row)) {
+        if (!optionalCols.has(k)) safeRow[k] = v;
+      }
+      const retry = await supabase!
+        .from("staged_properties")
+        .update(safeRow)
+        .eq("id", id)
+        .select()
+        .single();
+      if (!retry.error) {
+        logger.warn("[staging] Retried update without optional columns – run migration 002", { service: "staging" });
+        return rowToStaged(retry.data);
+      }
+      logger.error(`[staging] retry also failed: ${retry.error.message}`, { service: "staging" });
+    }
+    return null;
+  }
   return rowToStaged(data);
 }
 
