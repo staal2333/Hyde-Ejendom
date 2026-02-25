@@ -114,20 +114,33 @@ export async function fetchEjendommeByStatus(
   status: OutreachStatus,
   limit = 50
 ): Promise<Property[]> {
+  const filterGroups: Record<string, unknown>[] = [
+    {
+      filters: [
+        {
+          propertyName: "outreach_status",
+          operator: "EQ",
+          value: status,
+        },
+      ],
+    },
+  ];
+
+  if (status === "NY_KRAEVER_RESEARCH") {
+    filterGroups.push({
+      filters: [
+        {
+          propertyName: "outreach_status",
+          operator: "NOT_HAS_PROPERTY",
+        },
+      ],
+    });
+  }
+
   const data = await hubspotPost(
     `/crm/v3/objects/${EJENDOMME_OBJECT_TYPE}/search`,
     {
-      filterGroups: [
-        {
-          filters: [
-            {
-              propertyName: "outreach_status",
-              operator: "EQ",
-              value: status,
-            },
-          ],
-        },
-      ],
+      filterGroups,
       properties: EJENDOM_PROPERTIES,
       limit,
       sorts: [{ propertyName: "hs_createdate", direction: "ASCENDING" }],
