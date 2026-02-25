@@ -6,13 +6,13 @@ import { logger } from "@/lib/logger";
 import { type Advertiser, type AdLibraryOptions, getSearchApiKey, searchApiFetch } from "./types";
 
 interface RawTikTokAd {
-  ad_id?: string;
-  advertiser_name?: string;
-  advertiser_business_name?: string;
-  advertiser_id?: string;
-  unique_users_seen?: number;
-  first_shown?: string;
-  last_shown?: string;
+  id?: string;
+  advertiser?: string;
+  first_shown_datetime?: string;
+  last_shown_datetime?: string;
+  estimated_audience?: string;
+  estimated_audience_min?: number;
+  estimated_audience_max?: number;
 }
 
 interface AdvertiserAccum {
@@ -33,7 +33,7 @@ export async function fetchTikTokAdLibrary(options: AdLibraryOptions = {}): Prom
     const params = new URLSearchParams({
       engine: "tiktok_ads_library",
       q: searchTerms.trim() || "reklame",
-      country: (countries[0] || "DK").toUpperCase(),
+      country: (countries[0] || "DK").toLowerCase(),
       sort_by: "unique_users_seen_high_to_low",
       api_key: apiKey,
     });
@@ -51,21 +51,21 @@ export async function fetchTikTokAdLibrary(options: AdLibraryOptions = {}): Prom
     logger.info(`[tiktok] Got ${ads.length} ads`, { service: "lead-sourcing" });
 
     for (const ad of ads) {
-      const advertiserName = (ad.advertiser_business_name || ad.advertiser_name || "").trim();
-      const advertiserId = ad.advertiser_id || ad.ad_id || "";
+      const advertiserName = (typeof ad.advertiser === "string" ? ad.advertiser : "").trim();
       if (!advertiserName || advertiserName.length < 2) continue;
 
-      const key = advertiserId || advertiserName.toLowerCase();
+      const key = advertiserName.toLowerCase();
+      const reach = ad.estimated_audience_max || ad.estimated_audience_min || 0;
       const existing = accum.get(key);
 
       if (existing) {
         existing.adCount += 1;
-        existing.reach = Math.max(existing.reach, ad.unique_users_seen || 0);
+        existing.reach = Math.max(existing.reach, reach);
       } else {
         accum.set(key, {
           pageName: advertiserName,
           adCount: 1,
-          reach: ad.unique_users_seen || 0,
+          reach,
         });
       }
       if (accum.size >= limit) break;

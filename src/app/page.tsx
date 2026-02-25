@@ -244,36 +244,50 @@ const STATUS_TO_FILTER: Record<string, string> = {
   FEJL: "error",
 };
 
-// ─── Tabs ───────────────────────────────────────────────────
-// Pipeline section tabs
-const PIPELINE_TABS: { id: TabId; label: string; icon: string; desc: string }[] = [
-  { id: "discover", label: "Discovery", desc: "Scan veje", icon: "M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607Z" },
-  { id: "street_agent", label: "Gade-Agent", desc: "Auto pipeline", icon: "M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" },
-  { id: "scaffolding", label: "Stilladser", desc: "Tilladelser", icon: "M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21" },
+// ─── Tabs (consolidated navigation: 7 top-level items) ─────
+interface NavTab {
+  id: TabId;
+  label: string;
+  icon: string;
+  desc: string;
+  children?: { id: TabId; label: string }[];
+}
+
+const NAV_TABS: NavTab[] = [
+  { id: "home", label: "Dashboard", desc: "Overblik", icon: "M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25" },
+  { id: "discover", label: "Discovery", desc: "Find ejendomme", icon: "M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607Z",
+    children: [
+      { id: "discover", label: "Vej-scan" },
+      { id: "street_agent", label: "Gade-Agent" },
+      { id: "scaffolding", label: "Stilladser" },
+    ] },
   { id: "staging", label: "Staging", desc: "Godkend leads", icon: "M9 12.75L11.25 15 15 9.75m-3-7.036A11.959 11.959 0 013.598 6 11.99 11.99 0 003 9.749c0 5.592 3.824 10.29 9 11.623 5.176-1.332 9-6.03 9-11.622 0-1.31-.21-2.571-.598-3.751h-.152c-3.196 0-6.1-1.248-8.25-3.285z" },
-  { id: "properties", label: "Ejendomme", desc: "Pipeline", icon: "M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75" },
-  { id: "research", label: "Research", desc: "Live agent", icon: "M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" },
-  { id: "lead_sourcing", label: "Lead Sourcing", desc: "Nye kunder & kontakter", icon: "M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" },
-];
-
-// Outreach section tabs
-const OUTREACH_TABS: { id: TabId; label: string; icon: string; desc: string }[] = [
-  { id: "ooh", label: "OOH Proposals", desc: "Mockups & PDF", icon: "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5a1.5 1.5 0 001.5-1.5V4.5A1.5 1.5 0 0020.25 3H3.75A1.5 1.5 0 002.25 4.5v15A1.5 1.5 0 003.75 21z" },
-  { id: "outreach", label: "Email Koe", desc: "Emails & koe", icon: "M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" },
-];
-
-// System section tabs
-const SYSTEM_TABS: { id: TabId; label: string; icon: string; desc: string }[] = [
+  { id: "properties", label: "Ejendomme", desc: "Pipeline & research", icon: "M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75",
+    children: [
+      { id: "properties", label: "Pipeline" },
+      { id: "research", label: "Research" },
+    ] },
+  { id: "lead_sourcing", label: "Leads", desc: "Lead funnel", icon: "M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" },
+  { id: "ooh", label: "Outreach", desc: "OOH & emails", icon: "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5a1.5 1.5 0 001.5-1.5V4.5A1.5 1.5 0 0020.25 3H3.75A1.5 1.5 0 002.25 4.5v15A1.5 1.5 0 003.75 21z",
+    children: [
+      { id: "ooh", label: "OOH Proposals" },
+      { id: "outreach", label: "Email Kø" },
+    ] },
   { id: "settings", label: "Indstillinger", desc: "System & regler", icon: "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" },
 ];
 
-// Home tab (shown separately in sidebar)
-const HOME_TAB: { id: TabId; label: string; icon: string; desc: string } = {
-  id: "home", label: "Dashboard", desc: "Overblik", icon: "M2.25 12l8.954-8.955c.44-.439 1.152-.439 1.591 0L21.75 12M4.5 9.75v10.125c0 .621.504 1.125 1.125 1.125H9.75v-4.875c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21h4.125c.621 0 1.125-.504 1.125-1.125V9.75M8.25 21h8.25"
-};
+function getNavTabForActive(activeTab: TabId): NavTab {
+  for (const nav of NAV_TABS) {
+    if (nav.id === activeTab) return nav;
+    if (nav.children?.some(c => c.id === activeTab)) return nav;
+  }
+  return NAV_TABS[0];
+}
 
-// Combined for backwards compat
-const TABS = [HOME_TAB, ...PIPELINE_TABS, ...OUTREACH_TABS, ...SYSTEM_TABS];
+// Flat list for keyboard shortcuts and command palette
+const TABS = NAV_TABS.flatMap(nav =>
+  nav.children ? nav.children.map(c => ({ id: c.id, label: c.label, icon: nav.icon, desc: nav.desc })) : [{ id: nav.id, label: nav.label, icon: nav.icon, desc: nav.desc }]
+);
 
 // ─── Sort Options ───────────────────────────────────────────
 type SortKey = "name" | "status" | "score" | "owner";
@@ -1105,29 +1119,37 @@ function DashboardContent() {
           </div>
 
           <nav className="top-bar-nav">
-            {TABS.map((tab, tabIndex) => {
-              const isActive = activeTab === tab.id;
+            {NAV_TABS.map((nav) => {
+              const activeNavTab = getNavTabForActive(activeTab);
+              const isActive = activeNavTab.id === nav.id;
+              const childIds = nav.children?.map(c => c.id) ?? [nav.id];
               const showDot =
-                (tab.id === "discover" && discoveryRunning) ||
-                (tab.id === "scaffolding" && scaffoldRunning) ||
-                (tab.id === "research" && !!researchRunning) ||
-                (tab.id === "street_agent" && agentRunning);
+                childIds.includes("discover" as TabId) && discoveryRunning ||
+                childIds.includes("scaffolding" as TabId) && scaffoldRunning ||
+                childIds.includes("research" as TabId) && !!researchRunning ||
+                childIds.includes("street_agent" as TabId) && agentRunning;
               return (
                 <button
-                  key={tab.id}
+                  key={nav.id}
                   type="button"
-                  onClick={() => setActiveTab(tab.id)}
+                  onClick={() => {
+                    if (!nav.children) {
+                      setActiveTab(nav.id);
+                    } else if (!isActive) {
+                      setActiveTab(nav.children[0].id);
+                    }
+                  }}
                   className={`top-bar-tab ${isActive ? "active" : ""}`}
-                  title={tab.label}
+                  title={nav.label}
                 >
                   <svg className="w-4 h-4 shrink-0 opacity-80" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
-                    <path strokeLinecap="round" strokeLinejoin="round" d={tab.icon} />
+                    <path strokeLinecap="round" strokeLinejoin="round" d={nav.icon} />
                   </svg>
-                  <span>{tab.label}</span>
-                  {tab.id === "properties" && properties.length > 0 && (
+                  <span>{nav.label}</span>
+                  {nav.id === "properties" && properties.length > 0 && (
                     <span className="tabular-nums text-[10px] opacity-70">({properties.length})</span>
                   )}
-                  {tab.id === "staging" && (dashboard?.staging?.awaitingAction || 0) > 0 && (
+                  {nav.id === "staging" && (dashboard?.staging?.awaitingAction || 0) > 0 && (
                     <span className="relative inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold tabular-nums shadow-sm">
                       {dashboard?.staging?.awaitingAction}
                       <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
@@ -1281,15 +1303,42 @@ function DashboardContent() {
           </div>
         )}
 
-        {/* ─── Page title (current tab) ─── */}
+        {/* ─── Page title + sub-tab bar ─── */}
         {(() => {
-          const tab = TABS.find((t) => t.id === activeTab);
-          return tab ? (
+          const navTab = getNavTabForActive(activeTab);
+          const subTab = navTab.children?.find(c => c.id === activeTab);
+          const title = subTab ? subTab.label : navTab.label;
+          return (
             <div className="mt-4 mb-1 px-4 sm:px-6 max-w-6xl mx-auto">
-              <h1 className="text-lg font-bold text-slate-800 tracking-tight">{tab.label}</h1>
-              {tab.desc && <p className="text-xs text-slate-500 mt-0.5">{tab.desc}</p>}
+              <div className="flex items-center gap-3">
+                <div>
+                  <h1 className="text-lg font-bold text-slate-800 tracking-tight">{title}</h1>
+                  {navTab.desc && <p className="text-xs text-slate-500 mt-0.5">{navTab.desc}</p>}
+                </div>
+              </div>
+              {navTab.children && navTab.children.length > 1 && (
+                <div className="flex items-center gap-1 mt-3 -mb-1 border-b border-slate-200/60">
+                  {navTab.children.map(child => (
+                    <button
+                      key={child.id}
+                      type="button"
+                      onClick={() => setActiveTab(child.id)}
+                      className={`px-3 py-2 text-xs font-semibold rounded-t-lg transition-all relative ${
+                        activeTab === child.id
+                          ? "text-indigo-700 bg-indigo-50/80"
+                          : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                      }`}
+                    >
+                      {child.label}
+                      {activeTab === child.id && (
+                        <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-indigo-500 rounded-t" />
+                      )}
+                    </button>
+                  ))}
+                </div>
+              )}
             </div>
-          ) : null;
+          );
         })()}
 
         <div className="p-4 sm:p-6 w-full max-w-6xl mx-auto">

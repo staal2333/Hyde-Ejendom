@@ -6,20 +6,25 @@ import { logger } from "@/lib/logger";
 import { type Advertiser, type AdLibraryOptions, getSearchApiKey, searchApiFetch } from "./types";
 
 interface RawLinkedInAd {
-  advertiser_name?: string;
-  advertiser_id?: string;
-  advertiser_url?: string;
-  ad_count?: number;
-  follower_count?: number;
-  industry?: string;
+  position?: number;
+  id?: string;
+  advertiser?: {
+    name?: string;
+    thumbnail?: string;
+  };
+  ad_type?: string;
+  content?: {
+    headline?: string;
+    image?: string;
+    cta?: string;
+  };
+  link?: string;
 }
 
 interface AdvertiserAccum {
   pageName: string;
   adCount: number;
-  followers: number | null;
-  industry: string | null;
-  url: string | null;
+  thumbnail: string | null;
 }
 
 export async function fetchLinkedInAdLibrary(options: AdLibraryOptions = {}): Promise<Advertiser[]> {
@@ -44,32 +49,26 @@ export async function fetchLinkedInAdLibrary(options: AdLibraryOptions = {}): Pr
 
     const data = await searchApiFetch(params, "linkedin") as {
       ads?: RawLinkedInAd[];
-      advertisers?: RawLinkedInAd[];
       pagination?: { next_page_token?: string };
     };
 
-    const ads = data.ads || data.advertisers || [];
+    const ads = data.ads || [];
     logger.info(`[linkedin] Got ${ads.length} results`, { service: "lead-sourcing" });
 
     for (const ad of ads) {
-      const advertiserName = (ad.advertiser_name || "").trim();
-      const advertiserId = ad.advertiser_id || "";
+      const advertiserName = (ad.advertiser?.name || "").trim();
       if (!advertiserName || advertiserName.length < 2) continue;
 
-      const key = advertiserId || advertiserName.toLowerCase();
+      const key = advertiserName.toLowerCase();
       const existing = accum.get(key);
 
       if (existing) {
-        existing.adCount += ad.ad_count || 1;
-        if (!existing.industry && ad.industry) existing.industry = ad.industry;
-        if (existing.followers === null && ad.follower_count) existing.followers = ad.follower_count;
+        existing.adCount += 1;
       } else {
         accum.set(key, {
           pageName: advertiserName,
-          adCount: ad.ad_count || 1,
-          followers: ad.follower_count ?? null,
-          industry: ad.industry ?? null,
-          url: ad.advertiser_url ?? null,
+          adCount: 1,
+          thumbnail: ad.advertiser?.thumbnail ?? null,
         });
       }
       if (accum.size >= limit) break;
@@ -84,8 +83,8 @@ export async function fetchLinkedInAdLibrary(options: AdLibraryOptions = {}): Pr
   return Array.from(accum.entries()).slice(0, limit).map(([id, a]) => ({
     pageId: id,
     pageName: a.pageName,
-    pageCategory: a.industry,
-    pageLikes: a.followers,
+    pageCategory: null,
+    pageLikes: null,
     adCount: a.adCount,
     platforms: ["LinkedIn"],
     sourcePlatform: "linkedin" as const,

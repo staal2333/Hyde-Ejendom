@@ -5,12 +5,16 @@
 import { logger } from "@/lib/logger";
 import { type Advertiser, type AdLibraryOptions, getSearchApiKey, searchApiFetch } from "./types";
 
-interface RawGoogleAd {
-  advertiser_name?: string;
-  advertiser_id?: string;
-  advertiser_url?: string;
-  ad_count?: number;
-  region_code?: string;
+interface RawGoogleAdCreative {
+  id?: string;
+  advertiser?: {
+    id?: string;
+    name?: string;
+  };
+  target_domain?: string;
+  first_shown_datetime?: string;
+  last_shown_datetime?: string;
+  total_days_shown?: number;
   format?: string;
 }
 
@@ -18,6 +22,7 @@ interface AdvertiserAccum {
   pageName: string;
   adCount: number;
   formats: Set<string>;
+  domain: string | null;
 }
 
 export async function fetchGoogleAdLibrary(options: AdLibraryOptions = {}): Promise<Advertiser[]> {
@@ -26,54 +31,64 @@ export async function fetchGoogleAdLibrary(options: AdLibraryOptions = {}): Prom
 
   const accum = new Map<string, AdvertiserAccum>();
   let nextPageToken: string | undefined;
-  const maxPages = Math.min(Math.ceil(limit / 20), 5);
+  const maxPages = Math.min(Math.ceil(limit / 40), 5);
 
   for (let page = 0; page < maxPages && accum.size < limit; page++) {
     const params = new URLSearchParams({
       engine: "google_ads_transparency_center",
-      q: searchTerms.trim() || "reklame",
-      region: (countries[0] || "DK").toUpperCase(),
+      region: (countries[0] || "DK").toLowerCase(),
       api_key: apiKey,
     });
 
+    const query = searchTerms.trim();
+    if (query) {
+      if (query.includes(".")) {
+        params.set("domain", query);
+      } else {
+        params.set("text", query);
+      }
+    } else {
+      params.set("text", "reklame");
+    }
+
     if (nextPageToken) params.set("next_page_token", nextPageToken);
 
-    logger.info(`[google-ads] GET page ${page + 1} — q="${searchTerms.trim() || "reklame"}"`, { service: "lead-sourcing" });
+    logger.info(`[google-ads] GET page ${page + 1} — query="${query || "reklame"}"`, { service: "lead-sourcing" });
 
     const data = await searchApiFetch(params, "google-ads") as {
-      ads?: RawGoogleAd[];
-      advertisers?: RawGoogleAd[];
+      ad_creatives?: RawGoogleAdCreative[];
       pagination?: { next_page_token?: string };
     };
 
-    const ads = data.ads || data.advertisers || [];
-    logger.info(`[google-ads] Got ${ads.length} results`, { service: "lead-sourcing" });
+    const creatives = data.ad_creatives || [];
+    logger.info(`[google-ads] Got ${creatives.length} ad creatives`, { service: "lead-sourcing" });
 
-    for (const ad of ads) {
-      const advertiserName = (ad.advertiser_name || "").trim();
-      const advertiserId = ad.advertiser_id || "";
+    for (const creative of creatives) {
+      const advertiserName = (creative.advertiser?.name || "").trim();
+      const advertiserId = creative.advertiser?.id || "";
       if (!advertiserName || advertiserName.length < 2) continue;
 
       const key = advertiserId || advertiserName.toLowerCase();
       const existing = accum.get(key);
 
       if (existing) {
-        existing.adCount += ad.ad_count || 1;
-        if (ad.format) existing.formats.add(ad.format);
+        existing.adCount += 1;
+        if (creative.format) existing.formats.add(creative.format);
       } else {
         const formats = new Set<string>();
-        if (ad.format) formats.add(ad.format);
+        if (creative.format) formats.add(creative.format);
         accum.set(key, {
           pageName: advertiserName,
-          adCount: ad.ad_count || 1,
+          adCount: 1,
           formats,
+          domain: creative.target_domain ?? null,
         });
       }
       if (accum.size >= limit) break;
     }
 
     nextPageToken = data.pagination?.next_page_token;
-    if (!nextPageToken || ads.length === 0) break;
+    if (!nextPageToken || creatives.length === 0) break;
   }
 
   logger.info(`[google-ads] Found ${accum.size} unique advertisers`, { service: "lead-sourcing" });
