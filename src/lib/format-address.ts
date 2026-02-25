@@ -37,7 +37,8 @@ export function formatLocation(postalCode?: string | null, city?: string | null)
 }
 
 /**
- * Display title for a property: prefer name, fallback to address line.
+ * Display title for a property: prefer address, fallback to name.
+ * Address is more useful than hs_name which often contains contact names.
  */
 export function formatPropertyTitle(
   name?: string | null,
@@ -45,7 +46,9 @@ export function formatPropertyTitle(
   postalCode?: string | null,
   city?: string | null
 ): string {
+  const addr = formatAddressLine(address, postalCode, city);
+  if (addr && addr !== "—") return addr;
   const n = trim(name);
   if (n) return n;
-  return formatAddressLine(address, postalCode, city) || "Unavngivet ejendom";
+  return "Unavngivet ejendom";
 }
