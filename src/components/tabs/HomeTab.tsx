@@ -396,6 +396,101 @@ export function HomeTab({
         </div>
       </div>
 
+      {/* ═══ Leads Action Center ═══ */}
+      {(() => {
+        const ls = dashboard?.leadSummary;
+        if (!ls) return null;
+        const totalLeads = Object.values(ls.counts).reduce((a, b) => a + b, 0);
+        if (totalLeads === 0 && ls.overdueFollowups === 0) return null;
+        const urgentCount = ls.overdueFollowups + ls.todayFollowups;
+        return (
+          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
+            <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center">
+                <svg className="w-4 h-4 text-violet-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" />
+                </svg>
+              </span>
+              Lead Pipeline
+              {urgentCount > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[20px] h-5 px-1.5 rounded-full bg-red-500 text-white text-[10px] font-bold tabular-nums">{urgentCount}</span>
+              )}
+            </h2>
+
+            {/* Follow-up alerts */}
+            {(ls.overdueFollowups > 0 || ls.todayFollowups > 0) && (
+              <div className="flex flex-wrap gap-2 mb-4">
+                {ls.overdueFollowups > 0 && (
+                  <button onClick={() => setActiveTab("lead_sourcing" as TabId)} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 border border-red-200/60 text-red-700 hover:bg-red-100 transition-all">
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-xs font-bold">{ls.overdueFollowups} forfaldne follow-ups</span>
+                  </button>
+                )}
+                {ls.todayFollowups > 0 && (
+                  <button onClick={() => setActiveTab("lead_sourcing" as TabId)} className="inline-flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200/60 text-amber-700 hover:bg-amber-100 transition-all">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    <span className="text-xs font-bold">{ls.todayFollowups} follow-ups i dag</span>
+                  </button>
+                )}
+              </div>
+            )}
+
+            {/* Lead pipeline mini-funnel */}
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {[
+                { label: "Nye", count: ls.counts.new || 0, color: "text-blue-600", bg: "bg-blue-50", dot: "bg-blue-500" },
+                { label: "Kvalificerede", count: ls.counts.qualified || 0, color: "text-indigo-600", bg: "bg-indigo-50", dot: "bg-indigo-500" },
+                { label: "Kontaktet", count: ls.counts.contacted || 0, color: "text-amber-600", bg: "bg-amber-50", dot: "bg-amber-500" },
+                { label: "Kunder", count: ls.counts.customer || 0, color: "text-emerald-600", bg: "bg-emerald-50", dot: "bg-emerald-500" },
+              ].map(s => (
+                <button key={s.label} onClick={() => setActiveTab("lead_sourcing" as TabId)} className={`${s.bg} rounded-xl p-3 text-center hover:opacity-80 transition`}>
+                  <div className={`text-xl font-extrabold tabular-nums ${s.color}`}>{s.count}</div>
+                  <div className="flex items-center justify-center gap-1 mt-0.5">
+                    <span className={`w-1.5 h-1.5 rounded-full ${s.dot}`} />
+                    <span className="text-[10px] font-semibold text-slate-600">{s.label}</span>
+                  </div>
+                </button>
+              ))}
+            </div>
+
+            {/* Top new leads */}
+            {ls.topNewLeads.length > 0 && (
+              <div>
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">Top nye leads</p>
+                <div className="space-y-1.5">
+                  {ls.topNewLeads.map(l => (
+                    <button key={l.id} onClick={() => setActiveTab("lead_sourcing" as TabId)}
+                      className="w-full flex items-center gap-3 px-3 py-2 rounded-xl hover:bg-slate-50 transition text-left group"
+                    >
+                      <span className={`inline-flex items-center justify-center w-8 h-8 rounded-lg text-[10px] font-bold tabular-nums border ${
+                        l.ooh_score >= 60 ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                          : l.ooh_score >= 30 ? "text-amber-700 bg-amber-50 border-amber-200"
+                          : "text-red-700 bg-red-50 border-red-200"
+                      }`}>{l.ooh_score}</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-slate-800 truncate">{l.name}</p>
+                        <p className="text-[10px] text-slate-400">
+                          {l.source_platform} · {new Date(l.discovered_at).toLocaleDateString("da-DK")}
+                        </p>
+                      </div>
+                      {l.contact_email ? (
+                        <span className="w-5 h-5 rounded-full bg-emerald-100 flex items-center justify-center shrink-0" title="Har kontaktinfo">
+                          <svg className="w-3 h-3 text-emerald-600" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+                        </span>
+                      ) : (
+                        <span className="w-5 h-5 rounded-full bg-amber-100 flex items-center justify-center shrink-0" title="Mangler kontaktinfo">
+                          <svg className="w-3 h-3 text-amber-500" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
+                        </span>
+                      )}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+          </div>
+        );
+      })()}
+
       {/* Seneste OOH-mockups */}
       {oohProposals.length > 0 && (
         <button

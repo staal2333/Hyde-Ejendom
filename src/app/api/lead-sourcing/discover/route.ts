@@ -48,6 +48,8 @@ export async function POST(req: NextRequest) {
         batch: true,
         queriesRun: result.queriesRun,
         totalAdsFound: result.totalAdsFound,
+        totalBeforeFilter: result.totalBeforeFilter,
+        filteredByCrm: result.filteredByCrm,
       });
     }
 
@@ -62,6 +64,8 @@ export async function POST(req: NextRequest) {
       companies: result.companies,
       source, query, country,
       sources: result.sourcesUsed,
+      totalBeforeFilter: result.totalBeforeFilter,
+      filteredByCrm: result.filteredByCrm,
     });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Unknown error";

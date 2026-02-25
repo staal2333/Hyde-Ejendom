@@ -81,6 +81,12 @@ export interface DashboardData {
     };
     trend?: { snapshotDate: string; discovered: number; staged: number; inHubspot: number; ready: number; sent: number; replied: number; meetings: number }[];
   };
+  leadSummary?: {
+    counts: Record<string, number>;
+    overdueFollowups: number;
+    todayFollowups: number;
+    topNewLeads: { id: string; name: string; ooh_score: number; contact_email: string | null; source_platform: string; discovered_at: string }[];
+  };
 }
 
 export interface WorkflowRun {

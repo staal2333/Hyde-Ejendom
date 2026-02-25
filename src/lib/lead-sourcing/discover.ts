@@ -9,6 +9,7 @@ import { fetchGoogleAdLibrary } from "./sources/google-ad-library";
 import { type Advertiser } from "./sources/types";
 import { resolveCompanies } from "./companies";
 import { scoreOohBatch } from "./ooh-scorer";
+import { getBlocklist, isBlocked, isNameBlocked } from "./dedupe";
 import { logger } from "@/lib/logger";
 import type { LeadCompany } from "./companies";
 
@@ -36,6 +37,8 @@ export interface DiscoverResult {
   queriesRun?: number;
   totalAdsFound?: number;
   sourcesUsed?: string[];
+  totalBeforeFilter?: number;
+  filteredByCrm?: number;
 }
 
 export const OOH_INDUSTRY_KEYWORDS = [
@@ -142,7 +145,16 @@ export async function runDiscoverWithMeta(options: DiscoverOptions): Promise<Dis
   const companies = await resolveCompanies({ names: uniqueNames, advertisers });
   const scored = scoreOohBatch(companies);
 
-  return { companies: scored, sourcesUsed: usedSources };
+  let blocklist;
+  try { blocklist = await getBlocklist(); } catch { blocklist = null; }
+  const totalBeforeFilter = scored.length;
+  const filtered = blocklist
+    ? scored.filter(c => !isBlocked(blocklist, c.domain ?? undefined) && !isNameBlocked(blocklist, c.name))
+    : scored;
+  const filteredByCrm = totalBeforeFilter - filtered.length;
+  if (filteredByCrm > 0) logger.info(`[discover] Filtered ${filteredByCrm} CRM duplicates`, { service: "lead-sourcing" });
+
+  return { companies: filtered, sourcesUsed: usedSources, totalBeforeFilter, filteredByCrm };
 }
 
 /**
@@ -204,5 +216,14 @@ export async function runBatchDiscover(options: BatchDiscoverOptions): Promise<D
   const companies = await resolveCompanies({ names: uniqueNames, advertisers });
   const scored = scoreOohBatch(companies);
 
-  return { companies: scored, queriesRun, totalAdsFound: advertisers.length, sourcesUsed: usedSources };
+  let blocklist;
+  try { blocklist = await getBlocklist(); } catch { blocklist = null; }
+  const totalBeforeFilter = scored.length;
+  const filtered = blocklist
+    ? scored.filter(c => !isBlocked(blocklist, c.domain ?? undefined) && !isNameBlocked(blocklist, c.name))
+    : scored;
+  const filteredByCrm = totalBeforeFilter - filtered.length;
+  if (filteredByCrm > 0) logger.info(`[batch-discover] Filtered ${filteredByCrm} CRM duplicates`, { service: "lead-sourcing" });
+
+  return { companies: filtered, queriesRun, totalAdsFound: advertisers.length, sourcesUsed: usedSources, totalBeforeFilter, filteredByCrm };
 }

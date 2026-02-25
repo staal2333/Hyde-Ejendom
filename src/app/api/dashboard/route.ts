@@ -11,6 +11,7 @@ import { getQueueStats } from "@/lib/email-queue";
 import { getSends } from "@/lib/ooh/store";
 import { getScaffoldStats } from "@/lib/scaffold-stats";
 import { getAnalyticsTrend, saveAnalyticsSnapshot } from "@/lib/analytics-store";
+import { getLeadSummary } from "@/lib/lead-sourcing/lead-store";
 
 export async function GET() {
   try {
@@ -103,6 +104,12 @@ export async function GET() {
         },
         trend: await getAnalyticsTrend(14).catch(() => []),
       },
+      leadSummary: await getLeadSummary().catch(() => ({
+        counts: { new: 0, qualified: 0, contacted: 0, customer: 0, lost: 0 },
+        overdueFollowups: 0,
+        todayFollowups: 0,
+        topNewLeads: [],
+      })),
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";

@@ -65,7 +65,7 @@ interface CustomerActivity {
 }
 
 type PipelineTab = "nye" | "kvalificerede" | "kontaktet" | "kunder" | "hubspot";
-type SortKey = "oohScore" | "name" | "egenkapital";
+type SortKey = "oohScore" | "name" | "egenkapital" | "followup";
 type AdPlatform = "meta" | "tiktok" | "linkedin" | "google";
 
 const PLATFORM_LABELS: Record<AdPlatform, string> = {
@@ -162,6 +162,10 @@ export function LeadSourcingTab() {
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [noteInputs, setNoteInputs] = useState<Record<string, string>>({});
 
+  /* Pipeline search/filter */
+  const [pipelineSearch, setPipelineSearch] = useState("");
+  const [scoreFilter, setScoreFilter] = useState<string | null>(null);
+
   /* Customer monitoring */
   const [customers, setCustomers] = useState<CustomerActivity[]>([]);
   const [customersLoading, setCustomersLoading] = useState(false);
@@ -256,8 +260,10 @@ export function LeadSourcingTab() {
       });
       const saveData = await saveRes.json();
 
+      const crmFiltered = data.filteredByCrm || 0;
+      const crmNote = crmFiltered > 0 ? ` (${crmFiltered} filtreret — allerede i CRM)` : "";
       addToast(
-        `${companies.length} leads fundet fra ${(data.sources || sources).join(", ")}. ${saveData.saved || 0} gemt i pipeline.`,
+        `${companies.length} nye leads fundet fra ${(data.sources || sources).join(", ")}. ${saveData.saved || 0} gemt i pipeline.${crmNote}`,
         "success"
       );
 
@@ -298,7 +304,12 @@ export function LeadSourcingTab() {
       const res = await fetch(`/api/leads/${id}/qualify`, { method: "POST" });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Kvalificering fejlede");
-      addToast(`Lead kvalificeret${data.hubspotId ? " og synkroniseret til HubSpot" : ""}`, "success");
+
+      const parts: string[] = ["Lead kvalificeret"];
+      if (data.enrichment?.contact_email) parts.push(`· Email fundet: ${data.enrichment.contact_email}`);
+      if (data.enrichment?.contact_phone) parts.push(`· Tlf: ${data.enrichment.contact_phone}`);
+      if (data.hubspotId) parts.push("· Synkroniseret til HubSpot");
+      addToast(parts.join(" "), "success");
       await loadLeads("new");
     } catch (e) {
       addToast(e instanceof Error ? e.message : "Fejl", "error");
@@ -328,6 +339,27 @@ export function LeadSourcingTab() {
       setActionLoading(null);
     }
   }, [noteInputs, activeTab, addToast, loadLeads]);
+
+  const snoozeFollowup = useCallback(async (id: string, days: number) => {
+    setActionLoading(id);
+    try {
+      const date = new Date();
+      date.setDate(date.getDate() + days);
+      const res = await fetch(`/api/leads/${id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ next_followup_at: date.toISOString().slice(0, 10) }),
+      });
+      if (!res.ok) throw new Error("Kunne ikke opdatere follow-up");
+      addToast(`Follow-up sat til ${date.toLocaleDateString("da-DK")}`, "success");
+      const currentStatus = TAB_STATUS_MAP[activeTab];
+      if (currentStatus) await loadLeads(currentStatus);
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : "Fejl", "error");
+    } finally {
+      setActionLoading(null);
+    }
+  }, [activeTab, addToast, loadLeads]);
 
   const deleteLead = useCallback(async (id: string) => {
     setActionLoading(id);
@@ -360,16 +392,37 @@ export function LeadSourcingTab() {
     }
   }, [addToast]);
 
-  /* Sorted leads */
+  /* Filtered + sorted leads */
   const sortedLeads = useMemo(() => {
     const dir = sortAsc ? 1 : -1;
-    return [...leads].sort((a, b) => {
+    let filtered = [...leads];
+
+    if (pipelineSearch.trim()) {
+      const q = pipelineSearch.toLowerCase();
+      filtered = filtered.filter(l =>
+        l.name.toLowerCase().includes(q) ||
+        (l.industry || "").toLowerCase().includes(q) ||
+        l.notes.some(n => n.text.toLowerCase().includes(q))
+      );
+    }
+
+    if (scoreFilter) {
+      const [min, max] = scoreFilter.split("-").map(Number);
+      filtered = filtered.filter(l => l.ooh_score >= min && l.ooh_score <= max);
+    }
+
+    return filtered.sort((a, b) => {
       if (sortKey === "oohScore") return dir * (a.ooh_score - b.ooh_score);
       if (sortKey === "name") return dir * a.name.localeCompare(b.name, "da");
       if (sortKey === "egenkapital") return dir * ((a.egenkapital ?? -Infinity) - (b.egenkapital ?? -Infinity));
+      if (sortKey === "followup") {
+        const aDate = a.next_followup_at || "9999";
+        const bDate = b.next_followup_at || "9999";
+        return dir * aDate.localeCompare(bDate);
+      }
       return 0;
     });
-  }, [leads, sortKey, sortAsc]);
+  }, [leads, sortKey, sortAsc, pipelineSearch, scoreFilter]);
 
   const handleSort = (key: SortKey) => {
     if (sortKey === key) setSortAsc(!sortAsc);
@@ -546,21 +599,48 @@ export function LeadSourcingTab() {
       {/* ═══════ PIPELINE CONTENT ═══════ */}
       {activeTab !== "hubspot" ? (
         <>
-          {/* Sort controls */}
+          {/* Search, filter & sort controls */}
           {leads.length > 0 && (
-            <div className="flex items-center gap-2 text-[10px]">
-              <span className="text-slate-500 font-medium uppercase tracking-wide">Sortér:</span>
-              {(["oohScore", "name", "egenkapital"] as SortKey[]).map((k) => (
-                <button
-                  key={k}
-                  onClick={() => handleSort(k)}
-                  className={`px-2.5 py-1 rounded-lg font-semibold transition ${sortKey === k ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
-                >
-                  {k === "oohScore" ? "OOH Score" : k === "name" ? "Navn" : "Egenkapital"}
-                  {sortKey === k ? (sortAsc ? " ↑" : " ↓") : ""}
-                </button>
-              ))}
-              <span className="ml-auto text-slate-400 tabular-nums">{leads.length} leads</span>
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <div className="relative flex-1 max-w-xs">
+                  <svg className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+                  </svg>
+                  <input
+                    type="text"
+                    value={pipelineSearch}
+                    onChange={(e) => setPipelineSearch(e.target.value)}
+                    placeholder="Søg navn, branche, noter…"
+                    className="w-full pl-9 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs"
+                  />
+                </div>
+                <div className="flex items-center gap-1 text-[10px]">
+                  {(["0-30", "30-60", "60-100"] as const).map(range => (
+                    <button
+                      key={range}
+                      onClick={() => setScoreFilter(scoreFilter === range ? null : range)}
+                      className={`px-2 py-1 rounded-lg font-semibold transition ${scoreFilter === range ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-500 hover:bg-slate-200"}`}
+                    >
+                      OOH {range}
+                    </button>
+                  ))}
+                </div>
+                <span className="ml-auto text-[10px] text-slate-400 tabular-nums">{sortedLeads.length}/{leads.length} leads</span>
+              </div>
+              <div className="flex items-center gap-2 text-[10px]">
+                <span className="text-slate-500 font-medium uppercase tracking-wide">Sortér:</span>
+                {(["oohScore", "name", "egenkapital", "followup"] as SortKey[]).map((k) => (
+                  <button
+                    key={k}
+                    onClick={() => handleSort(k)}
+                    className={`px-2.5 py-1 rounded-lg font-semibold transition ${sortKey === k ? "bg-indigo-100 text-indigo-700" : "bg-slate-100 text-slate-600 hover:bg-slate-200"}`}
+                  >
+                    {k === "oohScore" ? "OOH Score" : k === "name" ? "Navn" : k === "egenkapital" ? "Egenkapital" : "Follow-up"}
+                    {sortKey === k ? (sortAsc ? " ↑" : " ↓") : ""}
+                  </button>
+                ))}
+              </div>
             </div>
           )}
 
@@ -592,6 +672,7 @@ export function LeadSourcingTab() {
                   onStatusChange={(s) => updateLeadStatus(lead.id, s)}
                   onAddNote={() => addNoteTo(lead.id)}
                   onDelete={() => deleteLead(lead.id)}
+                  onSnooze={(days) => snoozeFollowup(lead.id, days)}
                 />
               ))}
             </div>
@@ -683,6 +764,64 @@ export function LeadSourcingTab() {
   );
 }
 
+/* ─── Follow-up indicator helper ─── */
+function FollowupIndicator({ date }: { date: string | null }) {
+  if (!date) return null;
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+  const fDate = date.slice(0, 10);
+  const diff = Math.round((new Date(fDate).getTime() - new Date(todayStr).getTime()) / 86400000);
+
+  if (fDate < todayStr) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-600">
+        <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+        {Math.abs(diff)} dage forsinket
+      </span>
+    );
+  }
+  if (fDate === todayStr) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-600">
+        <span className="w-1.5 h-1.5 rounded-full bg-amber-500" />
+        I dag
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-blue-600">
+      <span className="w-1.5 h-1.5 rounded-full bg-blue-400" />
+      om {diff} dag{diff !== 1 ? "e" : ""}
+    </span>
+  );
+}
+
+/* ─── Email-ready indicator ─── */
+function EmailReadyBadge({ email, name }: { email: string | null; name: string }) {
+  if (email) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-emerald-600" title={email}>
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+        Klar til email
+      </span>
+    );
+  }
+  if (name) {
+    return (
+      <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-amber-500">
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" /></svg>
+        Mangler email
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center gap-1 text-[10px] font-semibold text-red-400">
+      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
+      Ingen kontakt
+    </span>
+  );
+}
+
 /* ─── Pipeline Lead Card ─── */
 function PipelineLeadCard({
   lead,
@@ -696,6 +835,7 @@ function PipelineLeadCard({
   onStatusChange,
   onAddNote,
   onDelete,
+  onSnooze,
 }: {
   lead: LeadRow;
   tab: PipelineTab;
@@ -708,54 +848,71 @@ function PipelineLeadCard({
   onStatusChange: (status: string) => void;
   onAddNote: () => void;
   onDelete: () => void;
+  onSnooze: (days: number) => void;
 }) {
+  const crmBadge = lead.hubspot_company_id
+    ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">I CRM</span>
+    : <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-slate-100 text-slate-500 border border-slate-200">Ikke i CRM</span>;
+
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white shadow-[var(--card-shadow)]">
-      {/* Header */}
-      <button type="button" onClick={onToggle} className="w-full text-left p-4 flex items-start gap-4">
-        <OohScoreBadge score={lead.ooh_score} />
-        <div className="flex-1 min-w-0">
-          <div className="flex items-center gap-2 flex-wrap">
+    <div className={`rounded-2xl border bg-white shadow-[var(--card-shadow)] transition ${
+      lead.next_followup_at && lead.next_followup_at.slice(0,10) < new Date().toISOString().slice(0,10)
+        ? "border-red-200"
+        : "border-slate-200"
+    }`}>
+      {/* Header — redesigned with info hierarchy */}
+      <button type="button" onClick={onToggle} className="w-full text-left p-4">
+        {/* Line 1: Name + OOH Score + CRM badge */}
+        <div className="flex items-center gap-3 mb-1.5">
+          <OohScoreBadge score={lead.ooh_score} />
+          <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
             <h3 className="text-sm font-bold text-slate-900 truncate">{lead.name}</h3>
-            {lead.industry && (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 shrink-0">{lead.industry}</span>
-            )}
-            {lead.page_category && lead.page_category !== lead.industry && (
-              <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-violet-100 text-violet-700 shrink-0">{lead.page_category}</span>
-            )}
+            {crmBadge}
           </div>
-          <p className="text-xs text-slate-500 mt-1">{lead.ooh_reason || "Ingen scoring-data"}</p>
-          <div className="flex items-center gap-3 mt-2 flex-wrap">
-            {/* Platform badges */}
-            {lead.platforms.length > 0 && lead.platforms.map(p => <PlatformBadge key={p} platform={p} />)}
-            {lead.ad_count > 0 && (
-              <span className="text-[10px] text-slate-600"><span className="font-semibold">{lead.ad_count}</span> annoncer</span>
-            )}
-            {lead.egenkapital != null && (
-              <span className="text-[10px] text-slate-600"><span className="font-semibold">Egenkapital:</span> {formatNumber(lead.egenkapital)} DKK</span>
-            )}
-            {(lead.page_likes ?? 0) > 0 && (
-              <span className="text-[10px] text-slate-500">{formatNumber(lead.page_likes)} følgere</span>
-            )}
+          <div className="flex items-center gap-1.5 shrink-0">
+            <EmailReadyBadge email={lead.contact_email} name={lead.name} />
+            <svg className={`w-4 h-4 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+            </svg>
           </div>
         </div>
-        <div className="flex flex-col items-end gap-1.5 shrink-0">
-          <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-            lead.source_platform === "meta" ? PLATFORM_COLORS.meta
-              : lead.source_platform === "tiktok" ? PLATFORM_COLORS.tiktok
-              : lead.source_platform === "linkedin" ? PLATFORM_COLORS.linkedin
-              : lead.source_platform === "google" ? PLATFORM_COLORS.google
-              : "bg-slate-100 text-slate-600"
-          }`}>
-            {PLATFORM_LABELS[lead.source_platform as AdPlatform] || lead.source_platform}
-          </span>
-          <svg className={`w-4 h-4 text-slate-400 transition-transform ${expanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
-          </svg>
+
+        {/* Line 2: Industry + platforms */}
+        <div className="flex items-center gap-2 flex-wrap ml-[60px] mb-1.5">
+          {lead.industry && <span className="text-[10px] font-medium px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">{lead.industry}</span>}
+          {lead.platforms.length > 0 && lead.platforms.map(p => <PlatformBadge key={p} platform={p} />)}
+          {lead.ad_count > 0 && <span className="text-[10px] text-slate-500"><strong>{lead.ad_count}</strong> annoncer</span>}
+        </div>
+
+        {/* Line 3: Financials */}
+        <div className="flex items-center gap-4 flex-wrap ml-[60px] mb-1.5 text-[10px] text-slate-600">
+          {lead.egenkapital != null && <span><strong>Egenkapital:</strong> {formatNumber(lead.egenkapital)}</span>}
+          {lead.omsaetning != null && <span><strong>Omsætning:</strong> {formatNumber(lead.omsaetning)}</span>}
+          {lead.resultat != null && <span><strong>Resultat:</strong> {formatNumber(lead.resultat)}</span>}
+        </div>
+
+        {/* Line 4: Contact info */}
+        <div className="flex items-center gap-3 flex-wrap ml-[60px] mb-1 text-[10px]">
+          {lead.contact_email ? (
+            <span className="text-slate-700">{lead.contact_email}</span>
+          ) : (
+            <span className="text-slate-400 italic">Ingen kontakt — beriges ved kvalificering</span>
+          )}
+          {lead.contact_phone && <span className="text-slate-600">{lead.contact_phone}</span>}
+        </div>
+
+        {/* Line 5: Follow-up + note preview */}
+        <div className="flex items-center gap-4 flex-wrap ml-[60px]">
+          <FollowupIndicator date={lead.next_followup_at} />
+          {lead.notes.length > 0 && (
+            <span className="text-[10px] text-slate-400 truncate max-w-[200px]" title={lead.notes[lead.notes.length - 1].text}>
+              Note: {lead.notes[lead.notes.length - 1].text}
+            </span>
+          )}
         </div>
       </button>
 
-      {/* Expanded */}
+      {/* Expanded details */}
       {expanded && (
         <div className="border-t border-slate-100 p-4 bg-slate-50/50 space-y-4">
           {/* Details grid */}
@@ -777,33 +934,34 @@ function PipelineLeadCard({
               )}
             </div>
             <div>
-              <span className="text-slate-500 font-medium block">Omsætning</span>
-              <span className="text-slate-800">{formatNumber(lead.omsaetning)} DKK</span>
+              <span className="text-slate-500 font-medium block">OOH Grund</span>
+              <span className="text-slate-800 text-[11px]">{lead.ooh_reason || "—"}</span>
             </div>
           </div>
 
-          {/* Contact info */}
-          {(lead.contact_email || lead.contact_phone || lead.hubspot_company_id) && (
-            <div className="flex flex-wrap gap-3 text-xs">
-              {lead.contact_email && <span className="text-slate-600"><span className="font-medium">Email:</span> {lead.contact_email}</span>}
-              {lead.contact_phone && <span className="text-slate-600"><span className="font-medium">Tlf:</span> {lead.contact_phone}</span>}
-              {lead.hubspot_company_id && <span className="text-indigo-600 font-medium">HubSpot ID: {lead.hubspot_company_id}</span>}
+          {/* Follow-up section */}
+          <div className="flex items-center gap-3 flex-wrap">
+            <span className="text-xs text-slate-500 font-medium">Follow-up:</span>
+            <FollowupIndicator date={lead.next_followup_at} />
+            <div className="flex items-center gap-1">
+              {[3, 7, 14].map(d => (
+                <button key={d} type="button" onClick={(e) => { e.stopPropagation(); onSnooze(d); }} disabled={actionLoading}
+                  className="px-2 py-0.5 text-[10px] font-semibold rounded-lg bg-slate-100 text-slate-600 hover:bg-blue-100 hover:text-blue-700 disabled:opacity-50 transition"
+                >
+                  +{d}d
+                </button>
+              ))}
             </div>
-          )}
-
-          {/* Last contacted / follow-up */}
-          {(lead.last_contacted_at || lead.next_followup_at) && (
-            <div className="flex flex-wrap gap-4 text-xs text-slate-600">
-              {lead.last_contacted_at && <span>Sidst kontaktet: {new Date(lead.last_contacted_at).toLocaleDateString("da-DK")}</span>}
-              {lead.next_followup_at && <span>Næste opfølgning: {new Date(lead.next_followup_at).toLocaleDateString("da-DK")}</span>}
-            </div>
-          )}
+            {lead.last_contacted_at && (
+              <span className="text-[10px] text-slate-400 ml-auto">Sidst kontaktet: {new Date(lead.last_contacted_at).toLocaleDateString("da-DK")}</span>
+            )}
+          </div>
 
           {/* Notes */}
           {lead.notes.length > 0 && (
             <div className="space-y-1.5">
-              <span className="text-[10px] font-semibold text-slate-500 uppercase">Noter</span>
-              {lead.notes.map((n, i) => (
+              <span className="text-[10px] font-semibold text-slate-500 uppercase">Noter ({lead.notes.length})</span>
+              {lead.notes.slice(-3).map((n, i) => (
                 <div key={i} className="bg-white rounded-xl border border-slate-100 px-3 py-2">
                   <p className="text-xs text-slate-700">{n.text}</p>
                   <p className="text-[10px] text-slate-400 mt-0.5">{new Date(n.created_at).toLocaleDateString("da-DK", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</p>
@@ -843,12 +1001,28 @@ function PipelineLeadCard({
             )}
             {tab === "kvalificerede" && (
               <>
+                {lead.contact_email && (
+                  <ActionButton label="Forbered email" color="indigo" loading={actionLoading} onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(`mailto:${lead.contact_email}?subject=OOH samarbejde – ${encodeURIComponent(lead.name)}`, "_blank");
+                    onNoteChange("Email forberedt – afventer afsendelse");
+                    setTimeout(() => onAddNote(), 100);
+                  }} />
+                )}
                 <ActionButton label="Marker kontaktet" color="blue" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onStatusChange("contacted"); }} />
                 <ActionButton label="Tilbage til Nye" color="slate" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onStatusChange("new"); }} />
               </>
             )}
             {tab === "kontaktet" && (
               <>
+                {lead.contact_email && (
+                  <ActionButton label="Send opfølgning" color="indigo" loading={actionLoading} onClick={(e) => {
+                    e.stopPropagation();
+                    window.open(`mailto:${lead.contact_email}?subject=Opfølgning – ${encodeURIComponent(lead.name)}`, "_blank");
+                    onNoteChange("Opfølgningsmail sendt");
+                    setTimeout(() => onAddNote(), 100);
+                  }} />
+                )}
                 <ActionButton label="Marker som kunde" color="emerald" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onStatusChange("customer"); }} />
                 <ActionButton label="Mistet" color="red" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onStatusChange("lost"); }} />
               </>
@@ -873,6 +1047,7 @@ function ActionButton({ label, color, loading, onClick }: {
   const colors: Record<string, string> = {
     emerald: "bg-emerald-600 hover:bg-emerald-700 text-white",
     blue: "bg-blue-600 hover:bg-blue-700 text-white",
+    indigo: "bg-indigo-600 hover:bg-indigo-700 text-white",
     red: "bg-red-500 hover:bg-red-600 text-white",
     slate: "bg-slate-200 hover:bg-slate-300 text-slate-700",
   };

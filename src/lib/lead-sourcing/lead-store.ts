@@ -241,6 +241,55 @@ export async function getLeadCounts(): Promise<Record<LeadStatus, number>> {
   return counts;
 }
 
+export interface LeadSummary {
+  counts: Record<LeadStatus, number>;
+  overdueFollowups: number;
+  todayFollowups: number;
+  topNewLeads: Pick<LeadRow, "id" | "name" | "ooh_score" | "contact_email" | "source_platform" | "discovered_at">[];
+}
+
+export async function getLeadSummary(): Promise<LeadSummary> {
+  const counts: Record<LeadStatus, number> = { new: 0, qualified: 0, contacted: 0, customer: 0, lost: 0 };
+  const summary: LeadSummary = { counts, overdueFollowups: 0, todayFollowups: 0, topNewLeads: [] };
+  if (!HAS_SUPABASE || !supabase) return summary;
+
+  const now = new Date();
+  const todayStr = now.toISOString().slice(0, 10);
+
+  const { data: allLeads } = await supabase
+    .from("leads")
+    .select("id, name, status, ooh_score, contact_email, source_platform, discovered_at, next_followup_at")
+    .order("ooh_score", { ascending: false });
+
+  if (!allLeads) return summary;
+
+  for (const l of allLeads) {
+    const st = (l.status as LeadStatus) || "new";
+    counts[st] = (counts[st] || 0) + 1;
+
+    if (l.next_followup_at) {
+      const fDate = String(l.next_followup_at).slice(0, 10);
+      if (fDate < todayStr) summary.overdueFollowups++;
+      else if (fDate === todayStr) summary.todayFollowups++;
+    }
+  }
+
+  summary.counts = counts;
+  summary.topNewLeads = allLeads
+    .filter(l => l.status === "new")
+    .slice(0, 5)
+    .map(l => ({
+      id: String(l.id),
+      name: String(l.name),
+      ooh_score: Number(l.ooh_score) || 0,
+      contact_email: l.contact_email ? String(l.contact_email) : null,
+      source_platform: String(l.source_platform || "meta"),
+      discovered_at: String(l.discovered_at),
+    }));
+
+  return summary;
+}
+
 export async function deleteLead(id: string): Promise<boolean> {
   if (!HAS_SUPABASE || !supabase) return false;
 

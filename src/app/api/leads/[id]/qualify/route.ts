@@ -1,4 +1,4 @@
-// POST /api/leads/[id]/qualify – mark lead as qualified and optionally sync to HubSpot
+// POST /api/leads/[id]/qualify – mark lead as qualified, enrich contact info, and optionally sync to HubSpot
 
 import { NextRequest, NextResponse } from "next/server";
 import { apiError } from "@/lib/api-error";
@@ -14,6 +14,27 @@ export async function POST(
 
     const lead = await getLeadById(id);
     if (!lead) return apiError(404, "Lead not found");
+
+    // Auto-enrich contact info before qualifying
+    let enrichment: { contact_email: string | null; contact_phone: string | null; contact_name: string | null; contact_role: string | null } | null = null;
+    if (!lead.contact_email) {
+      try {
+        const { enrichLeadContact } = await import("@/lib/lead-sourcing/lead-enrichment");
+        enrichment = await enrichLeadContact(lead.name, lead.domain, lead.website);
+
+        const enrichFields: Record<string, unknown> = {};
+        if (enrichment.contact_email) enrichFields.contact_email = enrichment.contact_email;
+        if (enrichment.contact_phone) enrichFields.contact_phone = enrichment.contact_phone;
+
+        if (Object.keys(enrichFields).length > 0) {
+          await updateLead(id, enrichFields);
+          logger.info(`[qualify] Enriched "${lead.name}": email=${enrichment.contact_email || "none"}, phone=${enrichment.contact_phone || "none"}`, { service: "lead-sourcing" });
+        }
+      } catch (e) {
+        const msg = e instanceof Error ? e.message : String(e);
+        logger.warn(`[qualify] Enrichment failed for "${lead.name}": ${msg}`, { service: "lead-sourcing" });
+      }
+    }
 
     const updated = await updateLeadStatus(id, "qualified");
 
@@ -37,9 +58,18 @@ export async function POST(
       logger.warn(`[qualify] HubSpot sync failed for "${lead.name}": ${msg}`, { service: "lead-sourcing" });
     }
 
+    // Refresh lead data after all updates
+    const finalLead = await getLeadById(id);
+
     return NextResponse.json({
-      lead: updated,
+      lead: finalLead || updated,
       hubspotId,
+      enrichment: enrichment ? {
+        contact_email: enrichment.contact_email,
+        contact_phone: enrichment.contact_phone,
+        contact_name: enrichment.contact_name,
+        contact_role: enrichment.contact_role,
+      } : null,
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : "Unknown error";
