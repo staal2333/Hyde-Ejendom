@@ -6,7 +6,7 @@
 import { scrapeWebsite, searchGoogle } from "@/lib/research/web-scraper";
 import { findEmailForPerson } from "@/lib/research/email-finder";
 import { scrapeProffLeadership, getProffFinancials } from "@/lib/lead-sourcing/proff";
-import { lookupCvr } from "@/lib/research/cvr";
+import { findCvrForLead } from "@/lib/research/cvr-ai-match";
 import { logger } from "@/lib/logger";
 
 export interface EnrichmentContact {
@@ -264,6 +264,7 @@ export async function enrichLeadFull(params: {
   domain?: string | null;
   website?: string | null;
   address?: string | null;
+  industry?: string | null;
 }): Promise<FullEnrichmentResult> {
   const { name } = params;
   let cvr = params.cvr || null;
@@ -309,19 +310,25 @@ export async function enrichLeadFull(params: {
   };
 
   try {
-    // ── Step 0: CVR lookup by company name (if no CVR) ──────────────
+    // ── Step 0: AI-powered CVR lookup by brand name (if no CVR) ─────
     if (!cvr) {
-      logger.info(`[enrichLeadFull] CVR lookup for "${name}"`, { service: "lead-sourcing" });
+      logger.info(`[enrichLeadFull] AI CVR lookup for "${name}"`, { service: "lead-sourcing" });
       try {
-        const cvrData = await lookupCvr(name, { strictNameMatch: false, searchedName: name });
-        if (cvrData?.cvr) {
-          cvr = cvrData.cvr;
+        const matched = await findCvrForLead({
+          brandName: name,
+          industry: params.industry || null,
+          domain: domain,
+          address: params.address || null,
+        });
+
+        if (matched?.cvr) {
+          cvr = matched.cvr;
           result.cvr = cvr;
-          sources.push("cvr-lookup");
+          sources.push("cvr-ai-match");
 
           // Pick up website from CVR if we don't have one
-          if (!website && cvrData.website) {
-            website = cvrData.website.startsWith("http") ? cvrData.website : `https://${cvrData.website}`;
+          if (!website && matched.website) {
+            website = matched.website.startsWith("http") ? matched.website : `https://${matched.website}`;
             result.website = website;
           }
           if (!domain && website) {
@@ -331,18 +338,14 @@ export async function enrichLeadFull(params: {
             } catch { /* ignore */ }
           }
 
-          // CVR roles (owners / directors)
-          if (cvrData.roles && cvrData.roles.length > 0) {
-            for (const r of cvrData.roles) {
-              addContact(r.name, r.role, r.email || null, r.phone || null, "CVR");
-            }
-            sources.push("cvr-roles");
-          }
+          // Add phone/email from CVR registry if available
+          if (matched.email && !result.contact_email) result.contact_email = matched.email;
+          if (matched.phone && !result.contact_phone) result.contact_phone = matched.phone;
 
-          logger.info(`[enrichLeadFull] CVR found: ${cvr} for "${name}"`, { service: "lead-sourcing" });
+          logger.info(`[enrichLeadFull] AI matched CVR ${cvr} ("${matched.name}") for "${name}"`, { service: "lead-sourcing" });
         }
       } catch (e) {
-        logger.warn(`[enrichLeadFull] CVR lookup failed for "${name}": ${e instanceof Error ? e.message : String(e)}`, { service: "lead-sourcing" });
+        logger.warn(`[enrichLeadFull] AI CVR lookup failed for "${name}": ${e instanceof Error ? e.message : String(e)}`, { service: "lead-sourcing" });
       }
     }
 

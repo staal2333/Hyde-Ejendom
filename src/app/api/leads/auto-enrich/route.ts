@@ -100,6 +100,7 @@ export async function POST(req: NextRequest) {
               domain: lead.domain,
               website: lead.website,
               address: lead.address,
+              industry: lead.industry,
             });
 
             // Build update object
