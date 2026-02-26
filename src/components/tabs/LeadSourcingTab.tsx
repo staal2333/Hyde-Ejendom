@@ -2,6 +2,8 @@
 
 import { useState, useCallback, useEffect, useMemo } from "react";
 import { useDashboard } from "@/contexts/DashboardContext";
+import { EmailComposer } from "@/components/EmailComposer";
+import type { EmailComposerLead } from "@/components/EmailComposer";
 
 /* ─── Types ─── */
 export interface LeadCompany {
@@ -510,6 +512,9 @@ export function LeadSourcingTab() {
     }
   }, [addToast]);
 
+  /* Email composer */
+  const [emailComposerLead, setEmailComposerLead] = useState<EmailComposerLead | null>(null);
+
   /* Auto-enrich agent */
   const [enrichAgentRunning, setEnrichAgentRunning] = useState(false);
   const [enrichProgress, setEnrichProgress] = useState<{
@@ -1006,6 +1011,20 @@ export function LeadSourcingTab() {
                   onAddNote={() => addNoteTo(lead.id)}
                   onDelete={() => deleteLead(lead.id)}
                   onSnooze={(days) => snoozeFollowup(lead.id, days)}
+                  onEmail={() => setEmailComposerLead({
+                    id: lead.id,
+                    name: lead.name,
+                    industry: lead.industry,
+                    oohReason: lead.ooh_reason,
+                    platforms: lead.platforms,
+                    adCount: lead.ad_count,
+                    egenkapital: lead.egenkapital,
+                    omsaetning: lead.omsaetning,
+                    address: lead.address,
+                    contactEmail: lead.contact_email,
+                    contactName: lead.contacts?.[0]?.name || null,
+                    contactRole: lead.contacts?.[0]?.role || null,
+                  })}
                 />
               ))}
             </div>
@@ -1093,6 +1112,19 @@ export function LeadSourcingTab() {
           )}
         </div>
       )}
+
+      {/* Email Composer Modal */}
+      {emailComposerLead && (
+        <EmailComposer
+          lead={emailComposerLead}
+          onClose={() => setEmailComposerLead(null)}
+          onSent={async () => {
+            setEmailComposerLead(null);
+            const status = TAB_STATUS_MAP[activeTab];
+            if (status) await loadLeads(status);
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -1169,6 +1201,7 @@ function PipelineLeadCard({
   onAddNote,
   onDelete,
   onSnooze,
+  onEmail,
 }: {
   lead: LeadRow;
   tab: PipelineTab;
@@ -1182,6 +1215,7 @@ function PipelineLeadCard({
   onAddNote: () => void;
   onDelete: () => void;
   onSnooze: (days: number) => void;
+  onEmail: () => void;
 }) {
   const crmBadge = lead.hubspot_company_id
     ? <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 border border-indigo-200">I CRM</span>
@@ -1400,22 +1434,16 @@ function PipelineLeadCard({
             )}
             {tab === "kvalificerede" && (
               <>
-                {lead.contact_email && (
-                  <ActionButton label="Forbered email" color="indigo" loading={actionLoading} onClick={(e) => {
-                    e.stopPropagation();
-                    window.open(`mailto:${lead.contact_email}?subject=OOH samarbejde – ${encodeURIComponent(lead.name)}`, "_blank");
-                    onNoteChange("Email forberedt – afventer afsendelse");
-                    setTimeout(() => onAddNote(), 100);
-                  }} />
-                )}
+                <ActionButton label="Send email" color="indigo" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onEmail(); }} />
                 <ActionButton label="Marker kontaktet" color="blue" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onStatusChange("contacted"); }} />
                 <ActionButton label="Tilbage til Nye" color="slate" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onStatusChange("new"); }} />
               </>
             )}
             {tab === "kontaktet" && (
               <>
+                <ActionButton label="Send opfølgning" color="indigo" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onEmail(); }} />
                 {lead.contact_email && (
-                  <ActionButton label="Send opfølgning" color="indigo" loading={actionLoading} onClick={(e) => {
+                  <ActionButton label="Åbn i mail" color="slate" loading={actionLoading} onClick={(e) => {
                     e.stopPropagation();
                     window.open(`mailto:${lead.contact_email}?subject=Opfølgning – ${encodeURIComponent(lead.name)}`, "_blank");
                     onNoteChange("Opfølgningsmail sendt");

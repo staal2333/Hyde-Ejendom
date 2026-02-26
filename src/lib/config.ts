@@ -58,13 +58,21 @@ Korte sætninger, konkret værdi, ingen buzzwords.`
   // Research safe mode: when true, research runs but does NOT update HubSpot.
   researchSafeMode: optionalEnv("RESEARCH_SAFE_MODE", "false") === "true",
 
-  // Gmail API (OAuth2) – for sending outreach emails
+  // Gmail API (OAuth2) – for sending outreach emails (property flow)
   gmail: {
     clientId: () => optionalEnv("GMAIL_CLIENT_ID", ""),
     clientSecret: () => optionalEnv("GMAIL_CLIENT_SECRET", ""),
     refreshToken: () => optionalEnv("GMAIL_REFRESH_TOKEN", ""),
     fromEmail: optionalEnv("GMAIL_FROM_EMAIL", "mads.ejendomme@hydemedia.dk"),
     fromName: optionalEnv("GMAIL_FROM_NAME", "Mads – Hyde Media"),
+  },
+
+  // Gmail SMTP (App Password) – simpler setup for lead outreach
+  smtp: {
+    user: () => optionalEnv("SMTP_USER", ""),
+    password: () => optionalEnv("SMTP_PASSWORD", ""),
+    fromName: optionalEnv("SMTP_FROM_NAME", optionalEnv("GMAIL_FROM_NAME", "Hyde Media")),
+    fromEmail: () => optionalEnv("SMTP_USER", optionalEnv("GMAIL_FROM_EMAIL", "")),
   },
 
   // Email rate limiting

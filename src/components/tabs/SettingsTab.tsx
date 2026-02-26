@@ -890,6 +890,68 @@ export function SettingsTab() {
           </div>
         )}
       </div>
+
+      {/* ═══════ GMAIL SMTP SETUP ═══════ */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-sm p-6 space-y-4">
+        <div className="flex items-center gap-3">
+          <div className="w-9 h-9 rounded-xl bg-red-100 flex items-center justify-center">
+            <svg className="w-5 h-5 text-red-600" viewBox="0 0 24 24" fill="currentColor">
+              <path d="M24 5.457v13.909c0 .904-.732 1.636-1.636 1.636h-3.819V11.73L12 16.64l-6.545-4.91v9.273H1.636A1.636 1.636 0 0 1 0 19.366V5.457c0-2.023 2.309-3.178 3.927-1.964L5.455 4.64 12 9.548l6.545-4.909 1.528-1.145C21.69 2.28 24 3.434 24 5.457z"/>
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-base font-bold text-slate-800">Gmail Opsætning</h3>
+            <p className="text-xs text-slate-500">Brug Gmail App Password til at sende emails direkte fra toolet</p>
+          </div>
+        </div>
+
+        <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 space-y-2">
+          <p className="text-sm font-semibold text-blue-800">Sådan opsættes Gmail (2 minutter):</p>
+          <ol className="space-y-1.5 text-sm text-blue-700">
+            <li className="flex gap-2">
+              <span className="font-bold shrink-0">1.</span>
+              <span>Gå til <a href="https://myaccount.google.com/security" target="_blank" rel="noreferrer" className="underline font-medium">myaccount.google.com/security</a> og sørg for 2-trins verificering er aktiveret</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="font-bold shrink-0">2.</span>
+              <span>Søg efter <strong>"App passwords"</strong> og opret et nyt — vælg app: <em>Mail</em>, device: <em>Other (custom)</em> → skriv &quot;HydeAI&quot;</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="font-bold shrink-0">3.</span>
+              <span>Kopiér det 16-cifrede password</span>
+            </li>
+            <li className="flex gap-2">
+              <span className="font-bold shrink-0">4.</span>
+              <span>Gå til <a href="https://vercel.com" target="_blank" rel="noreferrer" className="underline font-medium">Vercel → Project → Settings → Environment Variables</a> og tilføj:</span>
+            </li>
+          </ol>
+          <div className="mt-3 bg-white rounded-lg border border-blue-200 overflow-hidden">
+            <table className="w-full text-xs">
+              <thead className="bg-blue-100">
+                <tr>
+                  <th className="text-left px-3 py-2 text-blue-700 font-semibold">Variable</th>
+                  <th className="text-left px-3 py-2 text-blue-700 font-semibold">Værdi</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr className="border-t border-blue-100">
+                  <td className="px-3 py-2 font-mono text-slate-700">SMTP_USER</td>
+                  <td className="px-3 py-2 text-slate-600">din@gmail.com</td>
+                </tr>
+                <tr className="border-t border-blue-100">
+                  <td className="px-3 py-2 font-mono text-slate-700">SMTP_PASSWORD</td>
+                  <td className="px-3 py-2 text-slate-600">xxxx xxxx xxxx xxxx (app password)</td>
+                </tr>
+                <tr className="border-t border-blue-100">
+                  <td className="px-3 py-2 font-mono text-slate-700">SMTP_FROM_NAME</td>
+                  <td className="px-3 py-2 text-slate-600">Dit navn – Hyde Media</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-blue-600 mt-2">Husk at gendeploye Vercel efter du har tilføjet variablerne.</p>
+        </div>
+      </div>
     </div>
   );
 }
