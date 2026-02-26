@@ -510,6 +510,94 @@ export function LeadSourcingTab() {
     }
   }, [addToast]);
 
+  /* Auto-enrich agent */
+  const [enrichAgentRunning, setEnrichAgentRunning] = useState(false);
+  const [enrichProgress, setEnrichProgress] = useState<{
+    current: number;
+    total: number;
+    message: string;
+    done: boolean;
+    leadName?: string;
+    results: { name: string; cvr?: string | null; contacts?: number; hasEmail?: boolean; hasFinancials?: boolean }[];
+  } | null>(null);
+
+  const runAutoEnrich = useCallback(async (scope: "all" | "new" = "all") => {
+    if (enrichAgentRunning) return;
+    setEnrichAgentRunning(true);
+    setEnrichProgress({ current: 0, total: 0, message: "Agent starter…", done: false, results: [] });
+
+    try {
+      const params = new URLSearchParams({ status: scope, limit: "50" });
+      const res = await fetch(`/api/leads/auto-enrich?${params}`, { method: "POST" });
+      if (!res.body) throw new Error("Ingen stream fra server");
+
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() || "";
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          try {
+            const event = JSON.parse(line.slice(6));
+            if (event.phase === "start") {
+              setEnrichProgress(p => p ? { ...p, total: event.total, message: event.message } : null);
+            } else if (event.phase === "processing") {
+              setEnrichProgress(p => p ? {
+                ...p,
+                current: event.current,
+                total: event.total,
+                message: event.message,
+                leadName: event.leadName,
+              } : null);
+            } else if (event.phase === "lead_done") {
+              setEnrichProgress(p => {
+                if (!p) return null;
+                const entry = {
+                  name: event.leadName,
+                  cvr: event.cvr,
+                  contacts: event.contactsCount,
+                  hasEmail: event.hasEmail,
+                  hasFinancials: event.hasFinancials,
+                };
+                return {
+                  ...p,
+                  message: event.message,
+                  results: [entry, ...p.results].slice(0, 20),
+                };
+              });
+            } else if (event.phase === "done") {
+              setEnrichProgress(p => p ? {
+                ...p,
+                done: true,
+                message: event.message,
+                current: event.processed,
+                total: event.total,
+              } : null);
+              addToast(event.message, "success");
+              // Reload current pipeline view
+              const currentStatus = TAB_STATUS_MAP[activeTab];
+              if (currentStatus) await loadLeads(currentStatus);
+            } else if (event.phase === "error") {
+              addToast(event.message, "error");
+            }
+          } catch { /* skip malformed lines */ }
+        }
+      }
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : "Fejl ved auto-berigelse", "error");
+      setEnrichProgress(null);
+    } finally {
+      setEnrichAgentRunning(false);
+    }
+  }, [enrichAgentRunning, activeTab, addToast, loadLeads]);
+
   /* Filtered + sorted leads */
   const sortedLeads = useMemo(() => {
     const dir = sortAsc ? 1 : -1;
@@ -754,6 +842,92 @@ export function LeadSourcingTab() {
           );
         })}
       </div>
+
+      {/* ═══════ AUTO-ENRICH AGENT ═══════ */}
+      {activeTab !== "hubspot" && (
+        <div className="flex items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => runAutoEnrich("all")}
+              disabled={enrichAgentRunning}
+              title="Berig alle nye og kvalificerede leads automatisk: finder CVR, egenkapital og marketing-kontakt"
+              className="inline-flex items-center gap-2 px-3 py-1.5 bg-violet-600 text-white text-xs font-bold rounded-xl shadow hover:bg-violet-700 disabled:opacity-50 transition"
+            >
+              {enrichAgentRunning
+                ? <span className="animate-spin rounded-full h-3.5 w-3.5 border-2 border-white/30 border-t-white" />
+                : <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15M14.25 3.104c.251.023.501.05.75.082M19.8 15l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.5l.406 2.032A2.25 2.25 0 0118 19.5H6a2.25 2.25 0 01-2.206-2.968L5 14.5" />
+                  </svg>
+              }
+              {enrichAgentRunning ? "Agent kører…" : "Berig alle leads"}
+            </button>
+            {enrichAgentRunning && enrichProgress && (
+              <span className="text-xs text-violet-700 font-medium truncate max-w-xs">
+                {enrichProgress.current}/{enrichProgress.total} · {enrichProgress.leadName || ""}
+              </span>
+            )}
+          </div>
+          {enrichProgress && !enrichAgentRunning && enrichProgress.done && (
+            <button
+              type="button"
+              onClick={() => setEnrichProgress(null)}
+              className="text-[10px] text-slate-400 hover:text-slate-600 underline"
+            >
+              Skjul rapport
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* Enrich progress panel */}
+      {enrichProgress && (
+        <div className="bg-violet-50 border border-violet-200 rounded-2xl p-4 space-y-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              {enrichAgentRunning && <span className="animate-spin rounded-full h-4 w-4 border-2 border-violet-300 border-t-violet-600" />}
+              <span className="text-sm font-semibold text-violet-800">
+                {enrichProgress.done ? "Agent færdig" : "Agent kører"}
+              </span>
+            </div>
+            {enrichProgress.total > 0 && (
+              <span className="text-xs font-mono text-violet-600 tabular-nums">
+                {enrichProgress.current}/{enrichProgress.total}
+              </span>
+            )}
+          </div>
+
+          {/* Progress bar */}
+          {enrichProgress.total > 0 && (
+            <div className="h-1.5 bg-violet-200 rounded-full overflow-hidden">
+              <div
+                className="h-full bg-violet-500 rounded-full transition-all duration-300"
+                style={{ width: `${Math.min(100, (enrichProgress.current / enrichProgress.total) * 100)}%` }}
+              />
+            </div>
+          )}
+
+          <p className="text-xs text-violet-700">{enrichProgress.message}</p>
+
+          {/* Results log */}
+          {enrichProgress.results.length > 0 && (
+            <div className="space-y-1 max-h-48 overflow-y-auto">
+              {enrichProgress.results.map((r, i) => (
+                <div key={i} className="flex items-center gap-2 text-[11px] bg-white/70 rounded-lg px-2.5 py-1.5">
+                  <span className="font-medium text-slate-700 truncate flex-1">{r.name}</span>
+                  {r.cvr && <span className="text-slate-500 font-mono shrink-0">CVR {r.cvr}</span>}
+                  {r.contacts !== undefined && r.contacts > 0 && (
+                    <span className="text-violet-600 font-semibold shrink-0">{r.contacts} kontakter</span>
+                  )}
+                  {r.hasEmail && <span className="text-emerald-600 font-semibold shrink-0">✓ Email</span>}
+                  {r.hasFinancials && <span className="text-sky-600 font-semibold shrink-0">✓ Finansdata</span>}
+                  {!r.contacts && !r.hasEmail && !r.hasFinancials && <span className="text-slate-400 shrink-0">Ingen ny data</span>}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* ═══════ PIPELINE CONTENT ═══════ */}
       {activeTab !== "hubspot" ? (

@@ -13,7 +13,7 @@ const CVR_API_BASE = "https://cvrapi.dk/api";
 const USER_AGENT = "EjendomAI-LeadSourcing/1.0 (+https://ejendom-ai.vercel.app)";
 
 // Industry presets with Danish search terms for CVR search
-export const INDUSTRY_PRESETS: Record<string, { label: string; keywords: string[] }> = {
+const INDUSTRY_PRESETS: Record<string, { label: string; keywords: string[] }> = {
   restaurant: {
     label: "Restaurant & Hotel",
     keywords: ["restaurant", "cafe", "bistro", "hotel", "kro", "pizzeria"],
