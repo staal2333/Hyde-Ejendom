@@ -2027,7 +2027,7 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
                       </button>
 
                       <p className="text-center text-[10px] text-slate-400">
-                        Koster ca. 1-2 kr per generering · Gemmes automatisk i Creative Library
+                        Ca. 0,30–0,55 kr per billede · Faktureres via din OpenAI-konto · Gemmes automatisk i Creative Library
                       </p>
                     </>
                   ) : (
