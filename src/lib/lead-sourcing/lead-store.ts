@@ -31,6 +31,7 @@ export interface LeadRow {
   contact_email: string | null;
   contact_phone: string | null;
   contacts: LeadContactEntry[];
+  ooh_pitch: string | null;
   last_contacted_at: string | null;
   next_followup_at: string | null;
   notes: NoteEntry[];
@@ -87,6 +88,7 @@ function rowToLead(row: Record<string, unknown>): LeadRow {
     contact_email: row.contact_email ? String(row.contact_email) : null,
     contact_phone: row.contact_phone ? String(row.contact_phone) : null,
     contacts: Array.isArray(row.contacts) ? row.contacts as LeadContactEntry[] : [],
+    ooh_pitch: row.ooh_pitch ? String(row.ooh_pitch) : null,
     last_contacted_at: row.last_contacted_at ? String(row.last_contacted_at) : null,
     next_followup_at: row.next_followup_at ? String(row.next_followup_at) : null,
     notes: Array.isArray(row.notes) ? row.notes as NoteEntry[] : [],

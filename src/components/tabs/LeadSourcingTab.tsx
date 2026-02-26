@@ -51,6 +51,7 @@ interface LeadRow {
   platforms: string[];
   ooh_score: number;
   ooh_reason: string | null;
+  ooh_pitch: string | null;
   source_platform: string;
   status: string;
   hubspot_company_id: string | null;
@@ -77,6 +78,7 @@ interface CustomerActivity {
 type PipelineTab = "nye" | "kvalificerede" | "kontaktet" | "kunder" | "hubspot";
 type SortKey = "oohScore" | "name" | "egenkapital" | "followup";
 type AdPlatform = "meta" | "tiktok" | "linkedin" | "google";
+type DiscoveryMode = "ads" | "cvr" | "places";
 
 const PLATFORM_LABELS: Record<AdPlatform, string> = {
   meta: "Meta",
@@ -156,11 +158,30 @@ export function LeadSourcingTab() {
   const { addToast } = useDashboard();
 
   /* Discovery state */
+  const [discoveryMode, setDiscoveryMode] = useState<DiscoveryMode>("ads");
   const [discoverQuery, setDiscoverQuery] = useState("");
   const [discoverCountry, setDiscoverCountry] = useState("DK");
   const [selectedPlatforms, setSelectedPlatforms] = useState<Set<AdPlatform>>(new Set(["meta"]));
   const [discoverLoading, setDiscoverLoading] = useState(false);
   const [discoverPhase, setDiscoverPhase] = useState("");
+
+  /* CVR industry search state */
+  const [cvrIndustry, setCvrIndustry] = useState("restaurant");
+  const [cvrCity, setCvrCity] = useState("");
+  const [cvrCustomKeywords, setCvrCustomKeywords] = useState("");
+
+  /* Places search state */
+  const [placesAddress, setPlacesAddress] = useState("");
+  const [placesIndustryFilter, setPlacesIndustryFilter] = useState("");
+
+  /* Industry presets (loaded on mount) */
+  const [industryPresets, setIndustryPresets] = useState<{ key: string; label: string }[]>([]);
+  useEffect(() => {
+    fetch("/api/lead-sourcing/cvr-industry")
+      .then(r => r.json())
+      .then(d => setIndustryPresets(d.presets || []))
+      .catch(() => {});
+  }, []);
 
   /* Pipeline state */
   const [activeTab, setActiveTab] = useState<PipelineTab>("nye");
@@ -232,6 +253,93 @@ export function LeadSourcingTab() {
       return next;
     });
   };
+
+  /* Run CVR industry discovery */
+  const runCvrDiscover = useCallback(async () => {
+    setDiscoverLoading(true);
+    setDiscoverPhase(`Søger CVR-virksomheder i ${cvrCity || "Danmark"}…`);
+    try {
+      const keywords = cvrCustomKeywords.trim()
+        ? cvrCustomKeywords.split(",").map(k => k.trim()).filter(Boolean)
+        : undefined;
+
+      const res = await fetch("/api/lead-sourcing/cvr-industry", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          industry: keywords ? undefined : cvrIndustry,
+          keywords,
+          city: cvrCity.trim() || undefined,
+          limit: 50,
+          enrichFinancials: false,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { addToast(data.error || "CVR søgning fejlede", "error"); return; }
+
+      const companies = data.companies || [];
+      if (companies.length === 0) { addToast("Ingen virksomheder fundet. Prøv andre søgeord.", "info"); return; }
+
+      setDiscoverPhase("Gemmer leads…");
+      const saveRes = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companies }),
+      });
+      const saveData = await saveRes.json();
+      addToast(`${companies.length} virksomheder fundet via CVR. ${saveData.saved || 0} gemt i pipeline.`, "success");
+      setActiveTab("nye");
+      await loadLeads("new");
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : "Fejl ved CVR søgning", "error");
+    } finally {
+      setDiscoverLoading(false);
+      setDiscoverPhase("");
+    }
+  }, [cvrIndustry, cvrCity, cvrCustomKeywords, addToast, loadLeads]);
+
+  /* Run Places (proximity) discovery */
+  const runPlacesDiscover = useCallback(async () => {
+    if (!placesAddress.trim()) { addToast("Angiv en adresse først", "info"); return; }
+    setDiscoverLoading(true);
+    setDiscoverPhase(`Finder virksomheder nær "${placesAddress}"…`);
+    try {
+      const res = await fetch("/api/lead-sourcing/places-search", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          address: placesAddress.trim(),
+          industryFilter: placesIndustryFilter.trim() || undefined,
+          limit: 50,
+          enrichFinancials: false,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) { addToast(data.error || "Adressesøgning fejlede", "error"); return; }
+
+      const companies = data.companies || [];
+      if (companies.length === 0) { addToast("Ingen virksomheder fundet nær adressen.", "info"); return; }
+
+      setDiscoverPhase("Gemmer leads…");
+      const saveRes = await fetch("/api/leads", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ companies }),
+      });
+      const saveData = await saveRes.json();
+      addToast(
+        `${companies.length} virksomheder fundet nær ${data.resolvedPostal} ${data.resolvedCity}. ${saveData.saved || 0} gemt.`,
+        "success"
+      );
+      setActiveTab("nye");
+      await loadLeads("new");
+    } catch (e) {
+      addToast(e instanceof Error ? e.message : "Fejl ved adressesøgning", "error");
+    } finally {
+      setDiscoverLoading(false);
+      setDiscoverPhase("");
+    }
+  }, [placesAddress, placesIndustryFilter, addToast, loadLeads]);
 
   /* Run discovery */
   const runDiscover = useCallback(async (batch = false) => {
@@ -479,91 +587,132 @@ export function LeadSourcingTab() {
 
       {/* ═══════ DISCOVERY BAR ═══════ */}
       <div className="bg-gradient-to-br from-indigo-50 to-violet-50 rounded-2xl border border-indigo-200/60 shadow-[var(--card-shadow)] p-5">
-        <h2 className="text-sm font-bold text-slate-800 mb-3 flex items-center gap-2">
-          <svg className="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
-          </svg>
-          Lead Discovery
-        </h2>
-
-        {/* Platform selector */}
-        <div className="flex flex-wrap gap-2 mb-4">
-          {(Object.keys(PLATFORM_LABELS) as AdPlatform[]).map((p) => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => togglePlatform(p)}
-              className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${
-                selectedPlatforms.has(p)
-                  ? `${PLATFORM_COLORS[p]} border-current`
-                  : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"
-              }`}
-            >
-              {selectedPlatforms.has(p) && (
-                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
-                </svg>
-              )}
-              {PLATFORM_LABELS[p]}
-            </button>
-          ))}
+        <div className="flex items-center justify-between mb-4">
+          <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <svg className="w-5 h-5 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+            </svg>
+            Lead Discovery
+          </h2>
+          {/* Discovery mode switcher */}
+          <div className="flex items-center gap-1 bg-white/70 rounded-xl p-1 border border-indigo-200">
+            {([
+              { key: "ads", label: "Annoncer", icon: "M10.5 1.5H8.25A2.25 2.25 0 006 3.75v16.5a2.25 2.25 0 002.25 2.25h7.5A2.25 2.25 0 0018 20.25V3.75a2.25 2.25 0 00-2.25-2.25H13.5m-3 0V3h3V1.5m-3 0h3m-3 8.25h3m-3 4.5h3" },
+              { key: "cvr", label: "CVR Branche", icon: "M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75M6.75 21v-3.375c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125V21" },
+              { key: "places", label: "Nærhed", icon: "M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" },
+            ] as { key: DiscoveryMode; label: string; icon: string }[]).map(m => (
+              <button key={m.key} type="button" onClick={() => setDiscoveryMode(m.key)}
+                className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${discoveryMode === m.key ? "bg-indigo-600 text-white shadow" : "text-slate-500 hover:text-indigo-600"}`}>
+                <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d={m.icon} /></svg>
+                {m.label}
+              </button>
+            ))}
+          </div>
         </div>
 
-        {/* Search fields */}
-        <div className="flex flex-wrap items-end gap-3">
-          <div>
-            <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Søgeord (valgfri)</label>
-            <input
-              type="text"
-              value={discoverQuery}
-              onChange={(e) => setDiscoverQuery(e.target.value)}
-              placeholder="fx reklame, marketing, retail"
-              className="w-56 px-3 py-2 border border-slate-200 rounded-xl text-sm"
-            />
+        {/* ── Ads discovery mode ── */}
+        {discoveryMode === "ads" && (
+          <>
+            <div className="flex flex-wrap gap-2 mb-4">
+              {(Object.keys(PLATFORM_LABELS) as AdPlatform[]).map((p) => (
+                <button key={p} type="button" onClick={() => togglePlatform(p)}
+                  className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold border transition ${selectedPlatforms.has(p) ? `${PLATFORM_COLORS[p]} border-current` : "bg-white text-slate-500 border-slate-200 hover:border-slate-300"}`}>
+                  {selectedPlatforms.has(p) && <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={3} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>}
+                  {PLATFORM_LABELS[p]}
+                </button>
+              ))}
+            </div>
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Søgeord (valgfri)</label>
+                <input type="text" value={discoverQuery} onChange={(e) => setDiscoverQuery(e.target.value)}
+                  placeholder="fx reklame, marketing, retail"
+                  className="w-56 px-3 py-2 border border-slate-200 rounded-xl text-sm" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Land</label>
+                <select value={discoverCountry} onChange={(e) => setDiscoverCountry(e.target.value)}
+                  className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white">
+                  <option value="DK">Danmark</option>
+                  <option value="NO">Norge</option>
+                  <option value="SE">Sverige</option>
+                </select>
+              </div>
+              <button type="button" onClick={() => runDiscover(false)} disabled={discoverLoading}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-lg hover:bg-indigo-700 disabled:opacity-50">
+                {discoverLoading ? <span className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /> : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" /></svg>}
+                {discoverLoading ? "Kører…" : "Søg"}
+              </button>
+              <button type="button" onClick={() => runDiscover(true)} disabled={discoverLoading}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-sm font-bold rounded-xl shadow-lg hover:from-violet-700 hover:to-purple-700 disabled:opacity-50">
+                {discoverLoading ? <span className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /> : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" /></svg>}
+                Fuld scanning (15 brancher)
+              </button>
+            </div>
+          </>
+        )}
+
+        {/* ── CVR industry mode ── */}
+        {discoveryMode === "cvr" && (
+          <div className="space-y-3">
+            <p className="text-xs text-indigo-700">Søg direkte i det danske CVR-register efter virksomheder i en bestemt branche og by — uden annoncesporing.</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Branche</label>
+                <select value={cvrIndustry} onChange={e => { setCvrIndustry(e.target.value); setCvrCustomKeywords(""); }}
+                  className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white">
+                  {industryPresets.map(p => (
+                    <option key={p.key} value={p.key}>{p.label}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">By / postnr (valgfri)</label>
+                <input type="text" value={cvrCity} onChange={e => setCvrCity(e.target.value)}
+                  placeholder="fx København, Aarhus, 2100"
+                  className="w-44 px-3 py-2 border border-slate-200 rounded-xl text-sm" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Egne søgeord (komma-separeret)</label>
+                <input type="text" value={cvrCustomKeywords} onChange={e => setCvrCustomKeywords(e.target.value)}
+                  placeholder="fx bilforhandler, autocentret"
+                  className="w-52 px-3 py-2 border border-slate-200 rounded-xl text-sm" />
+              </div>
+              <button type="button" onClick={runCvrDiscover} disabled={discoverLoading}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-lg hover:bg-indigo-700 disabled:opacity-50">
+                {discoverLoading ? <span className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /> : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>}
+                Søg i CVR
+              </button>
+            </div>
           </div>
-          <div>
-            <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Land</label>
-            <select
-              value={discoverCountry}
-              onChange={(e) => setDiscoverCountry(e.target.value)}
-              className="px-3 py-2 border border-slate-200 rounded-xl text-sm bg-white"
-            >
-              <option value="DK">Danmark</option>
-              <option value="NO">Norge</option>
-              <option value="SE">Sverige</option>
-            </select>
+        )}
+
+        {/* ── Places proximity mode ── */}
+        {discoveryMode === "places" && (
+          <div className="space-y-3">
+            <p className="text-xs text-indigo-700">Find virksomheder nær en specifik OOH-placering — fx &ldquo;Vesterbrogade 47, København&rdquo;. Returnerer virksomheder i samme postnummer-område.</p>
+            <div className="flex flex-wrap items-end gap-3">
+              <div className="flex-1 min-w-[220px]">
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">OOH-adresse / Billboard-placering</label>
+                <input type="text" value={placesAddress} onChange={e => setPlacesAddress(e.target.value)}
+                  placeholder="fx Vesterbrogade 47, København"
+                  className="w-full px-3 py-2 border border-slate-200 rounded-xl text-sm" />
+              </div>
+              <div>
+                <label className="block text-[10px] font-semibold text-slate-500 uppercase mb-1">Branche-filter (valgfri)</label>
+                <input type="text" value={placesIndustryFilter} onChange={e => setPlacesIndustryFilter(e.target.value)}
+                  placeholder="fx restaurant, butik"
+                  className="w-40 px-3 py-2 border border-slate-200 rounded-xl text-sm" />
+              </div>
+              <button type="button" onClick={runPlacesDiscover} disabled={discoverLoading || !placesAddress.trim()}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-lg hover:bg-indigo-700 disabled:opacity-50">
+                {discoverLoading ? <span className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" /> : <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15 10.5a3 3 0 11-6 0 3 3 0 016 0z M19.5 10.5c0 7.142-7.5 11.25-7.5 11.25S4.5 17.642 4.5 10.5a7.5 7.5 0 1115 0z" /></svg>}
+                Find nærliggende
+              </button>
+            </div>
           </div>
-          <button
-            type="button"
-            onClick={() => runDiscover(false)}
-            disabled={discoverLoading}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl shadow-lg hover:bg-indigo-700 disabled:opacity-50"
-          >
-            {discoverLoading ? (
-              <span className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
-            ) : (
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" />
-              </svg>
-            )}
-            {discoverLoading ? "Kører…" : "Søg"}
-          </button>
-          <button
-            type="button"
-            onClick={() => runDiscover(true)}
-            disabled={discoverLoading}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-sm font-bold rounded-xl shadow-lg hover:from-violet-700 hover:to-purple-700 disabled:opacity-50"
-          >
-            {discoverLoading ? (
-              <span className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
-            ) : (
-              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 3.75v4.5m0-4.5h4.5m-4.5 0L9 9M3.75 20.25v-4.5m0 4.5h4.5m-4.5 0L9 15M20.25 3.75h-4.5m4.5 0v4.5m0-4.5L15 9m5.25 11.25h-4.5m4.5 0v-4.5m0 4.5L15 15" />
-              </svg>
-            )}
-            Fuld scanning (15 brancher)
-          </button>
-        </div>
+        )}
+
         {discoverLoading && discoverPhase && (
           <div className="mt-3 flex items-center gap-2">
             <span className="animate-spin rounded-full h-3 w-3 border-2 border-indigo-300 border-t-indigo-600" />
@@ -906,17 +1055,35 @@ function PipelineLeadCard({
           {lead.contacts && lead.contacts.length > 0 ? (
             <div className="space-y-0.5">
               {lead.contacts.slice(0, expanded ? 5 : 2).map((c, ci) => (
-                <div key={ci} className="flex items-center gap-2 text-[10px]">
-                  <span className="font-medium text-slate-700">{c.name}</span>
+                <div key={ci} className="flex items-center gap-2 text-[10px] flex-wrap">
+                  <ContactSourceIcon source={c.source} />
+                  <span className="font-semibold text-slate-800">{c.name}</span>
                   {c.role && c.role !== "anden" && c.role !== "Ukendt" && (
-                    <span className="px-1 py-0.5 rounded text-[8px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">{c.role}</span>
+                    <RoleBadge role={c.role} />
                   )}
                   {c.email ? (
-                    <a href={`mailto:${c.email}`} className="text-brand-600 hover:underline">{c.email}</a>
+                    <span className="flex items-center gap-1">
+                      <a href={`mailto:${c.email}`} className="text-indigo-600 hover:underline">{c.email}</a>
+                      <CopyButton value={c.email} />
+                    </span>
                   ) : (
                     <span className="text-slate-400 italic">ingen email</span>
                   )}
-                  {c.phone && <span className="text-slate-500">{c.phone}</span>}
+                  {c.phone && (
+                    <span className="flex items-center gap-1 text-slate-600">
+                      {c.phone}
+                      <CopyButton value={c.phone} />
+                    </span>
+                  )}
+                  {c.confidence != null && c.confidence > 0 && (
+                    <div className="flex items-center gap-1" title={`Konfidens: ${Math.round(c.confidence * 100)}%`}>
+                      <div className="w-12 h-1 bg-slate-200 rounded-full overflow-hidden">
+                        <div className={`h-full rounded-full ${c.confidence >= 0.7 ? "bg-emerald-500" : c.confidence >= 0.4 ? "bg-amber-400" : "bg-red-400"}`}
+                          style={{ width: `${Math.round(c.confidence * 100)}%` }} />
+                      </div>
+                      <span className="text-[8px] text-slate-400">{Math.round(c.confidence * 100)}%</span>
+                    </div>
+                  )}
                 </div>
               ))}
               {!expanded && lead.contacts.length > 2 && (
@@ -926,11 +1093,11 @@ function PipelineLeadCard({
           ) : (
             <div className="flex items-center gap-3 text-[10px]">
               {lead.contact_email ? (
-                <span className="text-slate-700">{lead.contact_email}</span>
+                <span className="flex items-center gap-1 text-slate-700">{lead.contact_email}<CopyButton value={lead.contact_email} /></span>
               ) : (
                 <span className="text-slate-400 italic">Ingen kontakt — beriges ved kvalificering</span>
               )}
-              {lead.contact_phone && <span className="text-slate-600">{lead.contact_phone}</span>}
+              {lead.contact_phone && <span className="flex items-center gap-1 text-slate-600">{lead.contact_phone}<CopyButton value={lead.contact_phone} /></span>}
             </div>
           )}
         </div>
@@ -968,10 +1135,34 @@ function PipelineLeadCard({
               )}
             </div>
             <div>
-              <span className="text-slate-500 font-medium block">OOH Grund</span>
-              <span className="text-slate-800 text-[11px]">{lead.ooh_reason || "—"}</span>
+              <span className="text-slate-500 font-medium block">Opdaget</span>
+              <span className="text-slate-800">{new Date(lead.discovered_at).toLocaleDateString("da-DK")}</span>
             </div>
           </div>
+
+          {/* Campaign Intelligence panel */}
+          <CampaignIntelligencePanel lead={lead} />
+
+          {/* OOH Pitch */}
+          {lead.ooh_pitch && (
+            <div className="p-3 bg-violet-50 rounded-xl border border-violet-200">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="text-[10px] font-bold text-violet-700 uppercase tracking-wide flex items-center gap-1">
+                  <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M7.5 8.25h9m-9 3H12m-9.75 1.51c0 1.6 1.123 2.994 2.707 3.227 1.129.166 2.27.293 3.423.379.35.026.67.21.865.501L12 21l2.755-4.133a1.14 1.14 0 01.865-.501 48.172 48.172 0 003.423-.379c1.584-.233 2.707-1.626 2.707-3.228V6.741c0-1.602-1.123-2.995-2.707-3.228A48.394 48.394 0 0012 3c-2.392 0-4.744.175-7.043.513C3.373 3.746 2.25 5.14 2.25 6.741v6.018z" /></svg>
+                  AI Salgs-pitch
+                </span>
+                <CopyButton value={lead.ooh_pitch} label="Kopier pitch" />
+              </div>
+              <p className="text-xs text-violet-900 leading-relaxed">{lead.ooh_pitch}</p>
+            </div>
+          )}
+
+          {/* OOH reason */}
+          {lead.ooh_reason && (
+            <div className="text-xs text-slate-600 bg-amber-50/60 border border-amber-200/60 rounded-xl px-3 py-2">
+              <span className="font-semibold text-amber-800">OOH-vurdering: </span>{lead.ooh_reason}
+            </div>
+          )}
 
           {/* Follow-up section */}
           <div className="flex items-center gap-3 flex-wrap">
@@ -1065,6 +1256,126 @@ function PipelineLeadCard({
               <ActionButton label="Tilbage til kontaktet" color="slate" loading={actionLoading} onClick={(e) => { e.stopPropagation(); onStatusChange("contacted"); }} />
             )}
           </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ─── Copy Button ─── */
+function CopyButton({ value, label }: { value: string; label?: string }) {
+  const [copied, setCopied] = useState(false);
+  const handleCopy = (e: React.MouseEvent) => {
+    e.stopPropagation();
+    navigator.clipboard.writeText(value).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 1500);
+    });
+  };
+  return (
+    <button type="button" onClick={handleCopy}
+      className="inline-flex items-center gap-0.5 text-[9px] font-semibold text-slate-400 hover:text-indigo-600 transition"
+      title="Kopier">
+      {copied ? (
+        <svg className="w-3 h-3 text-emerald-500" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" /></svg>
+      ) : (
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M15.75 17.25v3.375c0 .621-.504 1.125-1.125 1.125h-9.75a1.125 1.125 0 01-1.125-1.125V7.875c0-.621.504-1.125 1.125-1.125H6.75a9.06 9.06 0 011.5.124m7.5 10.376h3.375c.621 0 1.125-.504 1.125-1.125V11.25c0-4.46-3.243-8.161-7.5-8.876a9.06 9.06 0 00-1.5-.124H9.375c-.621 0-1.125.504-1.125 1.125v3.5m7.5 10.375H9.375a1.125 1.125 0 01-1.125-1.125v-9.25m12 6.625v-1.875a3.375 3.375 0 00-3.375-3.375h-1.5a1.125 1.125 0 01-1.125-1.125v-1.5a3.375 3.375 0 00-3.375-3.375H9.75" /></svg>
+      )}
+      {label && <span className="ml-0.5">{label}</span>}
+    </button>
+  );
+}
+
+/* ─── Contact Source Icon ─── */
+function ContactSourceIcon({ source }: { source: string }) {
+  const s = (source || "").toLowerCase();
+  if (s.includes("proff")) return (
+    <span title="Proff.dk" className="text-[8px] font-bold px-1 py-0.5 rounded bg-orange-100 text-orange-700 shrink-0">P</span>
+  );
+  if (s.includes("cvr")) return (
+    <span title="CVR" className="text-[8px] font-bold px-1 py-0.5 rounded bg-blue-100 text-blue-700 shrink-0">C</span>
+  );
+  if (s.includes("website") || s.includes("http")) return (
+    <span title="Website" className="text-[8px] font-bold px-1 py-0.5 rounded bg-emerald-100 text-emerald-700 shrink-0">W</span>
+  );
+  if (s.includes("søgning") || s.includes("search") || s.includes("google")) return (
+    <span title="Google søgning" className="text-[8px] font-bold px-1 py-0.5 rounded bg-red-100 text-red-700 shrink-0">G</span>
+  );
+  return <span className="text-[8px] font-bold px-1 py-0.5 rounded bg-slate-100 text-slate-500 shrink-0">?</span>;
+}
+
+/* ─── Role Badge ─── */
+function RoleBadge({ role }: { role: string }) {
+  const r = role.toLowerCase();
+  const cls =
+    r.includes("direktør") || r.includes("ceo") || r.includes("adm") ? "bg-violet-100 text-violet-700 border-violet-200" :
+    r.includes("formand") ? "bg-blue-100 text-blue-700 border-blue-200" :
+    r.includes("ejer") || r.includes("indehaver") || r.includes("partner") ? "bg-amber-100 text-amber-700 border-amber-200" :
+    r.includes("marketing") || r.includes("salg") || r.includes("cmo") ? "bg-emerald-100 text-emerald-700 border-emerald-200" :
+    "bg-slate-100 text-slate-600 border-slate-200";
+  return <span className={`text-[8px] font-bold px-1.5 py-0.5 rounded border shrink-0 ${cls}`}>{role}</span>;
+}
+
+/* ─── Campaign Intelligence Panel ─── */
+function CampaignIntelligencePanel({ lead }: { lead: LeadRow }) {
+  const hasAdData = lead.ad_count > 0 || lead.platforms.length > 0;
+  const activityLevel =
+    lead.ad_count > 10 ? { label: "Høj aktivitet", cls: "bg-emerald-100 text-emerald-700 border-emerald-200" } :
+    lead.ad_count > 3 ? { label: "Middel aktivitet", cls: "bg-amber-100 text-amber-700 border-amber-200" } :
+    lead.ad_count > 0 ? { label: "Lav aktivitet", cls: "bg-slate-100 text-slate-600 border-slate-200" } :
+    null;
+
+  return (
+    <div className="p-3 bg-blue-50/50 rounded-xl border border-blue-200/60">
+      <h4 className="text-[10px] font-bold text-blue-800 uppercase tracking-wide mb-2 flex items-center gap-1.5">
+        <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" /></svg>
+        Kampagne aktivitet
+      </h4>
+
+      {hasAdData ? (
+        <div className="space-y-2">
+          <div className="flex items-center gap-2 flex-wrap">
+            {activityLevel && (
+              <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${activityLevel.cls}`}>
+                {activityLevel.label}
+              </span>
+            )}
+            <span className="text-[10px] text-slate-600">
+              <strong>{lead.ad_count}</strong> annoncer totalt
+            </span>
+            {lead.page_likes != null && lead.page_likes > 0 && (
+              <span className="text-[10px] text-slate-600">
+                <strong>{new Intl.NumberFormat("da-DK").format(lead.page_likes)}</strong> følgere
+              </span>
+            )}
+          </div>
+
+          {/* Platform breakdown */}
+          {lead.platforms.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {lead.platforms.map(p => <PlatformBadge key={p} platform={p} />)}
+            </div>
+          )}
+
+          {/* Page category */}
+          {lead.page_category && (
+            <div className="text-[10px] text-slate-600">
+              <span className="font-semibold">Kategori:</span> {lead.page_category}
+            </div>
+          )}
+
+          {/* Signal interpretation */}
+          <div className="text-[10px] text-blue-700 bg-blue-50 rounded-lg px-2 py-1.5 border border-blue-100">
+            {lead.ad_count > 10
+              ? "Aktivt annoncebudget — klar kandidat til OOH-supplement"
+              : lead.ad_count > 3
+              ? "Moderat annonceaktivitet — potentiale for OOH som reach-forstærker"
+              : "Lav digital aktivitet — OOH kan være primær kanal"}
+          </div>
+        </div>
+      ) : (
+        <div className="text-[10px] text-slate-500 italic">
+          Fundet via CVR-søgning — ingen annoncedata endnu. Kvalificér for at berige med kontaktinfo.
         </div>
       )}
     </div>

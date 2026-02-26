@@ -5,6 +5,7 @@
 
 import { scrapeWebsite, searchGoogle } from "@/lib/research/web-scraper";
 import { findEmailForPerson } from "@/lib/research/email-finder";
+import { scrapeProffLeadership } from "@/lib/lead-sourcing/proff";
 import { logger } from "@/lib/logger";
 
 export interface EnrichmentContact {
@@ -57,6 +58,7 @@ export async function enrichLeadContact(
   leadName: string,
   domain: string | null | undefined,
   website: string | null | undefined,
+  cvr?: string | null,
 ): Promise<EnrichmentResult> {
   const result: EnrichmentResult = {
     contact_email: null,
@@ -78,6 +80,22 @@ export async function enrichLeadContact(
   };
 
   try {
+    // Step 0: Proff.dk leadership scraping (fastest structured source)
+    if (cvr) {
+      try {
+        const proffPeople = await scrapeProffLeadership(cvr);
+        for (const p of proffPeople) {
+          addContact(p.name, p.title, null, null, "Proff.dk");
+        }
+        if (proffPeople.length > 0) {
+          sources.push("proff");
+          logger.info(`[lead-enrichment] Proff: ${proffPeople.length} ledelsespersoner fundet for CVR ${cvr}`, { service: "lead-sourcing" });
+        }
+      } catch (e) {
+        logger.warn(`[lead-enrichment] Proff scrape failed for CVR ${cvr}: ${e instanceof Error ? e.message : String(e)}`, { service: "lead-sourcing" });
+      }
+    }
+
     const targetDomain = domain || (website ? new URL(website.startsWith("http") ? website : `https://${website}`).hostname.replace(/^www\./, "") : null);
 
     if (targetDomain) {

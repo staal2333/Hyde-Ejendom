@@ -1,5 +1,5 @@
-// ============================================================
-// LLM Client – SPLIT prompts for precision research
+﻿// ============================================================
+// LLM Client â€“ SPLIT prompts for precision research
 //
 // Prompt 1 (summarizeOwnerAndQuality): Assess owner + CVR + data quality
 //   from structured OIS/CVR/BBR data ONLY. No web data, no email guessing.
@@ -30,7 +30,7 @@ function getClient(): OpenAI {
   return _client;
 }
 
-// ─── Prompt 1: Owner + Quality Assessment ────────────────
+// â”€â”€â”€ Prompt 1: Owner + Quality Assessment â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * LLM Prompt 1: Analyze structured data (OIS, CVR, BBR) to determine:
@@ -63,14 +63,14 @@ async function assessOwnerAndQuality(
 
   if (research.oisData) {
     const ois = research.oisData;
-    sections.push(`## OIS.dk – OFFICIELLE EJEROPLYSNINGER
-- EJER: ${ois.owners.map(o => `${o.name}${o.isPrimary ? " (primær)" : ""}`).join(", ") || "Ingen"}
-- ADMINISTRATOR: ${ois.administrators.map(a => `${a.name}${a.isPrimary ? " (primær)" : ""}`).join(", ") || "Ingen"}
+    sections.push(`## OIS.dk â€“ OFFICIELLE EJEROPLYSNINGER
+- EJER: ${ois.owners.map(o => `${o.name}${o.isPrimary ? " (primÃ¦r)" : ""}`).join(", ") || "Ingen"}
+- ADMINISTRATOR: ${ois.administrators.map(a => `${a.name}${a.isPrimary ? " (primÃ¦r)" : ""}`).join(", ") || "Ingen"}
 - BFE: ${ois.bfe}
 - Ejerforhold: ${ois.ejerforholdstekst || "Ukendt"}
 - Kommune: ${ois.kommune || "Ukendt"}`);
   } else {
-    sections.push(`## OIS.dk – Ingen data tilgængelig`);
+    sections.push(`## OIS.dk â€“ Ingen data tilgÃ¦ngelig`);
   }
 
   if (research.cvrData) {
@@ -83,13 +83,13 @@ async function assessOwnerAndQuality(
 - Branche: ${research.cvrData.industry || "Ukendt"}
 - Ejere: ${research.cvrData.owners?.join(", ") || "Ukendt"}`);
   } else {
-    sections.push(`## CVR-data – Ingen fundet`);
+    sections.push(`## CVR-data â€“ Ingen fundet`);
   }
 
   if (research.bbrData) {
     sections.push(`## BBR-data
-- Byggeår: ${research.bbrData.buildingYear || "Ukendt"}
-- Areal: ${research.bbrData.area ? `${research.bbrData.area} m²` : "Ukendt"}
+- ByggeÃ¥r: ${research.bbrData.buildingYear || "Ukendt"}
+- Areal: ${research.bbrData.area ? `${research.bbrData.area} mÂ²` : "Ukendt"}
 - Anvendelse: ${research.bbrData.usage || "Ukendt"}
 - Etager: ${research.bbrData.floors || "Ukendt"}
 - Boliger: ${research.bbrData.units || "Ukendt"}`);
@@ -98,41 +98,41 @@ async function assessOwnerAndQuality(
   const prompt = sections.join("\n\n") + `
 
 ## Instruktion
-Baseret KUN på OIS, CVR og BBR data ovenfor:
-1. Hvem ejer denne ejendom? Brug OIS som primær kilde.
-2. Vurder data_quality baseret på hvad vi HAR (ikke hvad vi mangler).
-3. Giv en outdoor_potential_score 1-10 baseret på bygningsdata.
-4. Lav en detaljeret KILDEKÆDE der forklarer PRÆCIS hvordan du nåede frem til ejeren, trin for trin.
+Baseret KUN pÃ¥ OIS, CVR og BBR data ovenfor:
+1. Hvem ejer denne ejendom? Brug OIS som primÃ¦r kilde.
+2. Vurder data_quality baseret pÃ¥ hvad vi HAR (ikke hvad vi mangler).
+3. Giv en outdoor_potential_score 1-10 baseret pÃ¥ bygningsdata.
+4. Lav en detaljeret KILDEKÃ†DE der forklarer PRÃ†CIS hvordan du nÃ¥ede frem til ejeren, trin for trin.
 
 Svar i JSON:
 {
   "owner_company_name": "Ejerens navn fra OIS/CVR, eller 'Ukendt'",
   "owner_company_cvr": "CVR-nummer eller null",
   "outdoor_potential_score": 1-10,
-  "key_insights": "3-5 sætninger om ejendommen – inkl. hvad vi ved om bygningen, området og potentialet.",
-  "evidence_chain": "Struktureret forklaring i punktform:\\n• KILDE: OIS.dk → [hvad vi fandt]\\n• KILDE: CVR → [hvad vi fandt]\\n• KONKLUSION: [hvorfor vi mener X er ejer/bygherre]\\n• USIKKERHEDER: [hvad vi ikke kunne bekræfte]",
+  "key_insights": "3-5 sÃ¦tninger om ejendommen â€“ inkl. hvad vi ved om bygningen, omrÃ¥det og potentialet.",
+  "evidence_chain": "Struktureret forklaring i punktform:\\nâ€¢ KILDE: OIS.dk â†’ [hvad vi fandt]\\nâ€¢ KILDE: CVR â†’ [hvad vi fandt]\\nâ€¢ KONKLUSION: [hvorfor vi mener X er ejer/bygherre]\\nâ€¢ USIKKERHEDER: [hvad vi ikke kunne bekrÃ¦fte]",
   "data_quality": "high | medium | low",
-  "data_quality_reason": "Kort forklaring med reference til hvilke kilder der bekræfter/mangler"
+  "data_quality_reason": "Kort forklaring med reference til hvilke kilder der bekrÃ¦fter/mangler"
 }
 
 REGLER:
-- "high" KUN hvis OIS + CVR begge bekræfter ejerskab
+- "high" KUN hvis OIS + CVR begge bekrÃ¦fter ejerskab
 - "medium" hvis kun OIS eller kun CVR
-- "low" hvis ingen af delene har pålidelig data
-- evidence_chain SKAL forklare HVER kilde der blev brugt, hvad den sagde, og hvordan kilderne hænger sammen
-- Nævn specifikt om OIS-ejer matcher CVR-virksomhed, og om adressen stemmer overens
+- "low" hvis ingen af delene har pÃ¥lidelig data
+- evidence_chain SKAL forklare HVER kilde der blev brugt, hvad den sagde, og hvordan kilderne hÃ¦nger sammen
+- NÃ¦vn specifikt om OIS-ejer matcher CVR-virksomhed, og om adressen stemmer overens
 - Opfind ALDRIG navne eller CVR-numre
-- Hvis usikker: "Ukendt" er altid bedre end et gæt`;
+- Hvis usikker: "Ukendt" er altid bedre end et gÃ¦t`;
 
   const response = await client.chat.completions.create({
     model: config.openai.model,
     messages: [
       {
         role: "system",
-        content: `Du er en præcis data-analytiker for dansk ejendomsdata.
-DU MÅ ALDRIG OPFINDE DATA. Brug KUN informationen der er givet.
+        content: `Du er en prÃ¦cis data-analytiker for dansk ejendomsdata.
+DU MÃ… ALDRIG OPFINDE DATA. Brug KUN informationen der er givet.
 Hvis noget er uklart, skriv "Ukendt".
-Temperature: 0.1 – vær så deterministisk som muligt.`,
+Temperature: 0.1 â€“ vÃ¦r sÃ¥ deterministisk som muligt.`,
       },
       { role: "user", content: prompt },
     ],
@@ -156,7 +156,7 @@ Temperature: 0.1 – vær så deterministisk som muligt.`,
   };
 }
 
-// ─── Prompt 2: Contact Ranking ───────────────────────────
+// â”€â”€â”€ Prompt 2: Contact Ranking â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 interface RawContact {
   index: number;
@@ -208,32 +208,32 @@ async function rankContacts(
 - Administratorer: ${research.oisData?.administrators.map(a => a.name).join(", ") || "Ingen"}
 ${cvrRolesSection}${proffSection}${websitePeopleSection}
 
-## Kendte kontakter (DU MÅ KUN VÆLGE FRA DENNE LISTE)
+## Kendte kontakter (DU MÃ… KUN VÃ†LGE FRA DENNE LISTE)
 ${contactList}
 
 ## Instruktion
-Rangér kontakterne efter relevans for DENNE ejendom og OOH-salg. For HVER kontakt du vælger:
+RangÃ©r kontakterne efter relevans for DENNE ejendom og OOH-salg. For HVER kontakt du vÃ¦lger:
 1. Referer til kontaktens INDEX-nummer [0], [1], etc.
 2. Angiv confidence 0.0-1.0, relevance "direct"/"indirect", og decision_power 1-5
 3. Forklar DETALJERET i relevance_reason:
-   - HVILKEN KILDE bekræfter denne person (OIS, CVR, Proff.dk, website, søgeresultat)?
+   - HVILKEN KILDE bekrÃ¦fter denne person (OIS, CVR, Proff.dk, website, sÃ¸geresultat)?
    - HVORFOR er personen relevant for denne specifikke ejendom?
-   - Er der en DIREKTE forbindelse (f.eks. "nævnt som ejer i OIS") eller INDIREKTE (f.eks. "direktør i firmaet der ejer bygningen ifølge CVR")?
+   - Er der en DIREKTE forbindelse (f.eks. "nÃ¦vnt som ejer i OIS") eller INDIREKTE (f.eks. "direktÃ¸r i firmaet der ejer bygningen ifÃ¸lge CVR")?
    - Har personen beslutningskraft ift. outdoor-reklame (decision_power)?
 
 PRIORITERING for OOH-salg:
-- Direktør/CEO/Adm. direktør → decision_power 5
-- Bestyrelsesformand → decision_power 5
-- Marketing-ansvarlig/CMO → decision_power 4
-- Salgsdirektør/-chef → decision_power 3
-- Driftschef/Forretningsfører → decision_power 3
-- Ejer (person) → decision_power 4
-- Generisk kontakt (info@) → decision_power 1
+- DirektÃ¸r/CEO/Adm. direktÃ¸r â†’ decision_power 5
+- Bestyrelsesformand â†’ decision_power 5
+- Marketing-ansvarlig/CMO â†’ decision_power 4
+- SalgsdirektÃ¸r/-chef â†’ decision_power 3
+- Driftschef/ForretningsfÃ¸rer â†’ decision_power 3
+- Ejer (person) â†’ decision_power 4
+- Generisk kontakt (info@) â†’ decision_power 1
 
-DU MÅ IKKE:
+DU MÃ… IKKE:
 - Opfinde nye kontakter
-- Tilføje emails der ikke allerede står i listen
-- Ændre navne eller emails
+- TilfÃ¸je emails der ikke allerede stÃ¥r i listen
+- Ã†ndre navne eller emails
 
 Svar i JSON:
 {
@@ -244,7 +244,7 @@ Svar i JSON:
       "relevance": "direct | indirect",
       "decision_power": 1-5,
       "relevance_reason": "Detaljeret forklaring med kildehenvisning.",
-      "role": "ejer | administrator | bestyrelses_formand | driftschef | direktør | marketing | salg | anden"
+      "role": "ejer | administrator | bestyrelses_formand | driftschef | direktÃ¸r | marketing | salg | anden"
     }
   ]
 }
@@ -255,8 +255,8 @@ REGLER:
 - confidence <= 0.3 for generiske emails (info@, kontakt@)
 - Udelad kontakter der er irrelevante
 - Bedre med 0 kontakter end forkerte
-- relevance_reason SKAL altid nævne den specifikke kilde (OIS, CVR, Proff.dk, website URL, osv.)
-- Inkluder op til 5 kontakter – prioriter dem med højest decision_power`;
+- relevance_reason SKAL altid nÃ¦vne den specifikke kilde (OIS, CVR, Proff.dk, website URL, osv.)
+- Inkluder op til 5 kontakter â€“ prioriter dem med hÃ¸jest decision_power`;
 
   const response = await client.chat.completions.create({
     model: config.openai.model,
@@ -264,10 +264,10 @@ REGLER:
       {
         role: "system",
         content: `Du er en streng kontakt-vurderingsassistent.
-DU MÅ IKKE OPFINDE NYE EMAILS ELLER NAVNE.
-DU MÅ KUN VÆLGE FRA DEN GIVNE LISTE VED INDEX-NUMMER.
+DU MÃ… IKKE OPFINDE NYE EMAILS ELLER NAVNE.
+DU MÃ… KUN VÃ†LGE FRA DEN GIVNE LISTE VED INDEX-NUMMER.
 Hvis ingen kontakt er god nok, returner en tom liste.
-Temperature: 0.1 – vær konservativ.`,
+Temperature: 0.1 â€“ vÃ¦r konservativ.`,
       },
       { role: "user", content: prompt },
     ],
@@ -286,7 +286,7 @@ Temperature: 0.1 – vær konservativ.`,
     const idx = item.index;
     if (typeof idx !== "number" || idx < 0 || idx >= rawContacts.length) {
       logger.warn(`LLM referenced invalid contact index ${idx}`, { service: "llm" });
-      continue; // Invalid index – skip (LLM hallucination protection)
+      continue; // Invalid index â€“ skip (LLM hallucination protection)
     }
 
     const raw = rawContacts[idx];
@@ -306,7 +306,7 @@ Temperature: 0.1 – vær konservativ.`,
   return ranked;
 }
 
-// ─── Public: Combined Research Summarization ─────────────
+// â”€â”€â”€ Public: Combined Research Summarization â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Two-phase LLM analysis:
@@ -317,12 +317,12 @@ export async function summarizeResearch(
   property: Property,
   research: ResearchData
 ): Promise<ResearchAnalysis> {
-  // ── Phase 1: Owner assessment ──
+  // â”€â”€ Phase 1: Owner assessment â”€â”€
   logger.info("LLM Phase 1: Owner + quality assessment", { service: "llm", propertyAddress: property.address });
 
   const ownerAssessment = await assessOwnerAndQuality(property, research);
 
-  // ── Collect all raw contacts from data sources ──
+  // â”€â”€ Collect all raw contacts from data sources â”€â”€
   const rawContacts: RawContact[] = [];
   let idx = 0;
 
@@ -376,7 +376,7 @@ export async function summarizeResearch(
         });
       }
     }
-    // CVR roles (Direktør, Bestyrelsesformand, etc.)
+    // CVR roles (DirektÃ¸r, Bestyrelsesformand, etc.)
     for (const role of (research.cvrData.roles || [])) {
       if (!rawContacts.some(c => c.name?.toLowerCase() === role.name.toLowerCase())) {
         rawContacts.push({
@@ -451,14 +451,14 @@ export async function summarizeResearch(
           name: null,
           email: email,
           phone: null,
-          source: `Websøgning: ${result.url}`,
+          source: `WebsÃ¸gning: ${result.url}`,
           role_hint: "anden",
         });
       }
     }
   }
 
-  // ── Phase 2: Contact ranking ──
+  // â”€â”€ Phase 2: Contact ranking â”€â”€
   logger.info(`LLM Phase 2: Ranking ${rawContacts.length} contacts`, { service: "llm", propertyAddress: property.address });
 
   const rankedContacts = rawContacts.length > 0
@@ -490,7 +490,7 @@ export async function summarizeResearch(
   };
 }
 
-// ─── Email Draft Generation ─────────────────────────────────
+// â”€â”€â”€ Email Draft Generation â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 /**
  * Generate an outreach email draft.
@@ -514,14 +514,14 @@ export async function generateEmailDraft(
 TONE OF VOICE:
 ${config.toneOfVoice}
 
-EKSEMPLER PÅ GODE MAILS:
+EKSEMPLER PÃ… GODE MAILS:
 ${config.exampleEmails}
 
 REGLER:
-- Max 150 ord i brødteksten
-- Start ALDRIG med "Jeg håber denne mail finder dig vel" eller lignende
+- Max 150 ord i brÃ¸dteksten
+- Start ALDRIG med "Jeg hÃ¥ber denne mail finder dig vel" eller lignende
 - Start med noget SPECIFIKT om ejendommen der viser vi har gjort research
-- Nævn konkrete fordele (trafiktal, facade-størrelse, beliggenhed)
+- NÃ¦vn konkrete fordele (trafiktal, facade-stÃ¸rrelse, beliggenhed)
 - Afslut med et klart, lavt-forpligtende call-to-action
 - Brug modtagerens navn og rolle naturligt
 - Skriv som et menneske, ikke en robot
@@ -546,14 +546,14 @@ Du svarer ALTID i valid JSON med felterne: subject, body_text, short_internal_no
   const parsed = JSON.parse(content);
 
   return {
-    subject: parsed.subject || "Udendørsarealer – et uudnyttet potentiale?",
+    subject: parsed.subject || "UdendÃ¸rsarealer â€“ et uudnyttet potentiale?",
     bodyText: parsed.body_text || parsed.bodyText || "",
     shortInternalNote:
       parsed.short_internal_note || parsed.shortInternalNote || "",
   };
 }
 
-// ─── Email Prompt Builder ────────────────────────────────────
+// â”€â”€â”€ Email Prompt Builder â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 
 function buildEmailPrompt(
   property: Property,
@@ -561,12 +561,12 @@ function buildEmailPrompt(
   analysis: ResearchAnalysis
 ): string {
   return `## Kontekst
-Vi vil gerne kontakte en person angående outdoor reklame-muligheder på en ejendom.
+Vi vil gerne kontakte en person angÃ¥ende outdoor reklame-muligheder pÃ¥ en ejendom.
 
 ## Ejendom
 - Adresse: ${property.address}, ${property.postalCode} ${property.city}
 - Outdoor score: ${analysis.outdoorPotentialScore}/10
-- Nøgleindsigter: ${analysis.keyInsights}
+- NÃ¸gleindsigter: ${analysis.keyInsights}
 
 ## Kontaktperson
 - Navn: ${contact.fullName || "Ukendt"}
@@ -580,8 +580,75 @@ Referer til noget SPECIFIKT om ejendommen.
 
 Svar i JSON:
 {
-  "subject": "Konkret, nysgerrighedsvækkende emnelinje",
-  "body_text": "Brødtekst med \\n for linjeskift. Max 150 ord.",
+  "subject": "Konkret, nysgerrighedsvÃ¦kkende emnelinje",
+  "body_text": "BrÃ¸dtekst med \\n for linjeskift. Max 150 ord.",
   "short_internal_note": "Kort intern note"
 }`;
+}
+
+
+// ─── OOH Pitch Generator for Leads ──────────────────────────
+
+export interface LeadPitchInput {
+  name: string;
+  industry: string | null;
+  address: string | null;
+  platforms: string[];
+  adCount: number;
+  oohReason: string | null;
+  egenkapital: number | null;
+  omsaetning: number | null;
+  pageCategory: string | null;
+}
+
+/**
+ * Generate a personalized OOH sales pitch for a lead.
+ * 2-3 sentences that a salesperson can copy-paste as an opening.
+ */
+export async function generateOohPitch(lead: LeadPitchInput): Promise<string> {
+  const client = getClient();
+
+  const budgetTier =
+    lead.omsaetning && lead.omsaetning > 50_000_000 ? "stor virksomhed (50M+ omsaetning)" :
+    lead.omsaetning && lead.omsaetning > 10_000_000 ? "mellemstor virksomhed (10-50M omsaetning)" :
+    lead.omsaetning && lead.omsaetning > 2_000_000 ? "SMV (2-10M omsaetning)" :
+    "lille virksomhed";
+
+  const platformText = lead.platforms.length > 0
+    ? `Annoncerer paa: ${lead.platforms.join(", ")} (${lead.adCount} annoncer)`
+    : "Ingen kendte annoncer";
+
+  const prompt = `Du er en erfaren dansk OOH (Out-of-Home) saelger. Skriv en kort, specifik salgs-aabner paa 2-3 saetninger paa dansk til denne virksomhed.
+
+Virksomhed: ${lead.name}
+Branche: ${lead.industry || "Ukendt"}
+Placering: ${lead.address || "Danmark"}
+Digital annoncering: ${platformText}
+Virksomhedsstrrelse: ${budgetTier}
+Kategori: ${lead.pageCategory || "Ukendt"}
+OOH potentiale: ${lead.oohReason || "Generelt god kandidat"}
+
+Regler:
+- 2-3 saetninger MAX
+- Reference til specifik industri eller annonceaktivitet
+- Konkret OOH-vinkel (fx "Jer som allerede annoncerer digitalt, kan OOH forstaerke...")
+- Direkte og handlingsorienteret - ikke smigrende
+- Skriv som du taler - naturlig dansk
+
+Svar KUN med den raa pitch-tekst, ingen JSON, ingen ekstra forklaring.`;
+
+  try {
+    const response = await client.chat.completions.create({
+      model: config.openai.model,
+      messages: [{ role: "user", content: prompt }],
+      temperature: 0.6,
+      max_tokens: 200,
+    });
+
+    const text = response.choices[0]?.message?.content?.trim() || "";
+    return text;
+  } catch (e) {
+    logger.warn(`[generateOohPitch] Failed for "${lead.name}": ${e instanceof Error ? e.message : String(e)}`, { service: "llm" });
+    return "";
+  }
 }

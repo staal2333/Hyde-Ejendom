@@ -20,7 +20,7 @@ export async function POST(
     if (!lead.contact_email || (lead.contacts || []).length === 0) {
       try {
         const { enrichLeadContact } = await import("@/lib/lead-sourcing/lead-enrichment");
-        enrichment = await enrichLeadContact(lead.name, lead.domain, lead.website);
+        enrichment = await enrichLeadContact(lead.name, lead.domain, lead.website, lead.cvr);
 
         const enrichFields: Record<string, unknown> = {};
         if (enrichment.contact_email) enrichFields.contact_email = enrichment.contact_email;
@@ -38,6 +38,30 @@ export async function POST(
     }
 
     const updated = await updateLeadStatus(id, "qualified");
+
+    // Generate OOH pitch if not already present
+    if (!lead.ooh_pitch) {
+      try {
+        const { generateOohPitch } = await import("@/lib/llm");
+        const pitch = await generateOohPitch({
+          name: lead.name,
+          industry: lead.industry,
+          address: lead.address,
+          platforms: lead.platforms || [],
+          adCount: lead.ad_count || 0,
+          oohReason: lead.ooh_reason,
+          egenkapital: lead.egenkapital,
+          omsaetning: lead.omsaetning,
+          pageCategory: lead.page_category,
+        });
+        if (pitch) {
+          await updateLead(id, { ooh_pitch: pitch });
+          logger.info(`[qualify] Generated OOH pitch for "${lead.name}"`, { service: "lead-sourcing" });
+        }
+      } catch (e) {
+        logger.warn(`[qualify] OOH pitch generation failed for "${lead.name}": ${e instanceof Error ? e.message : String(e)}`, { service: "lead-sourcing" });
+      }
+    }
 
     let hubspotId: string | null = null;
     try {
