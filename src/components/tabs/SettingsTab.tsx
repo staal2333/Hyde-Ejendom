@@ -50,10 +50,87 @@ function loadRules(): Record<RuleId, boolean> {
   }
 }
 
+interface InspectorContact {
+  name: string;
+  role?: string;
+  title?: string;
+  email?: string;
+  phone?: string;
+  source?: string;
+}
+
+interface InspectorResult {
+  cvr?: {
+    cvr?: string;
+    companyName?: string;
+    address?: string;
+    status?: string;
+    type?: string;
+    industry?: string;
+    employees?: number;
+    email?: string;
+    phone?: string;
+    website?: string;
+    owners?: string[];
+    roles?: InspectorContact[];
+  } | null;
+  proffLeadership?: InspectorContact[];
+  website?: {
+    url?: string;
+    emails?: string[];
+    phones?: string[];
+    people?: InspectorContact[];
+    snippetCount?: number;
+    error?: string;
+  };
+  summary?: {
+    totalPeople: number;
+    cvrRoles: number;
+    proffPeople: number;
+    websitePeople: number;
+    emailsFound: number;
+  };
+}
+
 export function SettingsTab() {
   const { systemHealth, addToast } = useDashboard();
   const [autonomyLevel, setAutonomyLevel] = useState(0);
   const [rules, setRules] = useState<Record<RuleId, boolean>>(loadRules);
+
+  // Research inspector state
+  const [inspectorCvr, setInspectorCvr] = useState("");
+  const [inspectorCompany, setInspectorCompany] = useState("");
+  const [inspectorWebsite, setInspectorWebsite] = useState("");
+  const [inspectorLoading, setInspectorLoading] = useState(false);
+  const [inspectorResult, setInspectorResult] = useState<InspectorResult | null>(null);
+  const [inspectorTimings, setInspectorTimings] = useState<Record<string, number>>({});
+  const [inspectorError, setInspectorError] = useState<string | null>(null);
+
+  const runInspector = useCallback(async () => {
+    if (!inspectorCvr && !inspectorCompany) return;
+    setInspectorLoading(true);
+    setInspectorResult(null);
+    setInspectorError(null);
+    try {
+      const res = await fetch("/api/research-test", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          cvr: inspectorCvr || undefined,
+          companyName: inspectorCompany || undefined,
+          website: inspectorWebsite || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Fejl");
+      setInspectorResult(data.results);
+      setInspectorTimings(data.timings || {});
+    } catch (e) {
+      setInspectorError(e instanceof Error ? e.message : "Ukendt fejl");
+    } finally {
+      setInspectorLoading(false);
+    }
+  }, [inspectorCvr, inspectorCompany, inspectorWebsite]);
 
   const [discoveryConfigs, setDiscoveryConfigs] = useState<DiscoveryConfig[]>([]);
   const [discoveryLoading, setDiscoveryLoading] = useState(true);
@@ -607,6 +684,211 @@ export function SettingsTab() {
         <p className="text-[10px] text-slate-400 mt-3">
           Hvert status-skifte valideres af state-machine modulet. Automatiske handlinger (start research, generer email) styres af autonomi-niveauet.
         </p>
+      </div>
+
+      {/* Research Quality Inspector */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-6">
+        <div className="flex items-center gap-2 mb-1">
+          <div className="w-7 h-7 rounded-lg bg-violet-50 flex items-center justify-center">
+            <svg className="w-4 h-4 text-violet-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1 1 .03 2.694-1.312 2.371l-13.378-3.344c-1.34-.323-1.34-2.243 0-2.566l2.145-.536M5 14.5l-1.402 1.402" />
+            </svg>
+          </div>
+          <div>
+            <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Research Kvalitets-Inspektor</h3>
+            <p className="text-[10px] text-slate-400">Test hvad AI-research finder på et firma – uden at køre fuld research</p>
+          </div>
+        </div>
+
+        <div className="mt-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">CVR-nummer</label>
+            <input
+              type="text"
+              value={inspectorCvr}
+              onChange={e => setInspectorCvr(e.target.value.replace(/\D/g, ""))}
+              placeholder="f.eks. 12345678"
+              maxLength={8}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-300 font-mono"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Firmanavn (alternativ)</label>
+            <input
+              type="text"
+              value={inspectorCompany}
+              onChange={e => setInspectorCompany(e.target.value)}
+              placeholder="f.eks. Carlsberg A/S"
+              disabled={!!inspectorCvr}
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-300 disabled:opacity-40"
+            />
+          </div>
+          <div>
+            <label className="block text-[10px] font-semibold text-slate-500 uppercase tracking-wide mb-1">Website (valgfri)</label>
+            <input
+              type="text"
+              value={inspectorWebsite}
+              onChange={e => setInspectorWebsite(e.target.value)}
+              placeholder="f.eks. carlsberg.com"
+              className="w-full px-3 py-2 text-sm border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-violet-300"
+            />
+          </div>
+        </div>
+
+        <button
+          onClick={runInspector}
+          disabled={inspectorLoading || (!inspectorCvr && !inspectorCompany)}
+          className="mt-3 px-5 py-2 bg-violet-600 text-white text-sm font-semibold rounded-xl hover:bg-violet-700 disabled:opacity-40 flex items-center gap-2"
+        >
+          {inspectorLoading ? (
+            <>
+              <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              Analyserer...
+            </>
+          ) : (
+            <>
+              <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" />
+              </svg>
+              Kør inspektion
+            </>
+          )}
+        </button>
+
+        {inspectorError && (
+          <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700">{inspectorError}</div>
+        )}
+
+        {inspectorResult && (
+          <div className="mt-5 space-y-4">
+            {/* Summary bar */}
+            {inspectorResult.summary && (
+              <div className="grid grid-cols-5 gap-2">
+                {[
+                  { label: "CVR roller", val: inspectorResult.summary.cvrRoles, color: "bg-blue-50 text-blue-700 border-blue-200" },
+                  { label: "Proff.dk", val: inspectorResult.summary.proffPeople, color: "bg-orange-50 text-orange-700 border-orange-200" },
+                  { label: "Website folk", val: inspectorResult.summary.websitePeople, color: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+                  { label: "Total kontakter", val: inspectorResult.summary.totalPeople, color: "bg-violet-50 text-violet-700 border-violet-200" },
+                  { label: "Emails fundet", val: inspectorResult.summary.emailsFound, color: "bg-amber-50 text-amber-700 border-amber-200" },
+                ].map(item => (
+                  <div key={item.label} className={`p-2.5 rounded-xl border text-center ${item.color}`}>
+                    <div className="text-lg font-bold">{item.val}</div>
+                    <div className="text-[9px] font-semibold mt-0.5 uppercase tracking-wide">{item.label}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Company info */}
+            {inspectorResult.cvr && (
+              <div className="p-4 bg-slate-50 rounded-xl border border-slate-200">
+                <div className="flex items-center justify-between mb-2">
+                  <h4 className="text-xs font-bold text-slate-700">CVR-data {inspectorTimings.cvr != null && <span className="text-slate-400 font-normal ml-1">({inspectorTimings.cvr}ms)</span>}</h4>
+                  <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${inspectorResult.cvr.status === "NORMAL" ? "bg-emerald-100 text-emerald-700" : "bg-amber-100 text-amber-700"}`}>
+                    {inspectorResult.cvr.status || "?"}
+                  </span>
+                </div>
+                <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs">
+                  <div><span className="text-slate-400">Navn:</span> <span className="font-medium">{inspectorResult.cvr.companyName || "–"}</span></div>
+                  <div><span className="text-slate-400">CVR:</span> <span className="font-mono">{inspectorResult.cvr.cvr || "–"}</span></div>
+                  <div><span className="text-slate-400">Adresse:</span> <span className="font-medium">{inspectorResult.cvr.address || "–"}</span></div>
+                  <div><span className="text-slate-400">Type:</span> <span>{inspectorResult.cvr.type || "–"}</span></div>
+                  <div><span className="text-slate-400">Branche:</span> <span>{inspectorResult.cvr.industry || "–"}</span></div>
+                  <div><span className="text-slate-400">Ansatte:</span> <span>{inspectorResult.cvr.employees ?? "–"}</span></div>
+                  <div><span className="text-slate-400">Email:</span> <span className="text-blue-600">{inspectorResult.cvr.email || "–"}</span></div>
+                  <div><span className="text-slate-400">Tlf:</span> <span>{inspectorResult.cvr.phone || "–"}</span></div>
+                  {inspectorResult.cvr.website && (
+                    <div className="col-span-2"><span className="text-slate-400">Website:</span> <a href={inspectorResult.cvr.website.startsWith("http") ? inspectorResult.cvr.website : `https://${inspectorResult.cvr.website}`} target="_blank" rel="noreferrer" className="text-blue-600 underline text-xs">{inspectorResult.cvr.website}</a></div>
+                  )}
+                </div>
+
+                {/* CVR Roles */}
+                {inspectorResult.cvr.roles && inspectorResult.cvr.roles.length > 0 && (
+                  <div className="mt-3">
+                    <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">CVR Roller ({inspectorResult.cvr.roles.length})</h5>
+                    <div className="space-y-1.5">
+                      {inspectorResult.cvr.roles.map((r, i) => (
+                        <div key={i} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-slate-100">
+                          <div className="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center text-[9px] font-bold text-blue-700">{i + 1}</div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs font-semibold text-slate-800">{r.name}</span>
+                            {r.role && <span className="ml-2 text-[10px] text-slate-500">{r.role}</span>}
+                          </div>
+                          {r.email && <span className="text-[10px] text-blue-600">{r.email}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Proff leadership */}
+            {inspectorResult.proffLeadership && inspectorResult.proffLeadership.length > 0 && (
+              <div className="p-4 bg-orange-50/50 rounded-xl border border-orange-200">
+                <h4 className="text-xs font-bold text-orange-800 mb-2">Proff.dk Ledelse ({inspectorResult.proffLeadership.length}) {inspectorTimings.proff != null && <span className="text-orange-500 font-normal ml-1">({inspectorTimings.proff}ms)</span>}</h4>
+                <div className="space-y-1.5">
+                  {inspectorResult.proffLeadership.map((p, i) => (
+                    <div key={i} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-orange-100">
+                      <div className="w-6 h-6 rounded-full bg-orange-100 flex items-center justify-center text-[9px] font-bold text-orange-700">{i + 1}</div>
+                      <div className="flex-1 min-w-0">
+                        <span className="text-xs font-semibold text-slate-800">{p.name}</span>
+                        {(p.title || p.role) && <span className="ml-2 text-[10px] text-slate-500">{p.title || p.role}</span>}
+                      </div>
+                      {p.email && <span className="text-[10px] text-blue-600">{p.email}</span>}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Website people */}
+            {inspectorResult.website && !inspectorResult.website.error && (
+              <div className="p-4 bg-emerald-50/50 rounded-xl border border-emerald-200">
+                <h4 className="text-xs font-bold text-emerald-800 mb-1">Website-scraping {inspectorTimings.website != null && <span className="text-emerald-600 font-normal ml-1">({inspectorTimings.website}ms)</span>}</h4>
+                {inspectorResult.website.url && (
+                  <a href={inspectorResult.website.url} target="_blank" rel="noreferrer" className="text-[10px] text-blue-600 underline mb-2 block truncate">{inspectorResult.website.url}</a>
+                )}
+                {inspectorResult.website.emails && inspectorResult.website.emails.length > 0 && (
+                  <div className="mb-2">
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Emails: </span>
+                    <span className="text-xs">{inspectorResult.website.emails.join(", ")}</span>
+                  </div>
+                )}
+                {inspectorResult.website.phones && inspectorResult.website.phones.length > 0 && (
+                  <div className="mb-2">
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-wide">Telefoner: </span>
+                    <span className="text-xs">{inspectorResult.website.phones.join(", ")}</span>
+                  </div>
+                )}
+                {inspectorResult.website.people && inspectorResult.website.people.length > 0 && (
+                  <div className="mt-2">
+                    <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-1.5">Fundet på website ({inspectorResult.website.people.length})</h5>
+                    <div className="space-y-1.5">
+                      {inspectorResult.website.people.map((p, i) => (
+                        <div key={i} className="flex items-center gap-2 p-2 bg-white rounded-lg border border-emerald-100">
+                          <div className="w-6 h-6 rounded-full bg-emerald-100 flex items-center justify-center text-[9px] font-bold text-emerald-700">{i + 1}</div>
+                          <div className="flex-1 min-w-0">
+                            <span className="text-xs font-semibold text-slate-800">{p.name}</span>
+                            {(p.role || p.title) && <span className="ml-2 text-[10px] text-slate-500">{p.role || p.title}</span>}
+                          </div>
+                          {p.email && <span className="text-[10px] text-blue-600">{p.email}</span>}
+                          {p.phone && <span className="text-[10px] text-slate-500">{p.phone}</span>}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {(!inspectorResult.website.people || inspectorResult.website.people.length === 0) && (
+                  <p className="text-xs text-slate-400 mt-1">Ingen navngivne personer fundet på website. Prøv at angiv en specifik URL med /om-os eller /team.</p>
+                )}
+              </div>
+            )}
+            {inspectorResult.website?.error && (
+              <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-600">Website-scraping fejlede: {inspectorResult.website.error}</div>
+            )}
+          </div>
+        )}
       </div>
     </div>
   );

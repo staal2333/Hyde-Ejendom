@@ -353,16 +353,19 @@ export async function upsertContact(
   }
 
   // Also update the ejendom's own contact fields with the best contact
-  try {
-    const ejendomUpdate: Record<string, string> = {};
-    if (contact.fullName) ejendomUpdate.kontaktperson = contact.fullName;
-    if (contact.email) ejendomUpdate.mailadresse = contact.email;
-    if (contact.phone) ejendomUpdate.telefonnummer = contact.phone;
-    if (Object.keys(ejendomUpdate).length > 0) {
-      await updateEjendom(ejendomId, ejendomUpdate);
+  // Pass "skip" as ejendomId to skip this update (for secondary contacts)
+  if (ejendomId && ejendomId !== "skip") {
+    try {
+      const ejendomUpdate: Record<string, string> = {};
+      if (contact.fullName) ejendomUpdate.kontaktperson = contact.fullName;
+      if (contact.email) ejendomUpdate.mailadresse = contact.email;
+      if (contact.phone) ejendomUpdate.telefonnummer = contact.phone;
+      if (Object.keys(ejendomUpdate).length > 0) {
+        await updateEjendom(ejendomId, ejendomUpdate);
+      }
+    } catch (e) {
+      logger.warn(`Could not update ejendom contact fields: ${e instanceof Error ? e.message : e}`);
     }
-  } catch (e) {
-    logger.warn(`Could not update ejendom contact fields: ${e instanceof Error ? e.message : e}`);
   }
 
   return contactId;
@@ -419,6 +422,130 @@ export async function createFollowUpTask(
   } catch (e) {
     logger.warn(`Task creation failed: ${e instanceof Error ? e.message : e}`);
     return "skipped";
+  }
+}
+
+// ─── Associate contact to ejendom ───────────────────────────
+
+/**
+ * Associate a contact with an Ejendom (custom object) via HubSpot Associations API.
+ */
+export async function associateContactToEjendom(
+  contactId: string,
+  ejendomId: string
+): Promise<void> {
+  try {
+    await hubspotPost(
+      `/crm/v3/associations/contacts/${EJENDOMME_OBJECT_TYPE}/batch/create`,
+      {
+        inputs: [
+          {
+            from: { id: contactId },
+            to: { id: ejendomId },
+            type: "contact_to_ejendomme",
+          },
+        ],
+      }
+    );
+  } catch {
+    // Try the generic association type if custom type fails
+    try {
+      await hubspotPost("/crm/v4/associations/contacts/0-420/batch/create", {
+        inputs: [
+          {
+            from: { id: contactId },
+            to: { id: ejendomId },
+            types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 1 }],
+          },
+        ],
+      });
+    } catch (e2) {
+      logger.warn(`Contact-ejendom association failed: ${e2 instanceof Error ? e2.message : e2}`);
+    }
+  }
+}
+
+/**
+ * Upsert a Company by name/CVR. Returns the HubSpot company ID.
+ * Searches by name first to avoid duplicates.
+ */
+export async function upsertEjendomCompany(params: {
+  name: string;
+  cvr?: string | null;
+  domain?: string | null;
+  phone?: string | null;
+  email?: string | null;
+}): Promise<string | null> {
+  try {
+    // Search for existing company by CVR or name
+    const filterGroups: unknown[] = [];
+    if (params.name) {
+      filterGroups.push({
+        filters: [{ propertyName: "name", operator: "EQ", value: params.name }],
+      });
+    }
+
+    const searchResult = await hubspotPost("/crm/v3/objects/companies/search", {
+      filterGroups,
+      properties: ["name", "domain"],
+      limit: 1,
+    }) as { results?: { id: string }[] };
+
+    if (searchResult.results && searchResult.results.length > 0) {
+      return searchResult.results[0].id;
+    }
+
+    // Create new company
+    const props: Record<string, string> = { name: params.name };
+    if (params.domain) props.domain = params.domain;
+    if (params.phone) props.phone = params.phone;
+    if (params.cvr) props.cvr = params.cvr;
+
+    const created = await hubspotPost("/crm/v3/objects/companies", { properties: props }) as { id: string };
+    return created.id;
+  } catch (e) {
+    logger.warn(`Company upsert failed for "${params.name}": ${e instanceof Error ? e.message : e}`);
+    return null;
+  }
+}
+
+/**
+ * Associate a company with an Ejendom.
+ */
+export async function associateCompanyToEjendom(
+  companyId: string,
+  ejendomId: string
+): Promise<void> {
+  try {
+    await hubspotPost("/crm/v4/associations/companies/0-420/batch/create", {
+      inputs: [
+        {
+          from: { id: companyId },
+          to: { id: ejendomId },
+          types: [{ associationCategory: "HUBSPOT_DEFINED", associationTypeId: 1 }],
+        },
+      ],
+    });
+  } catch (e) {
+    logger.warn(`Company-ejendom association failed: ${e instanceof Error ? e.message : e}`);
+  }
+}
+
+/**
+ * Associate a contact with a company.
+ */
+export async function associateContactToCompany(
+  contactId: string,
+  companyId: string
+): Promise<void> {
+  try {
+    await hubspotPost("/crm/v3/associations/contacts/companies/batch/create", {
+      inputs: [
+        { from: { id: contactId }, to: { id: companyId }, type: "contact_to_company" },
+      ],
+    });
+  } catch (e) {
+    logger.warn(`Contact-company association failed: ${e instanceof Error ? e.message : e}`);
   }
 }
 

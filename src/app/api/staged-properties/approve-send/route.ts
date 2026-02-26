@@ -6,7 +6,16 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getStagedProperty, updateStagedProperty } from "@/lib/staging/store";
-import { createEjendom, upsertContact, saveEmailDraft, updateEjendomResearch, updateEjendom } from "@/lib/hubspot";
+import {
+  createEjendom,
+  upsertContact,
+  saveEmailDraft,
+  updateEjendomResearch,
+  updateEjendom,
+  upsertEjendomCompany,
+  associateCompanyToEjendom,
+  associateContactToCompany,
+} from "@/lib/hubspot";
 import { enqueueEmail } from "@/lib/email-queue";
 import type { Contact } from "@/types";
 import { logger } from "@/lib/logger";
@@ -56,25 +65,58 @@ export async function POST(req: NextRequest) {
             : "RESEARCH_DONE_CONTACT_PENDING",
         });
 
-        // 2. Create contact if available
-        if (staged.contactPerson || staged.contactEmail) {
+        // 2. Upsert the owner company and link to ejendom
+        let companyHsId: string | null = null;
+        if (staged.ownerCompany) {
           try {
-            const contact: Contact = {
-              fullName: staged.contactPerson || null,
-              email: staged.contactEmail || null,
-              phone: staged.contactPhone || null,
-              role: "ejer",
-              source: "staging",
-              relevance: "direct",
-              confidence: 0.8,
-            };
-            await upsertContact(contact, hubspotId);
+            companyHsId = await upsertEjendomCompany({
+              name: staged.ownerCompany,
+              cvr: staged.ownerCvr || null,
+            });
+            if (companyHsId) {
+              await associateCompanyToEjendom(companyHsId, hubspotId);
+            }
           } catch {
-            logger.warn(`Failed to create contact for ${staged.address}`, { service: "approve-send" });
+            logger.warn(`Failed to upsert company for ${staged.address}`, { service: "approve-send" });
           }
         }
 
-        // 3. Save email draft in HubSpot
+        // 3. Sync all enriched contacts (or fall back to primary fields)
+        const contactsToSync: Contact[] = staged.contacts && staged.contacts.length > 0
+          ? staged.contacts.slice(0, 5).map(c => ({
+              fullName: c.name,
+              email: c.email || null,
+              phone: c.phone || null,
+              role: c.role || "ejer",
+              source: c.source,
+              relevance: (c.relevance as Contact["relevance"]) || "direct",
+              confidence: c.confidence ?? 0.7,
+            }))
+          : (staged.contactPerson || staged.contactEmail)
+            ? [{
+                fullName: staged.contactPerson || null,
+                email: staged.contactEmail || null,
+                phone: staged.contactPhone || null,
+                role: "ejer",
+                source: "staging",
+                relevance: "direct" as const,
+                confidence: 0.8,
+              }]
+            : [];
+
+        for (let i = 0; i < contactsToSync.length; i++) {
+          const contact = contactsToSync[i];
+          try {
+            const contactId = await upsertContact(contact, i === 0 ? hubspotId : "skip");
+            if (companyHsId) {
+              await associateContactToCompany(contactId, companyHsId);
+            }
+          } catch {
+            logger.warn(`Failed to create contact ${i + 1} for ${staged.address}`, { service: "approve-send" });
+          }
+        }
+
+        // 4. Save email draft in HubSpot
         if (staged.emailDraftSubject && staged.emailDraftBody) {
           try {
             await saveEmailDraft(
@@ -88,7 +130,7 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // 4. Update research data in HubSpot
+        // 5. Update research data in HubSpot
         if (staged.ownerCompany || staged.researchSummary) {
           try {
             await updateEjendomResearch(hubspotId, {
@@ -106,13 +148,13 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // 5. Mark as pushed in staging
+        // 6. Mark as pushed in staging
         await updateStagedProperty(id, {
           stage: "pushed",
           hubspotId,
         });
 
-        // 6. Enqueue email if contact email and draft exist
+        // 7. Enqueue email if contact email and draft exist
         let emailQueued = false;
         if (staged.contactEmail && staged.emailDraftSubject && staged.emailDraftBody) {
           try {
