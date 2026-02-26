@@ -1,22 +1,25 @@
 // ============================================================
 // CVR AI Matcher – find the right CVR for an ad-library lead
 //
-// Problem: ad platforms use brand names ("Café Noir"), but
-// CVR has legal names ("Café Noir ApS" / "Black Coffee Catering v/Lars").
-// cvrapi.dk returns ONE result per search, so a brand-name mismatch
-// means the lead gets no CVR.
+// Core problem: ad platforms use brand names ("Café Noir") but
+// CVR has legal names ("Black Coffee Catering ApS").
+// cvrapi.dk only returns ONE result per search and only matches
+// on exact legal name – useless for brand names.
 //
-// Solution:
-//   1. Generate 4-6 name variations, search each in cvrapi.dk
-//   2. Also scrape Proff.dk which returns a ranked list of matches
-//   3. Pass all unique candidates (max 8) to the LLM
-//   4. LLM picks the best match (or says "none") based on
-//      brand name, industry context, domain, and city
+// Strategy:
+//   1. DuckDuckGo: search "<brand> site:proff.dk" + "<brand> CVR"
+//      → Proff.dk URLs contain 8-digit CVR in the path
+//      → CVR numbers appear in search snippets
+//   2. cvrapi.dk: search with brand name + 2 key variations
+//      (fewer parallel calls, more targeted)
+//   3. Deduplicate all candidates (max 8)
+//   4. LLM picks best match – or "ingen" if nothing fits
 // ============================================================
 
 import OpenAI from "openai";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
+import { searchGoogle } from "@/lib/research/web-scraper";
 
 let _openai: OpenAI | null = null;
 function getOpenAI(): OpenAI {
@@ -36,20 +39,14 @@ export interface CvrCandidate {
   status?: string;
 }
 
-// ── Step 1: Fetch a single CVR result from cvrapi.dk ──────────────────────
-async function fetchOneCvr(nameOrNumber: string): Promise<CvrCandidate | null> {
+// ── Lookup a single CVR number → full company data ────────────────────────
+async function fetchCvrByNumber(cvr: string): Promise<CvrCandidate | null> {
   try {
-    const isNum = /^\d{8}$/.test(nameOrNumber.trim());
-    const params = new URLSearchParams({
-      country: "dk",
-      ...(isNum ? { vat: nameOrNumber.trim() } : { name: nameOrNumber.trim() }),
-    });
-
+    const params = new URLSearchParams({ country: "dk", vat: cvr.trim() });
     const res = await fetch(`${config.cvr.apiUrl}?${params}`, {
       headers: { "User-Agent": config.cvr.userAgent },
-      signal: AbortSignal.timeout(10000),
+      signal: AbortSignal.timeout(8000),
     });
-
     if (!res.ok) return null;
     const d = await res.json();
     if (!d || d.error || !d.vat) return null;
@@ -70,131 +67,166 @@ async function fetchOneCvr(nameOrNumber: string): Promise<CvrCandidate | null> {
   }
 }
 
-// ── Step 2: Scrape Proff.dk search results ────────────────────────────────
-async function searchProffCandidates(name: string): Promise<CvrCandidate[]> {
+// ── Lookup CVR by name in cvrapi.dk (returns best single match) ──────────
+async function fetchCvrByName(name: string): Promise<CvrCandidate | null> {
   try {
-    const url = `https://www.proff.dk/s%C3%B8g?q=${encodeURIComponent(name)}`;
-    const res = await fetch(url, {
-      headers: {
-        "User-Agent": "Mozilla/5.0 (compatible; EjendomAI/1.0)",
-        Accept: "text/html",
-      },
-      signal: AbortSignal.timeout(12000),
+    const params = new URLSearchParams({ country: "dk", name: name.trim() });
+    const res = await fetch(`${config.cvr.apiUrl}?${params}`, {
+      headers: { "User-Agent": config.cvr.userAgent },
+      signal: AbortSignal.timeout(8000),
     });
-    if (!res.ok) return [];
-    const html = await res.text();
+    if (!res.ok) return null;
+    const d = await res.json();
+    if (!d || d.error || !d.vat) return null;
 
-    const candidates: CvrCandidate[] = [];
-    const seen = new Set<string>();
-
-    // Pattern: CVR number followed or preceded by company name on Proff.dk
-    // Proff uses patterns like: data-cvr="12345678" or CVR: 12345678
-    const cvrPatterns = [
-      /data-cvr="(\d{8})"/gi,
-      /cvr[:\s]+(\d{8})/gi,
-      /\/virksomhed\/[^"]*?-(\d{8})(?:"|\/)/gi,
-    ];
-
-    const cvrNumbers: string[] = [];
-    for (const pattern of cvrPatterns) {
-      pattern.lastIndex = 0;
-      for (const m of html.matchAll(pattern)) {
-        const num = m[1];
-        if (num && !cvrNumbers.includes(num)) cvrNumbers.push(num);
-      }
-    }
-
-    // Also look for company name + CVR in search result blocks
-    const blockPattern = /<(?:h\d|strong|b)[^>]*>([^<]{3,80})<\/(?:h\d|strong|b)>[^]*?(\d{8})/gi;
-    for (const m of html.matchAll(blockPattern)) {
-      const blockName = m[1].trim();
-      const cvr = m[2];
-      if (cvr && blockName && !seen.has(cvr)) {
-        seen.add(cvr);
-        candidates.push({ cvr, name: blockName, address: "" });
-      }
-    }
-
-    // Fetch full data for CVR numbers found on Proff
-    const limit = Math.min(cvrNumbers.filter(n => !seen.has(n)).length, 5);
-    const newNums = cvrNumbers.filter(n => !seen.has(n)).slice(0, limit);
-
-    const fetched = await Promise.all(newNums.map(fetchOneCvr));
-    for (const c of fetched) {
-      if (c && !seen.has(c.cvr)) {
-        seen.add(c.cvr);
-        candidates.push(c);
-      }
-    }
-
-    return candidates.slice(0, 6);
+    return {
+      cvr: String(d.vat),
+      name: String(d.name || ""),
+      address: [d.address, d.zipcode, d.city].filter(Boolean).join(", "),
+      industry: d.industrydesc || undefined,
+      type: d.companydesc || undefined,
+      website: d.companydomain || undefined,
+      phone: d.phone ? String(d.phone) : undefined,
+      email: d.email || undefined,
+      status: d.status || undefined,
+    };
   } catch {
-    return [];
+    return null;
   }
 }
 
-// ── Step 3: Generate name search variations ───────────────────────────────
+// ── Extract 8-digit CVR numbers from text/URLs ────────────────────────────
+function extractCvrNumbers(text: string): string[] {
+  const found: string[] = [];
+  const seen = new Set<string>();
+
+  // Match 8-digit numbers that look like CVR
+  // Proff.dk URLs: /virksomhed/cafe-noir-aps-12345678
+  // Proff.dk text: "CVR: 12345678" or "CVR-nr. 12345678"
+  const patterns = [
+    /(?:CVR|cvr)[:\s.-]*(\d{8})/gi,
+    /[-\/](\d{8})(?:[\/\s"'&?#]|$)/g,  // 8-digit at end of URL segment
+    /\b(1\d{7}|2\d{7}|3\d{7})\b/g,     // Danish CVR range: 10000000-39999999
+  ];
+
+  for (const re of patterns) {
+    re.lastIndex = 0;
+    for (const m of text.matchAll(re)) {
+      const num = m[1];
+      // Basic sanity: Danish CVRs are 10000000-99999999
+      if (num && !seen.has(num) && parseInt(num) >= 10000000 && parseInt(num) <= 99999999) {
+        seen.add(num);
+        found.push(num);
+      }
+    }
+  }
+  return found;
+}
+
+// ── Search DuckDuckGo for brand + Proff.dk / CVR ─────────────────────────
+async function searchForCvrCandidates(brandName: string): Promise<string[]> {
+  const cvrNumbers: string[] = [];
+  const seen = new Set<string>();
+
+  const addCvr = (num: string) => {
+    if (!seen.has(num)) { seen.add(num); cvrNumbers.push(num); }
+  };
+
+  try {
+    // Query 1: brand name on proff.dk – URLs contain CVR
+    const q1 = `"${brandName}" site:proff.dk`;
+    const results1 = await searchGoogle(q1, 6);
+    for (const r of results1) {
+      const nums = extractCvrNumbers(r.url + " " + r.snippet + " " + r.title);
+      nums.forEach(addCvr);
+    }
+
+    // Query 2: brand name + CVR keyword – finds CVR in snippets
+    if (cvrNumbers.length < 2) {
+      const q2 = `"${brandName}" CVR Danmark`;
+      const results2 = await searchGoogle(q2, 5);
+      for (const r of results2) {
+        const nums = extractCvrNumbers(r.url + " " + r.snippet);
+        nums.forEach(addCvr);
+      }
+    }
+  } catch (e) {
+    logger.warn(`[cvr-ai-match] Search failed: ${e instanceof Error ? e.message : String(e)}`, { service: "cvr" });
+  }
+
+  return cvrNumbers.slice(0, 6);
+}
+
+// ── Build name variations for cvrapi.dk direct lookup ────────────────────
 function nameVariations(brandName: string): string[] {
   const name = brandName.trim();
   const words = name.split(/\s+/).filter(Boolean);
-
   const variations = new Set<string>();
+
   variations.add(name);
 
-  // First two words (e.g. "Café Central" from "Café Central Copenhagen")
-  if (words.length >= 2) variations.add(words.slice(0, 2).join(" "));
+  // First 2 words
+  if (words.length >= 3) variations.add(words.slice(0, 2).join(" "));
 
-  // First word only (e.g. "JYSK")
-  if (words[0].length >= 3) variations.add(words[0]);
+  // Strip common business-type prefixes
+  const stripped = name.replace(/^(café|cafe|restaurant|hotel|klinik|salon|studio|fitness|gym|apotek|optiker)\s+/i, "").trim();
+  if (stripped !== name && stripped.length >= 3) variations.add(stripped);
 
-  // Without common suffixes (Café, Restaurant, Hotel, etc.)
-  const withoutPrefix = name.replace(/^(café|cafe|restaurant|hotel|bar|shop|butik|klinik|salon|studio|gym|center|centre)\s+/i, "").trim();
-  if (withoutPrefix !== name && withoutPrefix.length >= 3) variations.add(withoutPrefix);
-
-  // Without ApS/A/S etc. if present
-  const withoutLegal = name.replace(/\s+(aps|a\/s|as|i\/s|ivs|smba)\s*$/i, "").trim();
-  if (withoutLegal !== name) variations.add(withoutLegal);
-
-  // Remove special chars (e.g. "Café" → "Cafe")
-  const ascii = name.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/[æ]/gi, "ae").replace(/[ø]/gi, "oe").replace(/[å]/gi, "aa");
+  // ASCII normalization of Danish chars
+  const ascii = name
+    .replace(/[æÆ]/g, "ae").replace(/[øØ]/g, "oe").replace(/[åÅ]/g, "aa")
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
   if (ascii !== name) variations.add(ascii);
 
-  return [...variations].slice(0, 6);
+  // Only keep up to 3 variations – we're after quality, not quantity
+  return [...variations].slice(0, 3);
 }
 
-// ── Step 4: LLM picks the best candidate ─────────────────────────────────
+// ── LLM picks the best candidate ─────────────────────────────────────────
 async function aiPickCandidate(
   brandName: string,
   candidates: CvrCandidate[],
   context: { industry?: string | null; domain?: string | null; address?: string | null }
 ): Promise<CvrCandidate | null> {
   if (candidates.length === 0) return null;
-  if (candidates.length === 1) return candidates[0];
+
+  // With only 1 candidate: only return it if name similarity is decent
+  if (candidates.length === 1) {
+    const c = candidates[0];
+    const brandLower = brandName.toLowerCase().replace(/[^a-zæøå0-9]/g, "");
+    const nameLower = c.name.toLowerCase().replace(/[^a-zæøå0-9]/g, "");
+    // Accept if brand name is contained in legal name or vice versa (min 4 chars)
+    const shorter = brandLower.length <= nameLower.length ? brandLower : nameLower;
+    const longer = brandLower.length > nameLower.length ? brandLower : nameLower;
+    if (shorter.length >= 4 && longer.includes(shorter)) return c;
+    // Otherwise let LLM decide even with 1 candidate
+  }
 
   const client = getOpenAI();
 
   const candidateList = candidates.map((c, i) =>
-    `${i + 1}. CVR: ${c.cvr} | Navn: ${c.name} | Adresse: ${c.address || "?"} | Branche: ${c.industry || "?"} | Type: ${c.type || "?"} | Hjemmeside: ${c.website || "?"}`
-  ).join("\n");
+    `${i + 1}. CVR: ${c.cvr}\n   Juridisk navn: ${c.name}\n   Adresse: ${c.address || "?"}\n   Branche: ${c.industry || "?"}\n   Selskabstype: ${c.type || "?"}\n   Hjemmeside: ${c.website || "?"}`
+  ).join("\n\n");
 
-  const prompt = `Du er en dansk virksomhedsmatcher. En virksomhed annoncerer under navnet "${brandName}" og vi skal finde den rigtige CVR.
+  const prompt = `Du er ekspert i at matche danske brand-navne med juridiske virksomhedsnavne i CVR-registret.
 
-Kontekst:
-- Branche/kategori: ${context.industry || "Ukendt"}
-- Domæne/hjemmeside: ${context.domain || "Ukendt"}  
-- By/adresse: ${context.address || "Ukendt"}
+Brand-navn (fra annonce): "${brandName}"
+Branche/kontekst: ${context.industry || "Ukendt"}
+Domæne: ${context.domain || "Ukendt"}
+By: ${context.address || "Ukendt"}
 
-CVR-kandidater:
+CVR-kandidater at vælge imellem:
 ${candidateList}
 
-Regler:
-- Vælg KUN hvis du er rimelig sikker (70%+ sandsynlighed) på at det er den rigtige virksomhed
-- Brand-navne matcher ikke altid det juridiske CVR-navn (fx "McDonald's" = "McDonalds Danmark A/S")
-- Franchise/kæder kan have lokalt CVR under kædenavnet
-- Hvis ingen kandidater er sandsynlige, svar "ingen"
-- Overvej: brancheoverenstemmelse, navnelighed, hjemmeside-match, virksomhedstype
+Opgave: Vælg den kandidat der MEST sandsynligt er den rigtige virksomhed bag annoncen.
 
-Svar KUN med nummeret (1, 2, 3 osv.) eller ordet "ingen". Ingen forklaring.`;
+Vigtigt at vide:
+- Brand-navne MATCHER sjældent det juridiske navn (fx "H&M" = "H & M Hennes & Mauritz A/S")
+- Vær pragmatisk: hvis branchen passer og navnet har overlap, er det sandsynligvis korrekt
+- Svar med KUN nummeret (1, 2, 3 osv.)
+- Hvis INGEN kandidat er sandsynlig (under 40% sikkerhed), svar "ingen"
+
+Svar:`;
 
   try {
     const response = await client.chat.completions.create({
@@ -204,8 +236,8 @@ Svar KUN med nummeret (1, 2, 3 osv.) eller ordet "ingen". Ingen forklaring.`;
       max_tokens: 10,
     });
 
-    const answer = response.choices[0]?.message?.content?.trim().toLowerCase() || "ingen";
-    if (answer === "ingen" || answer.includes("ingen")) return null;
+    const answer = (response.choices[0]?.message?.content?.trim() || "ingen").toLowerCase();
+    if (answer.includes("ingen")) return null;
 
     const num = parseInt(answer.replace(/\D/g, ""), 10);
     if (!isNaN(num) && num >= 1 && num <= candidates.length) {
@@ -214,12 +246,11 @@ Svar KUN med nummeret (1, 2, 3 osv.) eller ordet "ingen". Ingen forklaring.`;
     return null;
   } catch (e) {
     logger.warn(`[cvr-ai-match] LLM pick failed: ${e instanceof Error ? e.message : String(e)}`, { service: "cvr" });
-    // Fall back to first candidate
-    return candidates[0] || null;
+    return candidates.length === 1 ? candidates[0] : null;
   }
 }
 
-// ── Main export: AI-powered CVR matcher ──────────────────────────────────
+// ── Main export ───────────────────────────────────────────────────────────
 
 export async function findCvrForLead(params: {
   brandName: string;
@@ -229,43 +260,76 @@ export async function findCvrForLead(params: {
 }): Promise<CvrCandidate | null> {
   const { brandName, industry, domain, address } = params;
 
-  logger.info(`[cvr-ai-match] Searching CVR for "${brandName}"`, { service: "cvr" });
+  logger.info(`[cvr-ai-match] Finding CVR for "${brandName}"`, { service: "cvr" });
 
-  const variations = nameVariations(brandName);
-  const seen = new Map<string, CvrCandidate>();
+  const seenCvr = new Map<string, CvrCandidate>();
 
-  // ── Parallel: search all name variations + Proff.dk ──
-  const [cvrResults, proffCandidates] = await Promise.all([
-    Promise.all(variations.map(v => fetchOneCvr(v))),
-    searchProffCandidates(brandName),
-  ]);
+  // ── Step 1: DuckDuckGo search → extract CVR numbers from URLs/snippets ──
+  const searchCvrs = await searchForCvrCandidates(brandName);
+  logger.info(`[cvr-ai-match] Search found ${searchCvrs.length} CVR numbers: [${searchCvrs.join(", ")}]`, { service: "cvr" });
 
-  // If we have a domain, also try domain-based search (domain → company name guess)
-  let domainCandidate: CvrCandidate | null = null;
-  if (domain) {
-    const domainName = domain.replace(/\.(dk|com|net|org|io)$/, "").replace(/[-_]/g, " ").trim();
-    if (domainName.length >= 3 && domainName.toLowerCase() !== brandName.toLowerCase()) {
-      domainCandidate = await fetchOneCvr(domainName);
+  // Look up each CVR number found in search
+  if (searchCvrs.length > 0) {
+    const fetched = await Promise.all(searchCvrs.slice(0, 5).map(fetchCvrByNumber));
+    for (const c of fetched) {
+      if (c && !seenCvr.has(c.cvr)) seenCvr.set(c.cvr, c);
     }
   }
 
-  // Collect all unique candidates
-  for (const c of [...cvrResults, ...proffCandidates, domainCandidate]) {
-    if (c && !seen.has(c.cvr)) seen.set(c.cvr, c);
+  // ── Step 2: cvrapi.dk name search with variations (if search didn't yield enough) ──
+  if (seenCvr.size < 2) {
+    const variations = nameVariations(brandName);
+    const fetched = await Promise.all(variations.map(fetchCvrByName));
+    for (const c of fetched) {
+      if (c && !seenCvr.has(c.cvr)) seenCvr.set(c.cvr, c);
+    }
   }
 
-  const candidates = [...seen.values()];
-  logger.info(`[cvr-ai-match] ${candidates.length} CVR candidates for "${brandName}": ${candidates.map(c => `${c.name}(${c.cvr})`).join(", ")}`, { service: "cvr" });
+  // ── Step 3: Domain-based search (if we have a website) ────────────────
+  if (domain) {
+    // Try the domain directly in cvrapi – some companies have it registered
+    try {
+      const params = new URLSearchParams({ country: "dk", domain: domain.trim() });
+      const res = await fetch(`${config.cvr.apiUrl}?${params}`, {
+        headers: { "User-Agent": config.cvr.userAgent },
+        signal: AbortSignal.timeout(6000),
+      });
+      if (res.ok) {
+        const d = await res.json();
+        if (d?.vat && !seenCvr.has(String(d.vat))) {
+          seenCvr.set(String(d.vat), {
+            cvr: String(d.vat),
+            name: String(d.name || ""),
+            address: [d.address, d.zipcode, d.city].filter(Boolean).join(", "),
+            industry: d.industrydesc || undefined,
+            type: d.companydesc || undefined,
+            website: d.companydomain || undefined,
+            phone: d.phone ? String(d.phone) : undefined,
+            email: d.email || undefined,
+          });
+        }
+      }
+    } catch { /* ignore */ }
+  }
 
-  if (candidates.length === 0) return null;
+  const candidates = [...seenCvr.values()];
+  logger.info(
+    `[cvr-ai-match] ${candidates.length} total candidates for "${brandName}": ${candidates.map(c => `${c.name}(${c.cvr})`).join(", ")}`,
+    { service: "cvr" }
+  );
 
-  // ── LLM picks the best candidate ──
+  if (candidates.length === 0) {
+    logger.info(`[cvr-ai-match] No candidates found for "${brandName}"`, { service: "cvr" });
+    return null;
+  }
+
+  // ── Step 4: LLM picks the best ────────────────────────────────────────
   const best = await aiPickCandidate(brandName, candidates, { industry, domain, address });
 
   if (best) {
-    logger.info(`[cvr-ai-match] AI matched "${brandName}" → "${best.name}" (CVR ${best.cvr})`, { service: "cvr" });
+    logger.info(`[cvr-ai-match] Matched "${brandName}" → "${best.name}" (CVR ${best.cvr})`, { service: "cvr" });
   } else {
-    logger.info(`[cvr-ai-match] AI found no confident match for "${brandName}"`, { service: "cvr" });
+    logger.info(`[cvr-ai-match] No confident match for "${brandName}" among ${candidates.length} candidates`, { service: "cvr" });
   }
 
   return best;
