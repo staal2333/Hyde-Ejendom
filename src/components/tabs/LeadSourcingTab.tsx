@@ -192,6 +192,21 @@ export function LeadSourcingTab() {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [sortKey, setSortKey] = useState<SortKey>("oohScore");
   const [sortAsc, setSortAsc] = useState(false);
+
+  // Auto-switch sort when changing tabs
+  const handleTabChange = useCallback((tab: PipelineTab) => {
+    setActiveTab(tab);
+    setExpandedId(null);
+    setPipelineSearch("");
+    // Kontaktet tab: sort by follow-up date ascending (most overdue first)
+    if (tab === "kontaktet") {
+      setSortKey("followup");
+      setSortAsc(true);
+    } else {
+      setSortKey("oohScore");
+      setSortAsc(false);
+    }
+  }, []);
   const [actionLoading, setActionLoading] = useState<string | null>(null);
   const [noteInputs, setNoteInputs] = useState<Record<string, string>>({});
 
@@ -828,7 +843,7 @@ export function LeadSourcingTab() {
             <button
               key={key}
               type="button"
-              onClick={() => setActiveTab(key)}
+              onClick={() => handleTabChange(key)}
               className={`shrink-0 inline-flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-semibold transition ${
                 activeTab === key
                   ? "bg-indigo-600 text-white shadow-lg"
@@ -865,7 +880,10 @@ export function LeadSourcingTab() {
                     <path strokeLinecap="round" strokeLinejoin="round" d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15M14.25 3.104c.251.023.501.05.75.082M19.8 15l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.5l.406 2.032A2.25 2.25 0 0118 19.5H6a2.25 2.25 0 01-2.206-2.968L5 14.5" />
                   </svg>
               }
-              {enrichAgentRunning ? "Agent kører…" : "Berig alle leads"}
+              {enrichAgentRunning ? "Agent kører…" : (() => {
+                const unenriched = leads.filter(l => !l.cvr || (l.contacts || []).length === 0 || l.egenkapital == null).length;
+                return unenriched > 0 ? `Berig ${unenriched} leads` : "Berig alle leads";
+              })()}
             </button>
             {enrichAgentRunning && enrichProgress && (
               <span className="text-xs text-violet-700 font-medium truncate max-w-xs">
@@ -981,6 +999,31 @@ export function LeadSourcingTab() {
               </div>
             </div>
           )}
+
+          {/* ── Forfaldne follow-ups banner (kontaktet tab only) ── */}
+          {activeTab === "kontaktet" && (() => {
+            const today = new Date().toISOString().slice(0, 10);
+            const overdue = leads.filter(l => l.next_followup_at && l.next_followup_at.slice(0, 10) < today);
+            const dueToday = leads.filter(l => l.next_followup_at && l.next_followup_at.slice(0, 10) === today);
+            if (overdue.length === 0 && dueToday.length === 0) return null;
+            return (
+              <div className="flex flex-wrap gap-2">
+                {overdue.length > 0 && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-red-50 border border-red-200">
+                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                    <span className="text-xs font-bold text-red-700">{overdue.length} forfaldne follow-ups</span>
+                    <span className="text-[10px] text-red-500">— vises øverst</span>
+                  </div>
+                )}
+                {dueToday.length > 0 && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-amber-50 border border-amber-200">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    <span className="text-xs font-bold text-amber-700">{dueToday.length} follow-ups i dag</span>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {leadsLoading ? (
             <div className="flex items-center justify-center py-12">
