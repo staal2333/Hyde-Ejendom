@@ -709,6 +709,18 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
   } | null>(null);
   const [creativeNameInput, setCreativeNameInput] = useState("");
 
+  // AI Creative Generator state
+  const [aiGenOpen, setAiGenOpen] = useState(false);
+  const [aiGenCompany, setAiGenCompany] = useState("");
+  const [aiGenIndustry, setAiGenIndustry] = useState("");
+  const [aiGenStyle, setAiGenStyle] = useState<"minimal" | "bold" | "photo" | "luxury">("minimal");
+  const [aiGenTagline, setAiGenTagline] = useState("");
+  const [aiGenColors, setAiGenColors] = useState("");
+  const [aiGenFormat, setAiGenFormat] = useState<"landscape" | "portrait" | "square">("landscape");
+  const [aiGenerating, setAiGenerating] = useState(false);
+  const [aiGenResult, setAiGenResult] = useState<{ imageUrl: string; creativeId: string; revisedPrompt?: string } | null>(null);
+  const [aiGenError, setAiGenError] = useState<string | null>(null);
+
   // Loading state
   const [initialLoading, setInitialLoading] = useState(true);
 
@@ -852,6 +864,54 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
   };
 
   // ── Delete creative ───────────────────────────────────
+  // ── AI Creative Generator ──────────────────────────────
+  const handleAiGenerate = async () => {
+    if (!aiGenCompany.trim()) return;
+    setAiGenerating(true);
+    setAiGenError(null);
+    setAiGenResult(null);
+    try {
+      const res = await fetch("/api/ooh/generate-creative", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          companyName: aiGenCompany.trim(),
+          industry: aiGenIndustry.trim() || "virksomhed",
+          style: aiGenStyle,
+          tagline: aiGenTagline.trim() || undefined,
+          colors: aiGenColors.trim() || undefined,
+          format: aiGenFormat,
+          language: "da",
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Generering fejlede");
+      setAiGenResult({
+        imageUrl: data.imageUrl,
+        creativeId: data.creative.id,
+        revisedPrompt: data.revisedPrompt,
+      });
+      // Refresh the creatives library
+      await fetchCreatives();
+      toast("AI kreativ genereret og gemt i biblioteket ✨", "success");
+    } catch (e) {
+      setAiGenError(e instanceof Error ? e.message : "Ukendt fejl");
+    } finally {
+      setAiGenerating(false);
+    }
+  };
+
+  const handleAiUseCreative = () => {
+    if (!aiGenResult) return;
+    const creative = creatives.find(c => c.id === aiGenResult.creativeId);
+    if (creative) {
+      setSelectedCreative(creative);
+      setTab("builder");
+      setStep("creative");
+    }
+    setAiGenOpen(false);
+  };
+
   const removeCreative = (creativeId: string) => {
     const creative = creatives.find(c => c.id === creativeId);
     showConfirm({
@@ -1793,10 +1853,227 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
         <div>
           <div className="flex items-center justify-between mb-4">
             <div><h2 className="text-xl font-bold text-slate-900">Creative Library</h2><p className="text-sm text-slate-500 mt-0.5">{creatives.length} reklamebilleder og assets</p></div>
-            <label className="inline-flex items-center gap-2 px-4 py-2 bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold rounded-xl cursor-pointer shadow-sm">
-              <Ic d="M12 4.5v15m7.5-7.5h-15" className="w-3.5 h-3.5" />Upload<input type="file" accept="image/*" className="hidden" onChange={e => e.target.files?.[0] && uploadFile(e.target.files[0], "creative")} />
-            </label>
+            <div className="flex items-center gap-2">
+              <button
+                onClick={() => { setAiGenOpen(true); setAiGenResult(null); setAiGenError(null); }}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white text-xs font-semibold rounded-xl shadow-sm transition-all"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                </svg>
+                Generer med AI
+              </button>
+              <label className="inline-flex items-center gap-2 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold rounded-xl cursor-pointer transition">
+                <Ic d="M12 4.5v15m7.5-7.5h-15" className="w-3.5 h-3.5" />Upload<input type="file" accept="image/*" className="hidden" onChange={e => e.target.files?.[0] && uploadFile(e.target.files[0], "creative")} />
+              </label>
+            </div>
           </div>
+
+          {/* ── AI Creative Generator Modal ── */}
+          {aiGenOpen && (
+            <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4">
+              <div className="bg-white rounded-2xl shadow-2xl w-full max-w-2xl overflow-hidden">
+                {/* Header */}
+                <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100 bg-gradient-to-r from-violet-50 to-indigo-50">
+                  <div className="flex items-center gap-3">
+                    <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-600 to-indigo-600 flex items-center justify-center">
+                      <svg className="w-4.5 h-4.5 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                        <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                      </svg>
+                    </div>
+                    <div>
+                      <h3 className="text-base font-bold text-slate-900">AI Billboard Generator</h3>
+                      <p className="text-[11px] text-slate-500">DALL-E 3 genererer et professionelt OOH-kreativ</p>
+                    </div>
+                  </div>
+                  <button onClick={() => setAiGenOpen(false)} className="p-2 rounded-lg hover:bg-slate-100 text-slate-400 hover:text-slate-600 transition">
+                    <Ic d="M6 18L18 6M6 6l12 12" className="w-5 h-5" />
+                  </button>
+                </div>
+
+                <div className="p-6 space-y-4 max-h-[70vh] overflow-y-auto">
+                  {!aiGenResult ? (
+                    <>
+                      {/* Company name */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">
+                          Firmanavn <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          value={aiGenCompany}
+                          onChange={e => setAiGenCompany(e.target.value)}
+                          placeholder="fx IKEA, Matas, din lokale café..."
+                          className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400 focus:border-violet-400"
+                          onKeyDown={e => e.key === "Enter" && !aiGenerating && aiGenCompany.trim() && handleAiGenerate()}
+                        />
+                      </div>
+
+                      {/* Industry + Tagline */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Branche</label>
+                          <input
+                            type="text"
+                            value={aiGenIndustry}
+                            onChange={e => setAiGenIndustry(e.target.value)}
+                            placeholder="fx retail, restaurant, fitness"
+                            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Tagline / overskrift</label>
+                          <input
+                            type="text"
+                            value={aiGenTagline}
+                            onChange={e => setAiGenTagline(e.target.value)}
+                            placeholder="fx 'Smag forskellen' (valgfri)"
+                            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+                          />
+                        </div>
+                      </div>
+
+                      {/* Style */}
+                      <div>
+                        <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-2">Stil</label>
+                        <div className="grid grid-cols-4 gap-2">
+                          {([
+                            { key: "minimal", label: "Minimal", icon: "M3.75 9h16.5m-16.5 6.75h16.5", desc: "Skandinavisk, ren" },
+                            { key: "bold", label: "Bold", icon: "M3.75 6.75h16.5M3.75 12h16.5M12 17.25h8.25", desc: "Kraftfuld, grafisk" },
+                            { key: "photo", label: "Foto", icon: "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909", desc: "Livsstilsfoto" },
+                            { key: "luxury", label: "Luksus", icon: "M11.48 3.499a.562.562 0 011.04 0l2.125 5.111a.563.563 0 00.475.345l5.518.442c.499.04.701.663.321.988l-4.204 3.602a.563.563 0 00-.182.557l1.285 5.385a.562.562 0 01-.84.61l-4.725-2.885a.563.563 0 00-.586 0L6.982 20.54a.562.562 0 01-.84-.61l1.285-5.386a.562.562 0 00-.182-.557l-4.204-3.602a.563.563 0 01.321-.988l5.518-.442a.563.563 0 00.475-.345L11.48 3.5z", desc: "Premium, eksklusiv" },
+                          ] as { key: typeof aiGenStyle; label: string; icon: string; desc: string }[]).map(s => (
+                            <button
+                              key={s.key}
+                              onClick={() => setAiGenStyle(s.key)}
+                              className={`flex flex-col items-center gap-1.5 p-3 rounded-xl border-2 text-center transition ${
+                                aiGenStyle === s.key
+                                  ? "border-violet-500 bg-violet-50"
+                                  : "border-slate-200 hover:border-slate-300"
+                              }`}
+                            >
+                              <svg className={`w-5 h-5 ${aiGenStyle === s.key ? "text-violet-600" : "text-slate-400"}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" d={s.icon} />
+                              </svg>
+                              <span className={`text-xs font-bold ${aiGenStyle === s.key ? "text-violet-700" : "text-slate-600"}`}>{s.label}</span>
+                              <span className="text-[9px] text-slate-400">{s.desc}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* Format + Colors */}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Format</label>
+                          <div className="flex gap-2">
+                            {([
+                              { key: "landscape", label: "Liggende", ratio: "16:9" },
+                              { key: "portrait", label: "Stående", ratio: "9:16" },
+                              { key: "square", label: "Kvadrat", ratio: "1:1" },
+                            ] as { key: typeof aiGenFormat; label: string; ratio: string }[]).map(f => (
+                              <button
+                                key={f.key}
+                                onClick={() => setAiGenFormat(f.key)}
+                                className={`flex-1 py-2 px-2 rounded-lg border text-center text-[10px] font-semibold transition ${
+                                  aiGenFormat === f.key
+                                    ? "border-violet-500 bg-violet-50 text-violet-700"
+                                    : "border-slate-200 text-slate-500 hover:border-slate-300"
+                                }`}
+                              >
+                                <div className="text-xs">{f.label}</div>
+                                <div className="text-[9px] opacity-70">{f.ratio}</div>
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-bold text-slate-600 uppercase tracking-wide mb-1.5">Farver (valgfri)</label>
+                          <input
+                            type="text"
+                            value={aiGenColors}
+                            onChange={e => setAiGenColors(e.target.value)}
+                            placeholder="fx rød og hvid, marineblå"
+                            className="w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+                          />
+                        </div>
+                      </div>
+
+                      {aiGenError && (
+                        <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-red-50 border border-red-200 text-red-700 text-xs">
+                          <Ic d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" className="w-4 h-4 flex-shrink-0" />
+                          {aiGenError}
+                        </div>
+                      )}
+
+                      <button
+                        onClick={handleAiGenerate}
+                        disabled={aiGenerating || !aiGenCompany.trim()}
+                        className="w-full flex items-center justify-center gap-2.5 py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-700 hover:to-indigo-700 text-white font-bold text-sm shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all"
+                      >
+                        {aiGenerating ? (
+                          <>
+                            <span className="animate-spin rounded-full h-4 w-4 border-2 border-white/30 border-t-white" />
+                            Genererer billboard... (ca. 15–30 sek)
+                          </>
+                        ) : (
+                          <>
+                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+                            </svg>
+                            Generer billboard med DALL-E 3
+                          </>
+                        )}
+                      </button>
+
+                      <p className="text-center text-[10px] text-slate-400">
+                        Koster ca. 1-2 kr per generering · Gemmes automatisk i Creative Library
+                      </p>
+                    </>
+                  ) : (
+                    /* ── Result view ── */
+                    <div className="space-y-4">
+                      <div className="rounded-xl overflow-hidden border border-slate-200 shadow-sm">
+                        <img src={aiGenResult.imageUrl} alt={aiGenCompany} className="w-full object-cover" />
+                      </div>
+                      <div className="flex items-center gap-2 px-3 py-2 rounded-xl bg-emerald-50 border border-emerald-200">
+                        <svg className="w-4 h-4 text-emerald-600 flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                        </svg>
+                        <p className="text-xs text-emerald-700 font-medium">Gemt i Creative Library · klar til brug i mockup</p>
+                      </div>
+                      {aiGenResult.revisedPrompt && (
+                        <details className="group">
+                          <summary className="text-[10px] text-slate-400 cursor-pointer hover:text-slate-600 transition">Se DALL-E beskrivelse ▾</summary>
+                          <p className="text-[10px] text-slate-400 mt-1 leading-relaxed">{aiGenResult.revisedPrompt}</p>
+                        </details>
+                      )}
+                      <div className="flex gap-3">
+                        <button
+                          onClick={handleAiUseCreative}
+                          className="flex-1 flex items-center justify-center gap-2 py-2.5 rounded-xl bg-violet-600 hover:bg-violet-700 text-white font-semibold text-sm transition"
+                        >
+                          Brug i Builder →
+                        </button>
+                        <button
+                          onClick={() => { setAiGenResult(null); setAiGenCompany(""); setAiGenTagline(""); setAiGenColors(""); }}
+                          className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition"
+                        >
+                          Generer ny
+                        </button>
+                        <button
+                          onClick={() => setAiGenOpen(false)}
+                          className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-600 text-sm font-medium hover:bg-slate-50 transition"
+                        >
+                          Luk
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
           <div className="mb-4 relative max-w-md"><Ic d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" className="absolute left-3.5 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input type="text" value={creativeSearch} onChange={e => setCreativeSearch(e.target.value)} placeholder="Soeg creatives..." className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-violet-300 focus:ring-2 focus:ring-violet-100" />
           </div>
