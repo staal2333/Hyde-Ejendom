@@ -1366,6 +1366,19 @@ export default function StagingQueue() {
                           </div>
                         )}
 
+                        {/* Warning: draft exists but no email → can't send */}
+                        {prop.emailDraftSubject && !prop.contactEmail && prop.stage !== "pushed" && (
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
+                            <Ic d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" className="w-4 h-4 text-amber-500 flex-shrink-0" />
+                            <p className="text-xs text-amber-700">
+                              <span className="font-semibold">Mangler kontakt-email</span> — udkastet er klar, men tilføj en email-adresse for at sende.
+                            </p>
+                            <button onClick={() => startEditContact(prop)} className="shrink-0 text-xs font-semibold text-amber-700 underline hover:no-underline">
+                              Tilføj
+                            </button>
+                          </div>
+                        )}
+
                         {/* Action Buttons */}
                         <div className="flex flex-wrap gap-2 pt-3 border-t border-slate-100">
                           {prop.stage === "new" && !rp && (
