@@ -333,68 +333,171 @@ export function HomeTab({
         );
       })()}
 
-      {/* I dag – Hvad skal jeg gøre i dag? */}
-      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
-        <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
-          <span className="w-8 h-8 rounded-lg bg-brand-100 flex items-center justify-center">
-            <svg className="w-4 h-4 text-brand-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z" />
-            </svg>
-          </span>
-          I dag – hvad skal jeg gøre?
-        </h2>
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-          <button
-            onClick={() => setActiveTab("staging")}
-            className="flex items-center gap-3 rounded-xl border border-slate-200/80 p-4 text-left hover:bg-amber-50/50 hover:border-amber-200 transition-all group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-amber-100 flex items-center justify-center flex-shrink-0">
-              <span className="text-lg font-bold text-amber-700">{dashboard?.staging?.awaitingAction ?? 0}</span>
+      {/* ═══ Dagens opgaver ═══ */}
+      {(() => {
+        const ls = dashboard?.leadSummary;
+        const st = dashboard?.staging;
+
+        type TaskItem = {
+          key: string;
+          count: number;
+          priority: "urgent" | "high" | "medium" | "low";
+          label: string;
+          sub: string;
+          action: () => void;
+          dotColor: string;
+          badgeBg: string;
+          badgeText: string;
+          borderHover: string;
+          bgHover: string;
+        };
+
+        const tasks: TaskItem[] = [
+          ls && ls.overdueFollowups > 0 ? {
+            key: "overdue",
+            count: ls.overdueFollowups,
+            priority: "urgent" as const,
+            label: "Forfaldne follow-ups",
+            sub: "Kontakt disse leads nu – de er overskredet",
+            action: () => setActiveTab("lead_sourcing" as TabId),
+            dotColor: "bg-red-500 animate-pulse",
+            badgeBg: "bg-red-500",
+            badgeText: "text-white",
+            borderHover: "hover:border-red-300",
+            bgHover: "hover:bg-red-50/60",
+          } : null,
+          ls && ls.todayFollowups > 0 ? {
+            key: "today-followup",
+            count: ls.todayFollowups,
+            priority: "high" as const,
+            label: "Follow-ups forfald i dag",
+            sub: "Planlæg kontakt inden dagen er omme",
+            action: () => setActiveTab("lead_sourcing" as TabId),
+            dotColor: "bg-orange-500",
+            badgeBg: "bg-orange-500",
+            badgeText: "text-white",
+            borderHover: "hover:border-orange-300",
+            bgHover: "hover:bg-orange-50/60",
+          } : null,
+          st && st.researched > 0 ? {
+            key: "draft",
+            count: st.researched,
+            priority: "high" as const,
+            label: "Klar til mail-udkast",
+            sub: "Generer udkast og godkend disse ejendomme",
+            action: () => setActiveTab("staging"),
+            dotColor: "bg-amber-500",
+            badgeBg: "bg-amber-500",
+            badgeText: "text-white",
+            borderHover: "hover:border-amber-300",
+            bgHover: "hover:bg-amber-50/60",
+          } : null,
+          st && st.approved > 0 ? {
+            key: "hubspot",
+            count: st.approved,
+            priority: "medium" as const,
+            label: "Klar til HubSpot",
+            sub: "Godkendte ejendomme – push og klar til udsendelse",
+            action: () => setActiveTab("staging"),
+            dotColor: "bg-emerald-500",
+            badgeBg: "bg-emerald-500",
+            badgeText: "text-white",
+            borderHover: "hover:border-emerald-300",
+            bgHover: "hover:bg-emerald-50/60",
+          } : null,
+          dashboard?.readyToSend && dashboard.readyToSend > 0 ? {
+            key: "send",
+            count: dashboard.readyToSend,
+            priority: "medium" as const,
+            label: "Klar til udsendelse",
+            sub: "Send disse mails til ejere i HubSpot",
+            action: () => { setActiveTab("outreach"); setStatusFilter("ready"); },
+            dotColor: "bg-violet-500",
+            badgeBg: "bg-violet-500",
+            badgeText: "text-white",
+            borderHover: "hover:border-violet-300",
+            bgHover: "hover:bg-violet-50/60",
+          } : null,
+          st && st.new > 0 ? {
+            key: "research",
+            count: st.new,
+            priority: "low" as const,
+            label: "Nye ejendomme til research",
+            sub: "Kør research for at finde kontaktinfo og score",
+            action: () => setActiveTab("staging"),
+            dotColor: "bg-blue-400",
+            badgeBg: "bg-blue-100",
+            badgeText: "text-blue-700",
+            borderHover: "hover:border-blue-200",
+            bgHover: "hover:bg-blue-50/40",
+          } : null,
+          ls && ls.counts && (ls.counts.new || 0) > 0 ? {
+            key: "leads-new",
+            count: ls.counts.new,
+            priority: "low" as const,
+            label: "Nye leads at berige",
+            sub: "Kør auto-berigelse for CVR, kontakt og økonomi",
+            action: () => setActiveTab("lead_sourcing" as TabId),
+            dotColor: "bg-indigo-400",
+            badgeBg: "bg-indigo-100",
+            badgeText: "text-indigo-700",
+            borderHover: "hover:border-indigo-200",
+            bgHover: "hover:bg-indigo-50/40",
+          } : null,
+        ].filter(Boolean) as TaskItem[];
+
+        if (tasks.length === 0) {
+          return (
+            <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-6 mb-6 text-center">
+              <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center mx-auto mb-3">
+                <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
+              </div>
+              <p className="text-sm font-bold text-slate-800">Alt er opdateret</p>
+              <p className="text-xs text-slate-400 mt-1">Ingen ventende opgaver i dag</p>
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-slate-900">I Staging</p>
-              <p className="text-[11px] text-slate-500">Godkend & generer mail</p>
-            </div>
-            <svg className="w-4 h-4 text-slate-300 group-hover:text-amber-500 group-hover:translate-x-0.5 transition-all" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-            </svg>
-          </button>
-          <button
-            onClick={() => { setActiveTab("outreach"); setStatusFilter("ready"); }}
-            className="flex items-center gap-3 rounded-xl border border-slate-200/80 p-4 text-left hover:bg-emerald-50/50 hover:border-emerald-200 transition-all group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-emerald-100 flex items-center justify-center flex-shrink-0">
-              <span className="text-lg font-bold text-emerald-700">{dashboard?.readyToSend ?? 0}</span>
-            </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-slate-900">Klar til mail</p>
-              <p className="text-[11px] text-slate-500">Send første mail</p>
-            </div>
-            <svg className="w-4 h-4 text-slate-300 group-hover:text-emerald-500 group-hover:translate-x-0.5 transition-all" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-            </svg>
-          </button>
-          <button
-            onClick={() => setActiveTab("scaffolding")}
-            className="flex items-center gap-3 rounded-xl border border-slate-200/80 p-4 text-left hover:bg-cyan-50/50 hover:border-cyan-200 transition-all group"
-          >
-            <div className="w-10 h-10 rounded-xl bg-cyan-100 flex items-center justify-center flex-shrink-0">
-              <span className="text-lg font-bold text-cyan-700">
-                {typeof (dashboard?.scaffoldingNewApplications?.previousDay ?? scaffoldPeriodCounts?.previousDay) === "number"
-                  ? (dashboard?.scaffoldingNewApplications?.previousDay ?? scaffoldPeriodCounts?.previousDay)
-                  : "—"}
+          );
+        }
+
+        return (
+          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
+            <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
+              <span className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+                <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                </svg>
               </span>
+              Dagens opgaver
+              <span className="ml-1 inline-flex items-center justify-center w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold tabular-nums">{tasks.length}</span>
+            </h2>
+            <div className="space-y-2">
+              {tasks.map((task, i) => (
+                <button
+                  key={task.key}
+                  onClick={task.action}
+                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200/70 text-left transition-all group ${task.bgHover} ${task.borderHover}`}
+                >
+                  <span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 text-slate-500 text-[11px] font-bold flex items-center justify-center tabular-nums">
+                    {i + 1}
+                  </span>
+                  <span className={`flex-shrink-0 w-2 h-2 rounded-full ${task.dotColor}`} />
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-semibold text-slate-900 truncate">{task.label}</p>
+                    <p className="text-[11px] text-slate-400 truncate">{task.sub}</p>
+                  </div>
+                  <span className={`flex-shrink-0 min-w-[28px] h-6 px-2 rounded-full ${task.badgeBg} ${task.badgeText} text-[11px] font-bold flex items-center justify-center tabular-nums`}>
+                    {task.count}
+                  </span>
+                  <svg className="w-4 h-4 text-slate-300 group-hover:translate-x-0.5 transition-transform flex-shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+                  </svg>
+                </button>
+              ))}
             </div>
-            <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-slate-900">Nye stillads ansøgninger</p>
-              <p className="text-[11px] text-slate-500">Dagen før · opdateres hvert 10. min</p>
-            </div>
-            <svg className="w-4 h-4 text-slate-300 group-hover:text-cyan-500 group-hover:translate-x-0.5 transition-all" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
-            </svg>
-          </button>
-        </div>
-      </div>
+          </div>
+        );
+      })()}
 
       {/* ═══ Leads Action Center ═══ */}
       {(() => {

@@ -516,7 +516,7 @@ export default function StagingQueue() {
     else if (confirmAction.type === "delete") await executeDelete(confirmAction.ids);
   }, [confirmAction, executeReject, executeDelete]);
 
-  const activeCount = counts.new + counts.researching + counts.researched;
+  const activeCount = counts.new + counts.researching + counts.researched + counts.approved;
 
   // ─── RENDER ───────────────────────────────────────────────
 
@@ -587,6 +587,32 @@ export default function StagingQueue() {
         </div>
       )}
 
+      {/* ── Flow Steps Guide ── */}
+      <div className="bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-3 flex items-center gap-1 overflow-x-auto">
+        {[
+          { label: "1. Ny", sub: "Tilføjet", dot: "bg-amber-400", active: counts.new > 0, count: counts.new },
+          { label: "→ Research", sub: "Find ejer & info", dot: "bg-blue-400", active: counts.researching > 0, count: counts.researching },
+          { label: "→ Generer udkast", sub: "AI-mail + godkend", dot: "bg-indigo-500", active: counts.researched > 0, count: counts.researched },
+          { label: "→ Push til HubSpot", sub: "Godkendt + HubSpot", dot: "bg-emerald-500", active: counts.approved > 0, count: counts.approved },
+          { label: "→ Klar", sub: "Send mail", dot: "bg-emerald-600", active: counts.pushed > 0, count: counts.pushed },
+        ].map((step) => (
+          <div key={step.label} className="flex items-center gap-2 shrink-0">
+            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all ${step.active ? "bg-white border border-slate-200 shadow-sm" : "opacity-40"}`}>
+              <span className={`w-2 h-2 rounded-full shrink-0 ${step.dot}`} />
+              <div>
+                <p className={`text-[11px] font-bold whitespace-nowrap ${step.active ? "text-slate-800" : "text-slate-500"}`}>
+                  {step.label}
+                  {step.active && step.count > 0 && (
+                    <span className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-indigo-600 text-white text-[9px] font-bold">{step.count}</span>
+                  )}
+                </p>
+                <p className="text-[9px] text-slate-400 whitespace-nowrap">{step.sub}</p>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+
       {/* ── Stats Row ── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2.5">
         {(Object.entries(STAGE_CONFIG) as [StagedStage, typeof STAGE_CONFIG[StagedStage]][]).map(([stage, cfg]) => (
@@ -647,7 +673,20 @@ export default function StagingQueue() {
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-100 text-indigo-700 text-xs font-medium hover:bg-indigo-200 transition-colors"
                 >
                   <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-3.5 h-3.5" />
-                  Godkend & generer mail ({counts.researched})
+                  Trin 2: Generer mail-udkast ({counts.researched})
+                </button>
+              )}
+              {counts.approved > 0 && (
+                <button
+                  onClick={() => {
+                    const approvedIds = properties.filter(p => p.stage === "approved").map(p => p.id);
+                    handleApprove(approvedIds);
+                  }}
+                  disabled={approving}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 text-xs font-medium hover:bg-emerald-200 transition-colors disabled:opacity-50"
+                >
+                  <Ic d="M4.5 12.75l6 6 9-13.5" className="w-3.5 h-3.5" />
+                  {approving ? "Pusher..." : `Trin 3: Push til HubSpot (${counts.approved})`}
                 </button>
               )}
               {(() => {
@@ -666,7 +705,7 @@ export default function StagingQueue() {
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500 transition-colors disabled:opacity-50 shadow-sm"
                   >
                     <Ic d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" className="w-3.5 h-3.5" />
-                    {approveSending ? "Sender..." : `Godkend & Send (${readyToSend})`}
+                    {approveSending ? "Sender..." : `Send alle klar (${readyToSend})`}
                   </button>
                 ) : null;
               })()}
@@ -1321,7 +1360,9 @@ export default function StagingQueue() {
                           <div className="rounded-lg bg-slate-50 border border-dashed border-slate-200 p-4 text-center">
                             <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-6 h-6 text-slate-400 mx-auto mb-2" />
                             <p className="text-xs text-slate-500">Intet email-udkast endnu</p>
-                            <p className="text-[10px] text-slate-400 mt-0.5">Kør research for at generere et udkast</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">
+                              {prop.stage === "new" ? "Kør research (trin 1) for at fortsætte" : "Klik 'Trin 2: Generer mail-udkast' herunder"}
+                            </p>
                           </div>
                         )}
 
@@ -1340,14 +1381,10 @@ export default function StagingQueue() {
                             <button
                               onClick={() => handleGenerateDraft([prop.id])}
                               disabled={generatingDraft}
-                              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 shadow-sm ${
-                                prop.emailDraftSubject
-                                  ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
-                                  : "bg-indigo-600 text-white hover:bg-indigo-500"
-                              }`}
+                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition-colors disabled:opacity-50 shadow-sm"
                             >
                               <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-3.5 h-3.5" />
-                              {prop.emailDraftSubject ? "Generer mail igen" : "Godkend & generer mail"}
+                              {generatingDraft ? "Genererer..." : prop.emailDraftSubject ? "Generer mail igen" : "Trin 2: Generer mail-udkast"}
                             </button>
                           )}
                           {prop.stage === "approved" && !rp && (
@@ -1364,10 +1401,10 @@ export default function StagingQueue() {
                             <button
                               onClick={() => handleApprove([prop.id])}
                               disabled={approving}
-                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-green-600 text-white text-xs font-semibold hover:bg-green-500 transition-colors disabled:opacity-50 shadow-sm"
+                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500 transition-colors disabled:opacity-50 shadow-sm"
                             >
                               <Ic d="M4.5 12.75l6 6 9-13.5" className="w-3.5 h-3.5" />
-                              Push til HubSpot
+                              {approving ? "Pusher..." : "Trin 3: Push til HubSpot"}
                             </button>
                           )}
                           {prop.emailDraftSubject && prop.contactEmail && prop.stage !== "pushed" && !rp && (

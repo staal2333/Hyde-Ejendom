@@ -37,11 +37,6 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        if (!staged.contactPerson && !staged.contactEmail) {
-          results.push({ id, success: false, error: "Ingen kontaktperson eller email – tilføj kontaktinfo først" });
-          continue;
-        }
-
         const property: Property = {
           id: staged.id,
           name: staged.name,
@@ -53,13 +48,14 @@ export async function POST(req: NextRequest) {
           outdoorPotentialNotes: staged.outdoorNotes,
         };
 
+        // Allow draft generation even without a specific contact — use owner company as fallback
         const contact: Contact = {
           fullName: staged.contactPerson || null,
           email: staged.contactEmail || null,
           phone: staged.contactPhone || null,
           role: "ejer",
           source: "staging",
-          confidence: 0.8,
+          confidence: staged.contactEmail ? 0.8 : 0.3,
         };
 
         const analysis: ResearchAnalysis = {
