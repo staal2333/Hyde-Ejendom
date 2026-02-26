@@ -13,6 +13,7 @@ import { lookupOis } from "./ois";
 import { lookupCvr, lookupCvrScored, lookupCvrByAddress, lookupCvrBestMatch, lookupProff } from "./cvr";
 import { lookupBbr } from "./bbr";
 import { scrapeCompanyWebsite, searchGoogle } from "./web-scraper";
+import { scrapeProffLeadership } from "../lead-sourcing/proff";
 import {
   classifyOwnership,
   getCvrStrategy,
@@ -325,6 +326,21 @@ export async function researchProperty(
     });
   }
 
+  // ── Step 1.5: Proff.dk leadership scraping ──
+  let proffLeadership: import("@/types").CompanyPerson[] = [];
+  if (cvrData?.cvr) {
+    emit({ step: "proff_leadership", message: "Henter ledelsesdata fra Proff.dk..." });
+    const rawProff = await scrapeProffLeadership(cvrData.cvr);
+    proffLeadership = rawProff.map(p => ({ name: p.name, role: p.title, source: "Proff.dk" }));
+    if (proffLeadership.length > 0) {
+      emit({
+        step: "proff_leadership",
+        message: `Proff.dk: Fandt ${proffLeadership.length} ledelsespersoner`,
+        detail: proffLeadership.map(p => `${p.name} (${p.role})`).join(", "),
+      });
+    }
+  }
+
   // ── Step 2: Deep web search ──
   const searchQueries = buildSearchQueries(property, cvrData, bbrData, oisOwnerName, oisAdminName, ownershipType);
 
@@ -474,6 +490,7 @@ export async function researchProperty(
     bbrData,
     companySearchResults: relevantResults,
     websiteContent: mergedWebsite,
+    proffLeadership: proffLeadership.length > 0 ? proffLeadership : undefined,
   };
 }
 

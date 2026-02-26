@@ -186,6 +186,18 @@ async function rankContacts(
     `[${c.index}] Navn: ${c.name || "?"} | Email: ${c.email || "INGEN"} | Tlf: ${c.phone || "INGEN"} | Kilde: ${c.source} | Rolle-hint: ${c.role_hint}`
   ).join("\n");
 
+  const proffSection = research.proffLeadership && research.proffLeadership.length > 0
+    ? `\n## Proff.dk ledelse\n${research.proffLeadership.map(p => `- ${p.name}: ${p.role}`).join("\n")}`
+    : "";
+
+  const cvrRolesSection = research.cvrData?.roles && research.cvrData.roles.length > 0
+    ? `\n## CVR roller\n${research.cvrData.roles.map(r => `- ${r.name}: ${r.role}`).join("\n")}`
+    : "";
+
+  const websitePeopleSection = research.websiteContent?.people && research.websiteContent.people.length > 0
+    ? `\n## Website ledelse/team\n${research.websiteContent.people.map(p => `- ${p.name}: ${p.role}${p.email ? ` (${p.email})` : ""}${p.phone ? ` tlf: ${p.phone}` : ""}`).join("\n")}`
+    : "";
+
   const prompt = `## Ejendom
 - Adresse: ${property.address}, ${property.postalCode} ${property.city}
 - Ejer (fra OIS/CVR): ${ownerInfo.ownerCompanyName}
@@ -194,18 +206,29 @@ async function rankContacts(
 ## OIS data
 - Ejere: ${research.oisData?.owners.map(o => o.name).join(", ") || "Ingen"}
 - Administratorer: ${research.oisData?.administrators.map(a => a.name).join(", ") || "Ingen"}
+${cvrRolesSection}${proffSection}${websitePeopleSection}
 
 ## Kendte kontakter (DU MÅ KUN VÆLGE FRA DENNE LISTE)
 ${contactList}
 
 ## Instruktion
-Rangér kontakterne efter relevans for DENNE ejendom. For HVER kontakt du vælger:
+Rangér kontakterne efter relevans for DENNE ejendom og OOH-salg. For HVER kontakt du vælger:
 1. Referer til kontaktens INDEX-nummer [0], [1], etc.
-2. Angiv confidence 0.0-1.0 og relevance "direct"/"indirect"
+2. Angiv confidence 0.0-1.0, relevance "direct"/"indirect", og decision_power 1-5
 3. Forklar DETALJERET i relevance_reason:
-   - HVILKEN KILDE bekræfter denne person (OIS, CVR, website, søgeresultat)?
+   - HVILKEN KILDE bekræfter denne person (OIS, CVR, Proff.dk, website, søgeresultat)?
    - HVORFOR er personen relevant for denne specifikke ejendom?
    - Er der en DIREKTE forbindelse (f.eks. "nævnt som ejer i OIS") eller INDIREKTE (f.eks. "direktør i firmaet der ejer bygningen ifølge CVR")?
+   - Har personen beslutningskraft ift. outdoor-reklame (decision_power)?
+
+PRIORITERING for OOH-salg:
+- Direktør/CEO/Adm. direktør → decision_power 5
+- Bestyrelsesformand → decision_power 5
+- Marketing-ansvarlig/CMO → decision_power 4
+- Salgsdirektør/-chef → decision_power 3
+- Driftschef/Forretningsfører → decision_power 3
+- Ejer (person) → decision_power 4
+- Generisk kontakt (info@) → decision_power 1
 
 DU MÅ IKKE:
 - Opfinde nye kontakter
@@ -219,8 +242,9 @@ Svar i JSON:
       "index": 0,
       "confidence": 0.0-1.0,
       "relevance": "direct | indirect",
-      "relevance_reason": "Detaljeret forklaring med kildehenvisning, f.eks.: 'Registreret som primær ejer i OIS.dk. CVR-opslag bekræfter at virksomheden X (CVR: Y) er ejet af denne person. Email fundet på virksomhedens hjemmeside.'",
-      "role": "ejer | administrator | bestyrelses_formand | driftschef | direktør | anden"
+      "decision_power": 1-5,
+      "relevance_reason": "Detaljeret forklaring med kildehenvisning.",
+      "role": "ejer | administrator | bestyrelses_formand | driftschef | direktør | marketing | salg | anden"
     }
   ]
 }
@@ -231,7 +255,8 @@ REGLER:
 - confidence <= 0.3 for generiske emails (info@, kontakt@)
 - Udelad kontakter der er irrelevante
 - Bedre med 0 kontakter end forkerte
-- relevance_reason SKAL altid nævne den specifikke kilde (OIS, CVR, website URL, osv.)`;
+- relevance_reason SKAL altid nævne den specifikke kilde (OIS, CVR, Proff.dk, website URL, osv.)
+- Inkluder op til 5 kontakter – prioriter dem med højest decision_power`;
 
   const response = await client.chat.completions.create({
     model: config.openai.model,
@@ -272,6 +297,7 @@ Temperature: 0.1 – vær konservativ.`,
       role: item.role || raw.role_hint || "anden",
       source: raw.source,
       confidence: typeof item.confidence === "number" ? Math.min(item.confidence, 1) : 0.5,
+      decisionPower: typeof item.decision_power === "number" ? Math.min(Math.max(item.decision_power, 1), 5) : undefined,
       relevance: item.relevance === "direct" ? "direct" : "indirect",
       relevanceReason: item.relevance_reason || "",
     });
@@ -347,6 +373,51 @@ export async function summarizeResearch(
           phone: null,
           source: `CVR ejer (${research.cvrData.companyName})`,
           role_hint: "ejer",
+        });
+      }
+    }
+    // CVR roles (Direktør, Bestyrelsesformand, etc.)
+    for (const role of (research.cvrData.roles || [])) {
+      if (!rawContacts.some(c => c.name?.toLowerCase() === role.name.toLowerCase())) {
+        rawContacts.push({
+          index: idx++,
+          name: role.name,
+          email: null,
+          phone: null,
+          source: `CVR rolle (${research.cvrData.companyName})`,
+          role_hint: role.role.toLowerCase(),
+        });
+      }
+    }
+  }
+
+  // From Proff.dk leadership
+  if (research.proffLeadership) {
+    for (const person of research.proffLeadership) {
+      if (!rawContacts.some(c => c.name?.toLowerCase() === person.name.toLowerCase())) {
+        rawContacts.push({
+          index: idx++,
+          name: person.name,
+          email: null,
+          phone: null,
+          source: `Proff.dk ledelse`,
+          role_hint: person.role.toLowerCase(),
+        });
+      }
+    }
+  }
+
+  // From website people (structured extraction)
+  if (research.websiteContent?.people) {
+    for (const person of research.websiteContent.people) {
+      if (!rawContacts.some(c => c.name?.toLowerCase() === person.name.toLowerCase())) {
+        rawContacts.push({
+          index: idx++,
+          name: person.name,
+          email: person.email || null,
+          phone: person.phone || null,
+          source: person.source || `Website`,
+          role_hint: person.role.toLowerCase(),
         });
       }
     }

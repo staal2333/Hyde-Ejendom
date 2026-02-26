@@ -7,7 +7,7 @@
 import { config } from "../config";
 import { logger } from "../logger";
 import { scoreCvrMatch, CVR_MATCH_THRESHOLD, type CvrCandidate } from "./validator";
-import type { CvrResult } from "@/types";
+import type { CvrResult, CompanyPerson } from "@/types";
 
 async function fetchCvrWithRetry(url: string, headers: Record<string, string>, retries = 2): Promise<Response | null> {
   for (let attempt = 0; attempt <= retries; attempt++) {
@@ -48,6 +48,70 @@ export interface CvrLookupResultWithScore {
   score: number;
   reasons: string[];
   discardReason?: string;
+}
+
+/**
+ * Parse role/position data from cvrapi.dk response.
+ * The API may return owners with name only, or participants/directors in various formats.
+ * We also derive roles from the company type (e.g. "Enkeltmandsvirksomhed" → owner).
+ */
+function parseCvrRoles(data: Record<string, unknown>): CompanyPerson[] {
+  const roles: CompanyPerson[] = [];
+  const seen = new Set<string>();
+
+  const addPerson = (name: string, role: string) => {
+    const key = `${name.toLowerCase()}::${role.toLowerCase()}`;
+    if (seen.has(key) || !name || name.length < 2) return;
+    seen.add(key);
+    roles.push({ name, role, source: "CVR" });
+  };
+
+  // owners array from cvrapi.dk
+  if (Array.isArray(data.owners)) {
+    for (const o of data.owners) {
+      if (typeof o === "string") {
+        addPerson(o, "Ejer");
+      } else if (o && typeof o === "object") {
+        const obj = o as Record<string, unknown>;
+        const name = String(obj.name || "");
+        addPerson(name, "Ejer");
+      }
+    }
+  }
+
+  // participants / directors if present in raw response
+  if (Array.isArray(data.participants)) {
+    for (const p of data.participants) {
+      if (p && typeof p === "object") {
+        const obj = p as Record<string, unknown>;
+        const name = String(obj.name || "");
+        const roleStr = String(obj.role || obj.title || obj.function || "Deltager");
+        if (name) addPerson(name, roleStr);
+      }
+    }
+  }
+
+  // Some cvrapi.dk responses include "directors"
+  if (Array.isArray(data.directors)) {
+    for (const d of data.directors) {
+      if (d && typeof d === "object") {
+        const obj = d as Record<string, unknown>;
+        addPerson(String(obj.name || ""), "Direktør");
+      } else if (typeof d === "string") {
+        addPerson(d, "Direktør");
+      }
+    }
+  }
+
+  // For single-owner companies, the main name is likely the owner
+  if (roles.length === 0 && data.name && typeof data.companydesc === "string") {
+    const desc = (data.companydesc as string).toLowerCase();
+    if (desc.includes("enkeltmand") || desc.includes("personlig")) {
+      addPerson(String(data.name), "Indehaver");
+    }
+  }
+
+  return roles;
 }
 
 /**
@@ -104,6 +168,7 @@ export async function lookupCvrScored(
       status: data.status || "ukendt",
       type: data.companydesc || "",
       owners: data.owners ? data.owners.map((o: { name: string }) => o.name) : [],
+      roles: parseCvrRoles(data),
       industry: data.industrydesc || undefined,
       employees: data.employees ? `${data.employees} ansatte` : undefined,
       email: data.email || undefined,

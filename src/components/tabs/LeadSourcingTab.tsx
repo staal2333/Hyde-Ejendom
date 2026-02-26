@@ -25,6 +25,15 @@ export interface LeadCompany {
   oohReason: string;
 }
 
+interface LeadContact {
+  name: string;
+  role: string;
+  email: string | null;
+  phone: string | null;
+  source: string;
+  confidence?: number;
+}
+
 interface LeadRow {
   id: string;
   name: string;
@@ -47,6 +56,7 @@ interface LeadRow {
   hubspot_company_id: string | null;
   contact_email: string | null;
   contact_phone: string | null;
+  contacts: LeadContact[];
   last_contacted_at: string | null;
   next_followup_at: string | null;
   notes: { text: string; created_at: string; author?: string }[];
@@ -892,13 +902,37 @@ function PipelineLeadCard({
         </div>
 
         {/* Line 4: Contact info */}
-        <div className="flex items-center gap-3 flex-wrap ml-[60px] mb-1 text-[10px]">
-          {lead.contact_email ? (
-            <span className="text-slate-700">{lead.contact_email}</span>
+        <div className="ml-[60px] mb-1">
+          {lead.contacts && lead.contacts.length > 0 ? (
+            <div className="space-y-0.5">
+              {lead.contacts.slice(0, expanded ? 5 : 2).map((c, ci) => (
+                <div key={ci} className="flex items-center gap-2 text-[10px]">
+                  <span className="font-medium text-slate-700">{c.name}</span>
+                  {c.role && c.role !== "anden" && c.role !== "Ukendt" && (
+                    <span className="px-1 py-0.5 rounded text-[8px] font-semibold bg-slate-100 text-slate-600 border border-slate-200">{c.role}</span>
+                  )}
+                  {c.email ? (
+                    <a href={`mailto:${c.email}`} className="text-brand-600 hover:underline">{c.email}</a>
+                  ) : (
+                    <span className="text-slate-400 italic">ingen email</span>
+                  )}
+                  {c.phone && <span className="text-slate-500">{c.phone}</span>}
+                </div>
+              ))}
+              {!expanded && lead.contacts.length > 2 && (
+                <span className="text-[9px] text-slate-400">+{lead.contacts.length - 2} flere kontakter</span>
+              )}
+            </div>
           ) : (
-            <span className="text-slate-400 italic">Ingen kontakt — beriges ved kvalificering</span>
+            <div className="flex items-center gap-3 text-[10px]">
+              {lead.contact_email ? (
+                <span className="text-slate-700">{lead.contact_email}</span>
+              ) : (
+                <span className="text-slate-400 italic">Ingen kontakt — beriges ved kvalificering</span>
+              )}
+              {lead.contact_phone && <span className="text-slate-600">{lead.contact_phone}</span>}
+            </div>
           )}
-          {lead.contact_phone && <span className="text-slate-600">{lead.contact_phone}</span>}
         </div>
 
         {/* Line 5: Follow-up + note preview */}

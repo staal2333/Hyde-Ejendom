@@ -1011,11 +1011,8 @@ export async function processStagedProperty(
     completeStep(stepValidate);
     completeStep(step3);
 
-    // ── Email hunt if no email yet ──
-    const bestContactSoFar = analysis.recommendedContacts[0] || null;
-    const hasEmail = bestContactSoFar?.email && bestContactSoFar.email.includes("@") && !bestContactSoFar.email.includes("@ukendt");
-
-    if (!hasEmail && analysis.ownerCompanyName) {
+    // ── Email hunt for ALL top contacts missing email ──
+    if (analysis.ownerCompanyName) {
       const knownEmails = researchData.websiteContent?.emails || [];
       const domain = extractCompanyDomain(
         knownEmails,
@@ -1025,11 +1022,23 @@ export async function processStagedProperty(
       if (domain) {
         const mxValid = await checkMxRecord(domain);
         if (mxValid) {
-          for (const contact of analysis.recommendedContacts) {
-            if (contact.email) continue;
-            if (!contact.fullName) continue;
+          const contactsToEnrich = analysis.recommendedContacts
+            .slice(0, 5)
+            .filter(c => !c.email && c.fullName);
+
+          if (contactsToEnrich.length > 0) {
+            emit({
+              phase: "email_hunt",
+              message: `Søger emails for ${contactsToEnrich.length} kontakter...`,
+              detail: contactsToEnrich.map(c => c.fullName).join(", "),
+              progress: 62,
+            });
+          }
+
+          for (const contact of contactsToEnrich) {
+            if (checkCancelled()) break;
             const result = await findEmailForPerson({
-              personName: contact.fullName,
+              personName: contact.fullName!,
               companyName: analysis.ownerCompanyName,
               companyDomain: domain,
               knownEmails,
@@ -1037,6 +1046,11 @@ export async function processStagedProperty(
             if (result.email) {
               contact.email = result.email;
               contact.confidence = Math.max(contact.confidence, 0.65);
+              emit({
+                phase: "email_found",
+                message: `Email fundet: ${contact.fullName} → ${result.email}`,
+                progress: 65,
+              });
             }
           }
         }
@@ -1054,6 +1068,18 @@ export async function processStagedProperty(
       ...researchData.companySearchResults.slice(0, 5).map(r => r.url),
     ].join("\n");
 
+    // Build contacts array from all ranked contacts
+    const allContacts = analysis.recommendedContacts.slice(0, 10).map(c => ({
+      name: c.fullName || "",
+      role: c.role || "anden",
+      email: c.email || null,
+      phone: c.phone || null,
+      source: c.source || "",
+      confidence: c.confidence,
+      relevance: c.relevance || "indirect",
+      relevanceReason: c.relevanceReason || "",
+    }));
+
     await updateStagedProperty(staged.id, {
       ownerCompany: analysis.ownerCompanyName,
       ownerCvr: analysis.ownerCompanyCvr || undefined,
@@ -1066,6 +1092,7 @@ export async function processStagedProperty(
       contactEmail: bestContact?.email || undefined,
       contactPhone: bestContact?.phone || undefined,
       contactReasoning: bestContact?.relevanceReason || undefined,
+      contacts: allContacts.length > 0 ? JSON.stringify(allContacts) : undefined,
     });
 
     emit({

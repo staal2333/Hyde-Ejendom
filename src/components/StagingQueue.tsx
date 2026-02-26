@@ -9,6 +9,17 @@ import { useDashboard } from "@/contexts/DashboardContext";
 type StagedStage = "new" | "researching" | "researched" | "approved" | "rejected" | "pushed";
 type StagedSource = "discovery" | "street_agent" | "manual";
 
+interface StagedContact {
+  name: string;
+  role: string;
+  email: string | null;
+  phone: string | null;
+  source: string;
+  confidence: number;
+  relevance?: string;
+  relevanceReason?: string;
+}
+
 interface StagedProperty {
   id: string;
   name: string;
@@ -29,6 +40,7 @@ interface StagedProperty {
   contactEmail?: string;
   contactPhone?: string;
   contactReasoning?: string;
+  contacts?: StagedContact[];
   emailDraftSubject?: string;
   emailDraftBody?: string;
   emailDraftNote?: string;
@@ -112,6 +124,9 @@ export default function StagingQueue() {
   const [batchResearching, setBatchResearching] = useState(false);
   const [approveSending, setApproveSending] = useState(false);
   const [confirmAction, setConfirmAction] = useState<{ type: "delete" | "reject"; ids: string[]; label: string } | null>(null);
+  const [editingContact, setEditingContact] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<{ contactPerson: string; contactEmail: string; contactPhone: string }>({ contactPerson: "", contactEmail: "", contactPhone: "" });
+  const [savingContact, setSavingContact] = useState(false);
   const abortRef = useRef<Record<string, AbortController>>({});
   const [counts, setCounts] = useState<Record<StagedStage, number>>({
     new: 0, researching: 0, researched: 0, approved: 0, rejected: 0, pushed: 0,
@@ -298,9 +313,9 @@ export default function StagingQueue() {
   const handleGenerateDraft = useCallback(async (ids?: string[]) => {
     const toUse = ids || Array.from(selected);
     const propsToUse = properties.filter(p => toUse.includes(p.id));
-    const researchedNoDraft = propsToUse.filter(p => p.stage === "researched" && !p.emailDraftSubject);
+    const researchedNoDraft = propsToUse.filter(p => p.stage === "researched" || p.stage === "approved");
     if (researchedNoDraft.length === 0) {
-      addToast("Ingen researched ejendomme uden mail-udkast valgt", "info");
+      addToast("Ingen researched/godkendte ejendomme valgt", "info");
       return;
     }
     setGeneratingDraft(true);
@@ -395,6 +410,43 @@ export default function StagingQueue() {
       setApproveSending(false);
     }
   }, [selected, properties, addToast, fetchProperties, fetchDashboard]);
+
+  // ── Edit contact info ──
+  const startEditContact = useCallback((prop: StagedProperty) => {
+    setEditingContact(prop.id);
+    setEditForm({
+      contactPerson: prop.contactPerson || "",
+      contactEmail: prop.contactEmail || "",
+      contactPhone: prop.contactPhone || "",
+    });
+  }, []);
+
+  const saveContactEdit = useCallback(async (propId: string) => {
+    setSavingContact(true);
+    try {
+      const res = await fetch(`/api/staged-properties?id=${propId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contactPerson: editForm.contactPerson || undefined,
+          contactEmail: editForm.contactEmail || undefined,
+          contactPhone: editForm.contactPhone || undefined,
+        }),
+      });
+      const data = await res.json();
+      if (data.property) {
+        addToast("Kontaktinfo opdateret", "success");
+        setEditingContact(null);
+        await fetchProperties();
+      } else {
+        addToast("Opdatering fejlede", "error", data.error);
+      }
+    } catch (e) {
+      addToast("Opdatering fejlede", "error", (e as Error).message);
+    } finally {
+      setSavingContact(false);
+    }
+  }, [editForm, addToast, fetchProperties]);
 
   // ── Reject (with confirmation) ──
   const askReject = useCallback((ids?: string[]) => {
@@ -1051,28 +1103,153 @@ export default function StagingQueue() {
                               </div>
                             )}
 
-                            {prop.contactPerson && (
-                              <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
-                                <span className="text-[10px] text-slate-500 uppercase font-semibold">Kontaktperson</span>
-                                <div className="flex items-center gap-2 mt-1">
-                                  <div className="w-7 h-7 rounded-full bg-brand-50 flex items-center justify-center text-brand-600 text-xs font-bold">
-                                    {(prop.contactPerson || "?")[0]?.toUpperCase()}
-                                  </div>
+                            {/* Editable contact section */}
+                            {editingContact === prop.id ? (
+                              <div className="rounded-lg bg-amber-50/50 border border-amber-200 p-3 space-y-2">
+                                <div className="flex items-center justify-between">
+                                  <span className="text-[10px] text-amber-700 uppercase font-semibold">Rediger kontakt</span>
+                                  <button onClick={() => setEditingContact(null)} className="text-slate-400 hover:text-slate-600 text-xs">Annuller</button>
+                                </div>
+                                <div className="space-y-1.5">
+                                  <input
+                                    type="text"
+                                    placeholder="Kontaktperson navn"
+                                    value={editForm.contactPerson}
+                                    onChange={e => setEditForm(f => ({ ...f, contactPerson: e.target.value }))}
+                                    className="w-full px-2.5 py-1.5 rounded border border-slate-300 text-xs text-slate-800 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                                  />
+                                  <input
+                                    type="email"
+                                    placeholder="Email"
+                                    value={editForm.contactEmail}
+                                    onChange={e => setEditForm(f => ({ ...f, contactEmail: e.target.value }))}
+                                    className="w-full px-2.5 py-1.5 rounded border border-slate-300 text-xs text-slate-800 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                                  />
+                                  <input
+                                    type="tel"
+                                    placeholder="Telefon"
+                                    value={editForm.contactPhone}
+                                    onChange={e => setEditForm(f => ({ ...f, contactPhone: e.target.value }))}
+                                    className="w-full px-2.5 py-1.5 rounded border border-slate-300 text-xs text-slate-800 focus:ring-1 focus:ring-brand-500 focus:border-brand-500 outline-none"
+                                  />
+                                </div>
+                                <button
+                                  onClick={() => saveContactEdit(prop.id)}
+                                  disabled={savingContact}
+                                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-600 text-white text-xs font-semibold hover:bg-brand-500 transition-colors disabled:opacity-50"
+                                >
+                                  {savingContact ? "Gemmer..." : "Gem kontakt"}
+                                </button>
+                              </div>
+                            ) : (
+                              <>
+                                {/* Multi-contact display */}
+                                {(prop.contacts && prop.contacts.length > 0) ? (
                                   <div>
-                                    <p className="text-sm text-slate-800">{prop.contactPerson}</p>
-                                    <div className="flex gap-2 text-[11px]">
-                                      {prop.contactEmail && <span className="text-brand-600">{prop.contactEmail}</span>}
-                                      {prop.contactPhone && <span className="text-slate-500">{prop.contactPhone}</span>}
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] text-slate-500 uppercase font-semibold">
+                                        Kontakter ({prop.contacts.length})
+                                      </span>
+                                      <button
+                                        onClick={() => startEditContact(prop)}
+                                        className="text-[10px] text-brand-600 hover:text-brand-700 font-medium"
+                                      >
+                                        Rediger
+                                      </button>
+                                    </div>
+                                    <div className="space-y-2 mt-1.5">
+                                      {prop.contacts.map((c, ci) => {
+                                        const roleColor = c.role?.match(/direktør|ceo|indehaver|ejer/i) ? "bg-violet-100 text-violet-700 border-violet-200"
+                                          : c.role?.match(/bestyrelse|formand/i) ? "bg-blue-100 text-blue-700 border-blue-200"
+                                          : c.role?.match(/marketing|cmo|salg/i) ? "bg-amber-100 text-amber-700 border-amber-200"
+                                          : "bg-slate-100 text-slate-600 border-slate-200";
+                                        const confPct = Math.round((c.confidence || 0) * 100);
+                                        const confColor = confPct >= 70 ? "bg-emerald-500" : confPct >= 40 ? "bg-amber-500" : "bg-slate-400";
+                                        return (
+                                          <div key={ci} className={`rounded-lg border p-2.5 ${ci === 0 ? "bg-brand-50/30 border-brand-200" : "bg-slate-50 border-slate-200"}`}>
+                                            <div className="flex items-start gap-2">
+                                              <div className={`w-7 h-7 rounded-full flex-shrink-0 flex items-center justify-center text-xs font-bold ${ci === 0 ? "bg-brand-100 text-brand-700" : "bg-slate-200 text-slate-600"}`}>
+                                                {(c.name || "?")[0]?.toUpperCase()}
+                                              </div>
+                                              <div className="flex-1 min-w-0">
+                                                <div className="flex items-center gap-1.5 flex-wrap">
+                                                  <span className="text-sm font-medium text-slate-800">{c.name}</span>
+                                                  {c.role && c.role !== "anden" && (
+                                                    <span className={`inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold border ${roleColor}`}>
+                                                      {c.role}
+                                                    </span>
+                                                  )}
+                                                  {ci === 0 && <span className="text-[9px] text-brand-600 font-semibold">PRIMÆR</span>}
+                                                </div>
+                                                <div className="flex items-center gap-3 mt-0.5 text-[11px]">
+                                                  {c.email ? (
+                                                    <a href={`mailto:${c.email}`} className="text-brand-600 hover:underline">{c.email}</a>
+                                                  ) : (
+                                                    <span className="text-slate-400 italic">Ingen email</span>
+                                                  )}
+                                                  {c.phone && <span className="text-slate-500">{c.phone}</span>}
+                                                </div>
+                                                <div className="flex items-center gap-2 mt-1">
+                                                  <div className="flex items-center gap-1">
+                                                    <div className="w-12 h-1 rounded-full bg-slate-200 overflow-hidden">
+                                                      <div className={`h-full rounded-full ${confColor}`} style={{ width: `${confPct}%` }} />
+                                                    </div>
+                                                    <span className="text-[9px] text-slate-400 tabular-nums">{confPct}%</span>
+                                                  </div>
+                                                  <span className="text-[9px] text-slate-400">{c.source}</span>
+                                                </div>
+                                              </div>
+                                            </div>
+                                            {c.relevanceReason && ci === 0 && (
+                                              <p className="text-[10px] text-slate-500 mt-1.5 pl-9 leading-relaxed">{c.relevanceReason}</p>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
                                     </div>
                                   </div>
-                                </div>
-                                {prop.contactReasoning && (
-                                  <div className="mt-2 pt-2 border-t border-slate-200/60">
-                                    <span className="text-[9px] text-slate-400 uppercase font-semibold">Hvorfor denne kontakt?</span>
-                                    <p className="text-[11px] text-slate-500 leading-relaxed mt-0.5">{prop.contactReasoning}</p>
+                                ) : prop.contactPerson ? (
+                                  <div className="rounded-lg bg-slate-50 border border-slate-200 p-3">
+                                    <div className="flex items-center justify-between">
+                                      <span className="text-[10px] text-slate-500 uppercase font-semibold">Kontaktperson</span>
+                                      <button
+                                        onClick={() => startEditContact(prop)}
+                                        className="text-[10px] text-brand-600 hover:text-brand-700 font-medium"
+                                      >
+                                        Rediger
+                                      </button>
+                                    </div>
+                                    <div className="flex items-center gap-2 mt-1">
+                                      <div className="w-7 h-7 rounded-full bg-brand-50 flex items-center justify-center text-brand-600 text-xs font-bold">
+                                        {(prop.contactPerson || "?")[0]?.toUpperCase()}
+                                      </div>
+                                      <div>
+                                        <p className="text-sm text-slate-800">{prop.contactPerson}</p>
+                                        <div className="flex gap-2 text-[11px]">
+                                          {prop.contactEmail && <span className="text-brand-600">{prop.contactEmail}</span>}
+                                          {prop.contactPhone && <span className="text-slate-500">{prop.contactPhone}</span>}
+                                        </div>
+                                      </div>
+                                    </div>
+                                    {prop.contactReasoning && (
+                                      <div className="mt-2 pt-2 border-t border-slate-200/60">
+                                        <span className="text-[9px] text-slate-400 uppercase font-semibold">Hvorfor denne kontakt?</span>
+                                        <p className="text-[11px] text-slate-500 leading-relaxed mt-0.5">{prop.contactReasoning}</p>
+                                      </div>
+                                    )}
                                   </div>
-                                )}
-                              </div>
+                                ) : (prop.stage === "researched" || prop.stage === "approved") ? (
+                                  <div className="rounded-lg bg-slate-50 border border-dashed border-slate-200 p-3 text-center">
+                                    <p className="text-xs text-slate-500 mb-1.5">Ingen kontaktperson fundet</p>
+                                    <button
+                                      onClick={() => startEditContact(prop)}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-brand-50 text-brand-600 text-xs font-medium hover:bg-brand-100 transition-colors"
+                                    >
+                                      Tilføj kontakt manuelt
+                                    </button>
+                                  </div>
+                                ) : null}
+                              </>
                             )}
 
                             {prop.researchSummary && (
@@ -1159,14 +1336,28 @@ export default function StagingQueue() {
                               Kør research
                             </button>
                           )}
-                          {prop.stage === "researched" && !prop.emailDraftSubject && !rp && (
+                          {prop.stage === "researched" && !rp && (
                             <button
                               onClick={() => handleGenerateDraft([prop.id])}
                               disabled={generatingDraft}
-                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-600 text-white text-xs font-semibold hover:bg-indigo-500 transition-colors disabled:opacity-50 shadow-sm"
+                              className={`flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold transition-colors disabled:opacity-50 shadow-sm ${
+                                prop.emailDraftSubject
+                                  ? "bg-indigo-100 text-indigo-700 hover:bg-indigo-200"
+                                  : "bg-indigo-600 text-white hover:bg-indigo-500"
+                              }`}
                             >
                               <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-3.5 h-3.5" />
-                              Godkend & generer mail
+                              {prop.emailDraftSubject ? "Generer mail igen" : "Godkend & generer mail"}
+                            </button>
+                          )}
+                          {prop.stage === "approved" && !rp && (
+                            <button
+                              onClick={() => handleGenerateDraft([prop.id])}
+                              disabled={generatingDraft}
+                              className="flex items-center gap-1.5 px-3.5 py-2 rounded-lg bg-indigo-100 text-indigo-700 text-xs font-medium hover:bg-indigo-200 transition-colors disabled:opacity-50"
+                            >
+                              <Ic d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182" className="w-3.5 h-3.5" />
+                              Generer mail igen
                             </button>
                           )}
                           {(prop.stage === "approved" || (prop.stage === "researched" && prop.emailDraftSubject)) && !rp && (

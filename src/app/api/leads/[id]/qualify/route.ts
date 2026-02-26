@@ -16,8 +16,8 @@ export async function POST(
     if (!lead) return apiError(404, "Lead not found");
 
     // Auto-enrich contact info before qualifying
-    let enrichment: { contact_email: string | null; contact_phone: string | null; contact_name: string | null; contact_role: string | null } | null = null;
-    if (!lead.contact_email) {
+    let enrichment: { contact_email: string | null; contact_phone: string | null; contact_name: string | null; contact_role: string | null; contacts?: { name: string; role: string; email: string | null; phone: string | null; source: string }[] } | null = null;
+    if (!lead.contact_email || (lead.contacts || []).length === 0) {
       try {
         const { enrichLeadContact } = await import("@/lib/lead-sourcing/lead-enrichment");
         enrichment = await enrichLeadContact(lead.name, lead.domain, lead.website);
@@ -25,10 +25,11 @@ export async function POST(
         const enrichFields: Record<string, unknown> = {};
         if (enrichment.contact_email) enrichFields.contact_email = enrichment.contact_email;
         if (enrichment.contact_phone) enrichFields.contact_phone = enrichment.contact_phone;
+        if (enrichment.contacts && enrichment.contacts.length > 0) enrichFields.contacts = JSON.stringify(enrichment.contacts);
 
         if (Object.keys(enrichFields).length > 0) {
           await updateLead(id, enrichFields);
-          logger.info(`[qualify] Enriched "${lead.name}": email=${enrichment.contact_email || "none"}, phone=${enrichment.contact_phone || "none"}`, { service: "lead-sourcing" });
+          logger.info(`[qualify] Enriched "${lead.name}": email=${enrichment.contact_email || "none"}, contacts=${enrichment.contacts?.length || 0}`, { service: "lead-sourcing" });
         }
       } catch (e) {
         const msg = e instanceof Error ? e.message : String(e);

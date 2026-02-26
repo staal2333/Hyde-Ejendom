@@ -63,6 +63,8 @@ export interface Contact {
   role: ContactRole | string | null;
   source: string;
   confidence: number; // 0.0 – 1.0
+  /** Decision power for OOH sales: 1 (none) to 5 (final decision maker) */
+  decisionPower?: number;
   propertyId?: string;
   /** "direct" = proven connection to this specific property, "indirect" = general administrator */
   relevance?: "direct" | "indirect";
@@ -89,6 +91,17 @@ export interface ResearchData {
   bbrData: BbrResult | null;
   companySearchResults: WebSearchResult[];
   websiteContent: WebsiteContent | null;
+  /** Leadership data from Proff.dk */
+  proffLeadership?: CompanyPerson[];
+}
+
+/** A person with a role in a company (from CVR/Proff/website) */
+export interface CompanyPerson {
+  name: string;
+  role: string;
+  email?: string;
+  phone?: string;
+  source: string;
 }
 
 /** CVR lookup result */
@@ -99,6 +112,8 @@ export interface CvrResult {
   status: string;
   type: string;
   owners?: string[];
+  /** People with roles (Direktør, Bestyrelsesformand, etc.) */
+  roles?: CompanyPerson[];
   industry?: string;
   employees?: string;
   /** Company email from CVR registry */
@@ -138,6 +153,8 @@ export interface WebsiteContent {
   phones: string[];
   /** Person names found on the website (used for contact validation) */
   names?: string[];
+  /** Structured people with roles extracted from team/leadership pages */
+  people?: CompanyPerson[];
   relevantSnippets: string[];
 }
 

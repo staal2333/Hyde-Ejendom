@@ -85,4 +85,117 @@ function escapeRe(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
+// ============================================================
+// Proff.dk Leadership Scraping – directors, board, management
+// ============================================================
+
+export interface ProffPerson {
+  name: string;
+  title: string;
+}
+
+/**
+ * Scrape leadership/board info from a Proff.dk company page.
+ * Looks for "Direktion", "Bestyrelse", "Ledelse" sections.
+ */
+export async function scrapeProffLeadership(cvr: string): Promise<ProffPerson[]> {
+  const normalizedCvr = String(cvr).trim().replace(/\D/g, "").slice(0, 8);
+  if (!normalizedCvr) return [];
+
+  try {
+    const url = `${PROFF_SEARCH}?q=${encodeURIComponent(normalizedCvr)}`;
+    const res = await fetch(url, {
+      headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
+      signal: AbortSignal.timeout(15000),
+    });
+    if (!res.ok) return [];
+    const html = await res.text();
+
+    // Also try the /roller/ page if we can find a link
+    const rollerLink = html.match(/href="(\/roller\/[^"]+)"/i);
+    let rollerHtml = html;
+    if (rollerLink) {
+      try {
+        const rollerRes = await fetch(`https://www.proff.dk${rollerLink[1]}`, {
+          headers: { "User-Agent": USER_AGENT, Accept: "text/html" },
+          signal: AbortSignal.timeout(15000),
+        });
+        if (rollerRes.ok) rollerHtml += "\n" + await rollerRes.text();
+      } catch { /* ignore */ }
+    }
+
+    return extractLeadershipFromHtml(rollerHtml);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Extract leadership names + titles from Proff.dk HTML.
+ * Handles various patterns found on Proff.dk pages.
+ */
+function extractLeadershipFromHtml(html: string): ProffPerson[] {
+  const people: ProffPerson[] = [];
+  const seen = new Set<string>();
+
+  const titlePatterns = [
+    "Adm\\.?\\s*direktør", "Direktør", "Bestyrelsesformand", "Bestyrelsesmedlem",
+    "CEO", "CFO", "COO", "CTO", "CMO",
+    "Managing Director", "Indehaver", "Ejer", "Partner",
+    "Stifter", "Founder", "Driftschef", "Driftsleder",
+    "Økonomichef", "Salgschef", "Marketingchef",
+    "Forretningsfører", "Viceadm\\.?\\s*direktør",
+  ];
+
+  const titleGroup = titlePatterns.join("|");
+  const DANISH_NAME = "[A-ZÆØÅ][a-zæøåé]+(?:\\s+[A-ZÆØÅ][a-zæøåé]+){1,3}";
+
+  // Pattern: Title followed by name
+  const titleThenName = new RegExp(
+    `(${titleGroup})\\s*[:\\-–,]?\\s*(${DANISH_NAME})`,
+    "gi"
+  );
+  for (const m of html.matchAll(titleThenName)) {
+    const title = m[1].trim();
+    const name = m[2].trim();
+    const key = name.toLowerCase();
+    if (!seen.has(key) && name.length > 4) {
+      seen.add(key);
+      people.push({ name, title });
+    }
+  }
+
+  // Pattern: Name followed by title
+  const nameThenTitle = new RegExp(
+    `(${DANISH_NAME})\\s*[,\\-–]\\s*(${titleGroup})`,
+    "gi"
+  );
+  for (const m of html.matchAll(nameThenTitle)) {
+    const name = m[1].trim();
+    const title = m[2].trim();
+    const key = name.toLowerCase();
+    if (!seen.has(key) && name.length > 4) {
+      seen.add(key);
+      people.push({ name, title });
+    }
+  }
+
+  // Pattern: Proff.dk specific HTML structure – <dt>Role</dt><dd>Name</dd>
+  const dtDd = new RegExp(
+    `<dt[^>]*>\\s*(${titleGroup})\\s*</dt>\\s*<dd[^>]*>\\s*(${DANISH_NAME})`,
+    "gi"
+  );
+  for (const m of html.matchAll(dtDd)) {
+    const title = m[1].trim().replace(/<[^>]*>/g, "");
+    const name = m[2].trim().replace(/<[^>]*>/g, "");
+    const key = name.toLowerCase();
+    if (!seen.has(key) && name.length > 4) {
+      seen.add(key);
+      people.push({ name, title });
+    }
+  }
+
+  return people;
+}
+
 export { domainFromWebsite };

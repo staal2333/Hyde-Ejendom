@@ -4,7 +4,7 @@
 
 import * as cheerio from "cheerio";
 import { logger } from "../logger";
-import type { WebsiteContent, WebSearchResult } from "@/types";
+import type { WebsiteContent, WebSearchResult, CompanyPerson } from "@/types";
 
 const MAX_TEXT_LENGTH = 5000;
 const FETCH_TIMEOUT = 12000;
@@ -105,11 +105,15 @@ export async function scrapeWebsite(url: string): Promise<WebsiteContent | null>
       }
     });
 
+    const people = extractPeopleFromHtml(html, url);
+
     return {
       url,
       title,
       emails: allEmails,
       phones,
+      names: [...new Set(potentialNames)].slice(0, 20),
+      people: people.length > 0 ? people : undefined,
       relevantSnippets: [...new Set(relevantSnippets)].slice(0, 10),
       contactPageText: bodyText.substring(0, MAX_TEXT_LENGTH),
     };
@@ -183,6 +187,14 @@ export async function scrapeCompanyWebsite(
       rootContent.emails.push(...content.emails);
       rootContent.phones.push(...content.phones);
       rootContent.relevantSnippets.push(...content.relevantSnippets);
+      if (content.people) {
+        if (!rootContent.people) rootContent.people = [];
+        for (const p of content.people) {
+          if (!rootContent.people.some(ep => ep.name.toLowerCase() === p.name.toLowerCase())) {
+            rootContent.people.push(p);
+          }
+        }
+      }
 
       if (type === "contact") {
         contactPageText = content.contactPageText;
@@ -191,12 +203,15 @@ export async function scrapeCompanyWebsite(
       }
     }
 
+    const allPeople = rootContent.people || [];
+
     return {
       ...rootContent,
       contactPageText,
       aboutPageText,
       emails: [...new Set(rootContent.emails)],
       phones: [...new Set(rootContent.phones)],
+      people: allPeople.length > 0 ? allPeople : undefined,
       relevantSnippets: [...new Set(rootContent.relevantSnippets)].slice(0, 12),
     };
   } catch (error) {
@@ -252,6 +267,104 @@ export async function searchGoogle(
     logger.error(`Search failed: ${error instanceof Error ? error.message : error}`);
     return [];
   }
+}
+
+// ─── People Extraction ──────────────────────────────────────
+
+const ROLE_PATTERNS = [
+  "Adm\\.?\\s*direktør", "Direktør", "Bestyrelsesformand", "Bestyrelsesmedlem",
+  "CEO", "CFO", "COO", "CTO", "CMO", "Managing Director",
+  "Indehaver", "Ejer", "Partner", "Stifter", "Founder",
+  "Driftschef", "Driftsleder", "Økonomichef", "Salgschef",
+  "Marketingchef", "Marketingdirektør", "Salgsdirektør",
+  "Forretningsfører", "Viceadm\\.?\\s*direktør", "Vicedirektør",
+  "Projektleder", "Afdelingsleder", "Kontorchef",
+  "Head of \\w+", "Director of \\w+", "VP \\w+",
+];
+
+const ROLE_GROUP = ROLE_PATTERNS.join("|");
+const DANISH_NAME = "[A-ZÆØÅ][a-zæøåé]+(?:\\s+[A-ZÆØÅ][a-zæøåé]+){1,3}";
+
+/**
+ * Extract people with roles from website HTML.
+ * Matches name+role pairs via multiple patterns and DOM proximity.
+ */
+export function extractPeopleFromHtml(html: string, pageUrl?: string): CompanyPerson[] {
+  const people: CompanyPerson[] = [];
+  const seen = new Set<string>();
+
+  const addPerson = (name: string, role: string, email?: string, phone?: string) => {
+    const key = name.toLowerCase();
+    if (seen.has(key) || name.length < 5) return;
+    seen.add(key);
+    people.push({ name, role, email, phone, source: pageUrl ? `Website: ${pageUrl}` : "Website" });
+  };
+
+  const textContent = html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ");
+
+  // Pattern 1: Role followed by name
+  const p1 = new RegExp(`(${ROLE_GROUP})\\s*[:\\-–,]?\\s*(${DANISH_NAME})`, "gi");
+  for (const m of textContent.matchAll(p1)) {
+    addPerson(m[2].trim(), m[1].trim());
+  }
+
+  // Pattern 2: Name followed by role
+  const p2 = new RegExp(`(${DANISH_NAME})\\s*[,\\-–|]\\s*(${ROLE_GROUP})`, "gi");
+  for (const m of textContent.matchAll(p2)) {
+    addPerson(m[1].trim(), m[2].trim());
+  }
+
+  // Pattern 3: Cheerio-based DOM extraction for structured cards
+  try {
+    const $ = cheerio.load(html);
+    const cardSelectors = [
+      ".team-member", ".staff-member", ".board-member",
+      ".person", ".employee", ".member", ".leadership",
+      '[itemtype*="Person"]', ".vcard",
+      ".wp-block-group", ".elementor-widget-team-member",
+    ];
+
+    for (const sel of cardSelectors) {
+      $(sel).each((_, el) => {
+        const card = $(el);
+        const text = card.text().replace(/\s+/g, " ").trim();
+        if (text.length < 5 || text.length > 500) return;
+
+        // Try to find name (usually in heading or strong)
+        const nameEl = card.find("h2, h3, h4, h5, strong, .name, .title").first();
+        let name = nameEl.text().trim();
+        if (!name || name.length < 4) return;
+        name = name.replace(/[,\-–|].*$/, "").trim();
+
+        // Try to find role
+        let role = "";
+        card.find("p, span, .position, .role, .job-title, .subtitle").each((_, roleEl) => {
+          const roleText = $(roleEl).text().trim();
+          const roleMatch = roleText.match(new RegExp(`(${ROLE_GROUP})`, "i"));
+          if (roleMatch && !role) role = roleMatch[1];
+        });
+
+        // Try email within the card
+        let email: string | undefined;
+        card.find("a[href^='mailto:']").each((_, a) => {
+          const href = $(a).attr("href") || "";
+          const e = href.replace(/^mailto:/i, "").split("?")[0].trim().toLowerCase();
+          if (e.includes("@")) email = e;
+        });
+
+        // Try phone within the card
+        let phone: string | undefined;
+        const phoneMatch = text.match(/(?:\+45[\s-]?)?(?:\d{2}[\s.-]?\d{2}[\s.-]?\d{2}[\s.-]?\d{2})/);
+        if (phoneMatch) phone = phoneMatch[0];
+
+        if (name.match(/^[A-ZÆØÅ]/) && name.split(/\s+/).length >= 2) {
+          addPerson(name, role || "Ukendt", email, phone);
+        }
+      });
+    }
+  } catch { /* cheerio parsing failure is non-fatal */ }
+
+  return people;
 }
 
 // ─── Helpers ────────────────────────────────────────────────

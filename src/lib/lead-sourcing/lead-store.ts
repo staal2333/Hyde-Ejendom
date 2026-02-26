@@ -30,6 +30,7 @@ export interface LeadRow {
   hubspot_company_id: string | null;
   contact_email: string | null;
   contact_phone: string | null;
+  contacts: LeadContactEntry[];
   last_contacted_at: string | null;
   next_followup_at: string | null;
   notes: NoteEntry[];
@@ -41,6 +42,15 @@ export interface NoteEntry {
   text: string;
   created_at: string;
   author?: string;
+}
+
+export interface LeadContactEntry {
+  name: string;
+  role: string;
+  email: string | null;
+  phone: string | null;
+  source: string;
+  confidence?: number;
 }
 
 export interface LeadFilters {
@@ -76,6 +86,7 @@ function rowToLead(row: Record<string, unknown>): LeadRow {
     hubspot_company_id: row.hubspot_company_id ? String(row.hubspot_company_id) : null,
     contact_email: row.contact_email ? String(row.contact_email) : null,
     contact_phone: row.contact_phone ? String(row.contact_phone) : null,
+    contacts: Array.isArray(row.contacts) ? row.contacts as LeadContactEntry[] : [],
     last_contacted_at: row.last_contacted_at ? String(row.last_contacted_at) : null,
     next_followup_at: row.next_followup_at ? String(row.next_followup_at) : null,
     notes: Array.isArray(row.notes) ? row.notes as NoteEntry[] : [],

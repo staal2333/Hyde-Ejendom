@@ -11,6 +11,17 @@ import { logger } from "../logger";
 export type StagedStage = "new" | "researching" | "researched" | "approved" | "rejected" | "pushed";
 export type StagedSource = "discovery" | "street_agent" | "manual";
 
+export interface StagedContactEntry {
+  name: string;
+  role: string;
+  email: string | null;
+  phone: string | null;
+  source: string;
+  confidence: number;
+  relevance?: string;
+  relevanceReason?: string;
+}
+
 export interface StagedProperty {
   id: string;
   name: string;
@@ -31,6 +42,7 @@ export interface StagedProperty {
   contactEmail?: string;
   contactPhone?: string;
   contactReasoning?: string;
+  contacts?: StagedContactEntry[];
   emailDraftSubject?: string;
   emailDraftBody?: string;
   emailDraftNote?: string;
@@ -79,6 +91,7 @@ function rowToStaged(r: any): StagedProperty {
     contactEmail: r.contact_email ?? undefined,
     contactPhone: r.contact_phone ?? undefined,
     contactReasoning: r.contact_reasoning ?? undefined,
+    contacts: parseContactsJson(r.contacts),
     emailDraftSubject: r.email_draft_subject ?? undefined,
     emailDraftBody: r.email_draft_body ?? undefined,
     emailDraftNote: r.email_draft_note ?? undefined,
@@ -90,6 +103,17 @@ function rowToStaged(r: any): StagedProperty {
     createdAt: r.created_at,
     updatedAt: r.updated_at,
   };
+}
+
+function parseContactsJson(raw: unknown): StagedContactEntry[] | undefined {
+  if (!raw) return undefined;
+  try {
+    const arr = typeof raw === "string" ? JSON.parse(raw) : raw;
+    if (!Array.isArray(arr) || arr.length === 0) return undefined;
+    return arr as StagedContactEntry[];
+  } catch {
+    return undefined;
+  }
 }
 
 // ── CRUD Operations ───────────────────────────────────────
@@ -195,6 +219,7 @@ export async function updateStagedProperty(
     contactEmail: string;
     contactPhone: string;
     contactReasoning: string;
+    contacts: string;
     emailDraftSubject: string;
     emailDraftBody: string;
     emailDraftNote: string;
@@ -218,6 +243,7 @@ export async function updateStagedProperty(
   if (updates.contactEmail !== undefined) row.contact_email = updates.contactEmail;
   if (updates.contactPhone !== undefined) row.contact_phone = updates.contactPhone;
   if (updates.contactReasoning !== undefined) row.contact_reasoning = updates.contactReasoning;
+  if (updates.contacts !== undefined) row.contacts = updates.contacts;
   if (updates.emailDraftSubject !== undefined) row.email_draft_subject = updates.emailDraftSubject;
   if (updates.emailDraftBody !== undefined) row.email_draft_body = updates.emailDraftBody;
   if (updates.emailDraftNote !== undefined) row.email_draft_note = updates.emailDraftNote;
@@ -239,7 +265,7 @@ export async function updateStagedProperty(
     // If columns don't exist yet, retry without the optional columns
     if (error.message.includes("column") || error.code === "PGRST204") {
       const safeRow: Record<string, unknown> = { updated_at: new Date().toISOString() };
-      const optionalCols = new Set(["research_reasoning", "data_quality", "contact_reasoning"]);
+      const optionalCols = new Set(["research_reasoning", "data_quality", "contact_reasoning", "contacts"]);
       for (const [k, v] of Object.entries(row)) {
         if (!optionalCols.has(k)) safeRow[k] = v;
       }

@@ -32,18 +32,13 @@ export async function POST(req: NextRequest) {
           continue;
         }
 
-        if (staged.stage !== "researched") {
-          results.push({ id, success: false, error: `Stage er "${staged.stage}" – kun "researched" kan få genereret mail-udkast her` });
+        if (staged.stage !== "researched" && staged.stage !== "approved") {
+          results.push({ id, success: false, error: `Stage er "${staged.stage}" – kun "researched"/"approved" kan få genereret mail-udkast` });
           continue;
         }
 
-        if (staged.emailDraftSubject && staged.emailDraftBody) {
-          results.push({ id, success: true }); // already has draft
-          continue;
-        }
-
-        if (!staged.contactEmail || !staged.contactEmail.includes("@")) {
-          results.push({ id, success: false, error: "Ingen gyldig kontakt-email – kan ikke generere mail" });
+        if (!staged.contactPerson && !staged.contactEmail) {
+          results.push({ id, success: false, error: "Ingen kontaktperson eller email – tilføj kontaktinfo først" });
           continue;
         }
 
@@ -60,7 +55,7 @@ export async function POST(req: NextRequest) {
 
         const contact: Contact = {
           fullName: staged.contactPerson || null,
-          email: staged.contactEmail,
+          email: staged.contactEmail || null,
           phone: staged.contactPhone || null,
           role: "ejer",
           source: "staging",
@@ -86,7 +81,7 @@ export async function POST(req: NextRequest) {
           emailDraftSubject: draft.subject,
           emailDraftBody: draft.bodyText,
           emailDraftNote: draft.shortInternalNote,
-          stage: "approved",
+          ...(staged.stage === "researched" ? { stage: "approved" as const } : {}),
         });
 
         results.push({ id, success: true });
