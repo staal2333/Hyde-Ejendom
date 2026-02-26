@@ -50,6 +50,7 @@ async function assessOwnerAndQuality(
   outdoorPotentialScore: number;
   keyInsights: string;
   evidenceChain: string;
+  oohPitchArgument: string;
   dataQuality: "high" | "medium" | "low";
   dataQualityReason: string;
 }> {
@@ -111,6 +112,7 @@ Svar i JSON:
   "outdoor_potential_score": 1-10,
   "key_insights": "3-5 sÃ¦tninger om ejendommen â€“ inkl. hvad vi ved om bygningen, omrÃ¥det og potentialet.",
   "evidence_chain": "Struktureret forklaring i punktform:\\nâ€¢ KILDE: OIS.dk â†’ [hvad vi fandt]\\nâ€¢ KILDE: CVR â†’ [hvad vi fandt]\\nâ€¢ KONKLUSION: [hvorfor vi mener X er ejer/bygherre]\\nâ€¢ USIKKERHEDER: [hvad vi ikke kunne bekrÃ¦fte]",
+  "ooh_pitch_argument": "En saetning: HVORFOR er netop denne ejendom god til OOH-reklame? Naevn facade, trafik, beliggenhed konkret.",
   "data_quality": "high | medium | low",
   "data_quality_reason": "Kort forklaring med reference til hvilke kilder der bekrÃ¦fter/mangler"
 }
@@ -151,6 +153,7 @@ Temperature: 0.1 â€“ vÃ¦r sÃ¥ deterministisk som muligt.`,
     outdoorPotentialScore: parsed.outdoor_potential_score || parsed.outdoorPotentialScore || 5,
     keyInsights: parsed.key_insights || parsed.keyInsights || "",
     evidenceChain: parsed.evidence_chain || parsed.evidenceChain || "",
+    oohPitchArgument: parsed.ooh_pitch_argument || parsed.oohPitchArgument || "",
     dataQuality: (parsed.data_quality || parsed.dataQuality || "medium") as "high" | "medium" | "low",
     dataQualityReason: (parsed.data_quality_reason || parsed.dataQualityReason || "") as string,
   };
@@ -485,6 +488,7 @@ export async function summarizeResearch(
     outdoorPotentialScore: ownerAssessment.outdoorPotentialScore,
     keyInsights: ownerAssessment.keyInsights,
     evidenceChain: ownerAssessment.evidenceChain,
+    oohPitchArgument: ownerAssessment.oohPitchArgument,
     dataQuality: ownerAssessment.dataQuality,
     dataQualityReason: ownerAssessment.dataQualityReason,
   };
@@ -566,6 +570,7 @@ Vi vil gerne kontakte en person angÃ¥ende outdoor reklame-muligheder pÃ¥ en 
 ## Ejendom
 - Adresse: ${property.address}, ${property.postalCode} ${property.city}
 - Outdoor score: ${analysis.outdoorPotentialScore}/10
+- OOH pitch-argument: ${analysis.oohPitchArgument || ""}
 - NÃ¸gleindsigter: ${analysis.keyInsights}
 
 ## Kontaktperson

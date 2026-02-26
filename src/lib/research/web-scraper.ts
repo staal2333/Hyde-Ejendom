@@ -4,10 +4,34 @@
 
 import * as cheerio from "cheerio";
 import { logger } from "../logger";
+import { config } from "../config";
 import type { WebsiteContent, WebSearchResult, CompanyPerson } from "@/types";
 
 const MAX_TEXT_LENGTH = 5000;
 const FETCH_TIMEOUT = 12000;
+
+/**
+ * Retry wrapper for flaky network calls.
+ * Retries on any thrown error with exponential backoff.
+ */
+export async function withRetry<T>(
+  fn: () => Promise<T>,
+  attempts = 3,
+  delayMs = 800
+): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fn();
+    } catch (err) {
+      lastError = err;
+      if (i < attempts - 1) {
+        await new Promise((r) => setTimeout(r, delayMs * (i + 1)));
+      }
+    }
+  }
+  throw lastError;
+}
 
 /**
  * Fetch a webpage and extract structured content.
@@ -221,11 +245,59 @@ export async function scrapeCompanyWebsite(
 }
 
 /**
- * Search using DuckDuckGo HTML.
+ * Search using SearchAPI.io (Google backend) — works reliably on Vercel.
+ * Falls back to DuckDuckGo HTML scraping if no API key is configured.
  */
 export async function searchGoogle(
   query: string,
   numResults = 5
+): Promise<WebSearchResult[]> {
+  const apiKey = config.searchApi.apiKey();
+
+  if (apiKey) {
+    return searchViaSearchApi(query, numResults, apiKey);
+  }
+
+  // Fallback: DuckDuckGo (may be blocked on Vercel)
+  logger.warn("SEARCHAPI_API_KEY not configured – falling back to DuckDuckGo (may fail on Vercel)");
+  return searchViaDuckDuckGo(query, numResults);
+}
+
+async function searchViaSearchApi(
+  query: string,
+  numResults: number,
+  apiKey: string
+): Promise<WebSearchResult[]> {
+  try {
+    const url = `https://www.searchapi.io/api/v1/search?engine=google&q=${encodeURIComponent(query)}&num=${numResults}&api_key=${apiKey}`;
+
+    const res = await fetch(url, {
+      signal: AbortSignal.timeout(10000),
+      headers: { Accept: "application/json" },
+    });
+
+    if (!res.ok) {
+      logger.error(`SearchAPI.io error ${res.status}: ${await res.text()}`);
+      return [];
+    }
+
+    const data = await res.json();
+    const organicResults = data.organic_results ?? [];
+
+    return organicResults.slice(0, numResults).map((r: { title?: string; link?: string; snippet?: string }) => ({
+      title: r.title ?? "",
+      url: r.link ?? "",
+      snippet: r.snippet ?? "",
+    })).filter((r: WebSearchResult) => r.title && r.url);
+  } catch (error) {
+    logger.error(`SearchAPI.io search failed: ${error instanceof Error ? error.message : error}`);
+    return [];
+  }
+}
+
+async function searchViaDuckDuckGo(
+  query: string,
+  numResults: number
 ): Promise<WebSearchResult[]> {
   try {
     const searchUrl = `https://html.duckduckgo.com/html/?q=${encodeURIComponent(query)}`;
@@ -246,25 +318,20 @@ export async function searchGoogle(
       let url = titleEl.attr("href") || "";
       const snippet = snippetEl.text().trim();
 
-      // DuckDuckGo wraps URLs
       if (url.includes("uddg=")) {
         try {
-          url = decodeURIComponent(
-            url.split("uddg=")[1]?.split("&")[0] || url
-          );
+          url = decodeURIComponent(url.split("uddg=")[1]?.split("&")[0] || url);
         } catch {
           // keep original
         }
       }
 
-      if (title && url) {
-        results.push({ title, url, snippet });
-      }
+      if (title && url) results.push({ title, url, snippet });
     });
 
     return results;
   } catch (error) {
-    logger.error(`Search failed: ${error instanceof Error ? error.message : error}`);
+    logger.error(`DuckDuckGo search failed: ${error instanceof Error ? error.message : error}`);
     return [];
   }
 }

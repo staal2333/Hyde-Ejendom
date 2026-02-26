@@ -15,6 +15,7 @@
 import OpenAI from "openai";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
+import { withRetry } from "./web-scraper";
 
 let _openai: OpenAI | null = null;
 function getOpenAI(): OpenAI {
@@ -38,14 +39,16 @@ export interface CvrCandidate {
 async function fetchCvrByNumber(cvr: string): Promise<CvrCandidate | null> {
   try {
     const params = new URLSearchParams({ country: "dk", vat: cvr.trim() });
-    const res = await fetch(`${config.cvr.apiUrl}?${params}`, {
-      headers: { "User-Agent": config.cvr.userAgent },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    const d = await res.json();
-    if (!d || d.error || !d.vat) return null;
-    return mapCvrResponse(d);
+    return await withRetry(async () => {
+      const res = await fetch(`${config.cvr.apiUrl}?${params}`, {
+        headers: { "User-Agent": config.cvr.userAgent },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) throw new Error(`CVR API error ${res.status}`);
+      const d = await res.json();
+      if (!d || d.error || !d.vat) return null;
+      return mapCvrResponse(d);
+    }, 3, 600);
   } catch {
     return null;
   }
@@ -55,14 +58,16 @@ async function fetchCvrByNumber(cvr: string): Promise<CvrCandidate | null> {
 async function fetchCvrByName(name: string): Promise<CvrCandidate | null> {
   try {
     const params = new URLSearchParams({ country: "dk", name: name.trim() });
-    const res = await fetch(`${config.cvr.apiUrl}?${params}`, {
-      headers: { "User-Agent": config.cvr.userAgent },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    const d = await res.json();
-    if (!d || d.error || !d.vat) return null;
-    return mapCvrResponse(d);
+    return await withRetry(async () => {
+      const res = await fetch(`${config.cvr.apiUrl}?${params}`, {
+        headers: { "User-Agent": config.cvr.userAgent },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) throw new Error(`CVR API error ${res.status}`);
+      const d = await res.json();
+      if (!d || d.error || !d.vat) return null;
+      return mapCvrResponse(d);
+    }, 3, 600);
   } catch {
     return null;
   }
@@ -73,14 +78,16 @@ async function fetchCvrByDomain(domain: string): Promise<CvrCandidate | null> {
   try {
     const cleanDomain = domain.replace(/^www\./, "").toLowerCase().trim();
     const params = new URLSearchParams({ country: "dk", domain: cleanDomain });
-    const res = await fetch(`${config.cvr.apiUrl}?${params}`, {
-      headers: { "User-Agent": config.cvr.userAgent },
-      signal: AbortSignal.timeout(8000),
-    });
-    if (!res.ok) return null;
-    const d = await res.json();
-    if (!d || d.error || !d.vat) return null;
-    return mapCvrResponse(d);
+    return await withRetry(async () => {
+      const res = await fetch(`${config.cvr.apiUrl}?${params}`, {
+        headers: { "User-Agent": config.cvr.userAgent },
+        signal: AbortSignal.timeout(8000),
+      });
+      if (!res.ok) throw new Error(`CVR API error ${res.status}`);
+      const d = await res.json();
+      if (!d || d.error || !d.vat) return null;
+      return mapCvrResponse(d);
+    }, 3, 600);
   } catch {
     return null;
   }

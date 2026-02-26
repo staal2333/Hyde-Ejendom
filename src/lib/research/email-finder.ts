@@ -27,23 +27,13 @@ export interface EmailCandidate {
   confidence: number;
 }
 
-// ─── Common Danish email patterns ────────────────────────────
+// ─── Common Danish email patterns (top 3 most common, fewer false positives) ──
 
 const DANISH_EMAIL_PATTERNS = [
-  // firstname@domain
-  (first: string, _last: string) => `${first}`,
-  // firstname.lastname@domain
+  // firstname.lastname@domain (most common in DK)
   (first: string, last: string) => `${first}.${last}`,
   // f.lastname@domain
   (first: string, last: string) => `${first[0]}.${last}`,
-  // flastname@domain
-  (first: string, last: string) => `${first[0]}${last}`,
-  // firstnamel@domain
-  (first: string, last: string) => `${first}${last[0]}`,
-  // lastname@domain
-  (_first: string, last: string) => `${last}`,
-  // first-last@domain
-  (first: string, last: string) => `${first}-${last}`,
   // firstlast@domain
   (first: string, last: string) => `${first}${last}`,
 ];
@@ -474,12 +464,11 @@ function buildEmailSearchQueries(
 ): string[] {
   const queries: string[] = [];
 
-  // Direct person email search
-  queries.push(`"${personName}" email`);
-
   if (companyName) {
-    queries.push(`"${personName}" "${companyName}" email kontakt`);
-    queries.push(`"${personName}" "${companyName}" mail`);
+    // OOH/marketing decision-maker focused queries
+    queries.push(`"${companyName}" marketing direktør email kontakt`);
+    queries.push(`"${companyName}" CMO "marketing" kontakt`);
+    queries.push(`"${personName}" "${companyName}" email`);
   }
 
   if (domain) {
@@ -487,10 +476,10 @@ function buildEmailSearchQueries(
     queries.push(`site:${domain} "${personName}"`);
   }
 
-  // Danish-specific searches
+  // Proff.dk as a search source for leadership data
   if (companyName) {
-    queries.push(`"${companyName}" bestyrelse kontakt email`);
-    queries.push(`"${companyName}" direktion ledelse kontakt`);
+    queries.push(`site:proff.dk "${companyName}" direktion`);
+    queries.push(`"${companyName}" direktion ledelse kontakt email`);
   }
 
   return queries.slice(0, 6); // Max 6 queries

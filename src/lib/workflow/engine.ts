@@ -27,6 +27,7 @@ import { isSupportedLocation, SUPPORTED_CITIES } from "../supported-cities";
 import { config } from "../config";
 import { logger } from "../logger";
 import { updateStagedProperty, listStagedProperties } from "../staging/store";
+import { saveResearchLog } from "../research-log-store";
 import type { StagedProperty } from "../staging/store";
 import type {
   Property,
@@ -851,6 +852,9 @@ export async function processProperty(
     });
   }
 
+  // Persist log to Supabase (non-blocking, best-effort)
+  saveResearchLog(run).catch(() => {});
+
   return run;
 }
 
@@ -1209,6 +1213,10 @@ export async function processStagedProperty(
   }
 
   storeRun(run);
+
+  // Persist log to Supabase (non-blocking, best-effort)
+  saveResearchLog(run).catch(() => {});
+
   return run;
 }
 

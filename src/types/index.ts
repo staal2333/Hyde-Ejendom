@@ -169,6 +169,8 @@ export interface ResearchAnalysis {
   keyInsights: string;
   /** Source-attributed evidence chain explaining how owner was identified */
   evidenceChain: string;
+  /** One-sentence OOH pitch argument: why this property is interesting for outdoor advertising */
+  oohPitchArgument?: string;
   /** Data quality assessment from LLM */
   dataQuality: "high" | "medium" | "low";
   dataQualityReason: string;

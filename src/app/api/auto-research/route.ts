@@ -3,21 +3,29 @@
 // GET /api/auto-research?secret=...
 //
 // Called by cron job to automatically research eligible properties.
-// Respects auto-research rules and autonomy levels.
+// Fetches HubSpot properties, filters by rules, then calls processProperty()
+// directly so research actually runs — not just marks them as "ready".
 // ============================================================
 
 import { NextRequest, NextResponse } from "next/server";
 import { verifyCronSecret } from "@/lib/cron-auth";
-import { fetchAllEjendomme, updateEjendom } from "@/lib/hubspot";
+import { fetchAllEjendomme } from "@/lib/hubspot";
 import { DEFAULT_AUTO_RULES } from "@/lib/state-machine";
+import { processProperty } from "@/lib/workflow/engine";
+import { logger } from "@/lib/logger";
 import type { Property } from "@/types";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min max
 
+const MAX_CONCURRENT = 3; // Run at most 3 properties in parallel per cron tick
+const MAX_PER_RUN = 10;
+
 export async function GET(req: NextRequest) {
   const authErr = verifyCronSecret(req);
   if (authErr) return authErr;
+
+  const startTime = Date.now();
 
   try {
     // ── Fetch all properties ──
@@ -29,68 +37,98 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({
         message: "No active auto-research rules",
         propertiesChecked: allProperties.length,
-        queued: 0,
+        processed: 0,
       });
     }
 
     const toResearch: Property[] = [];
 
     for (const property of allProperties) {
-      if (toResearch.length >= 20) break; // Cap at 20 per run
+      if (toResearch.length >= MAX_PER_RUN) break;
 
       for (const rule of activeRules) {
-        // Check status match
         if (!rule.fromStatuses.includes(property.outreachStatus)) continue;
-
-        // Check score
         if (rule.minScore && (property.outdoorScore || 0) < rule.minScore) continue;
-
-        // Check age
         if (rule.maxAgeHours && property.createdAt) {
-          const ageMs = Date.now() - new Date(property.createdAt).getTime();
-          const ageHours = ageMs / (1000 * 60 * 60);
+          const ageHours = (Date.now() - new Date(property.createdAt).getTime()) / 3_600_000;
           if (ageHours > rule.maxAgeHours) continue;
         }
-
-        // Property matches this rule
         toResearch.push(property);
-        break; // Don't apply more rules to the same property
+        break;
       }
     }
 
-    // ── Mark as research started ──
-    const results: { id: string; address: string; rule: string; status: string }[] = [];
+    if (toResearch.length === 0) {
+      return NextResponse.json({
+        message: "No properties eligible for auto-research",
+        propertiesChecked: allProperties.length,
+        activeRules: activeRules.map((r) => r.label),
+        processed: 0,
+      });
+    }
 
-    for (const prop of toResearch) {
-      try {
-        await updateEjendom(prop.id, { outreach_status: "RESEARCH_IGANGSAT" });
-        results.push({
-          id: prop.id,
-          address: prop.address,
-          rule: "auto",
-          status: "queued",
-        });
-      } catch (err) {
-        results.push({
-          id: prop.id,
-          address: prop.address,
-          rule: "auto",
-          status: `error: ${err instanceof Error ? err.message : "unknown"}`,
-        });
+    logger.info(`Auto-research: processing ${toResearch.length} properties`, { service: "auto-research" });
+
+    // ── Process in batches of MAX_CONCURRENT ──
+    const results: { id: string; address: string; status: string; durationMs?: number }[] = [];
+
+    for (let i = 0; i < toResearch.length; i += MAX_CONCURRENT) {
+      const batch = toResearch.slice(i, i + MAX_CONCURRENT);
+
+      const batchResults = await Promise.allSettled(
+        batch.map(async (prop) => {
+          const t0 = Date.now();
+          try {
+            const run = await processProperty(prop);
+            return {
+              id: prop.id,
+              address: prop.address,
+              status: run.status,
+              durationMs: Date.now() - t0,
+            };
+          } catch (err) {
+            return {
+              id: prop.id,
+              address: prop.address,
+              status: `error: ${err instanceof Error ? err.message : "unknown"}`,
+              durationMs: Date.now() - t0,
+            };
+          }
+        })
+      );
+
+      for (const result of batchResults) {
+        if (result.status === "fulfilled") {
+          results.push(result.value);
+        } else {
+          results.push({
+            id: "unknown",
+            address: "unknown",
+            status: `rejected: ${result.reason}`,
+          });
+        }
+      }
+
+      // Small pause between batches to avoid rate limiting
+      if (i + MAX_CONCURRENT < toResearch.length) {
+        await new Promise((r) => setTimeout(r, 2000));
       }
     }
 
-    // Note: The actual research execution would be triggered by a separate
-    // process that picks up properties in RESEARCH_IGANGSAT status.
-    // For now, we just mark them as ready for research.
-    // A future improvement would call the research engine directly here.
+    const succeeded = results.filter((r) => r.status === "completed").length;
+    const failed = results.filter((r) => r.status.startsWith("error") || r.status.startsWith("rejected")).length;
+
+    logger.info(`Auto-research done: ${succeeded} succeeded, ${failed} failed`, { service: "auto-research" });
 
     return NextResponse.json({
-      message: `Auto-research check complete`,
+      message: `Auto-research complete`,
       timestamp: new Date().toISOString(),
+      durationMs: Date.now() - startTime,
       propertiesChecked: allProperties.length,
       activeRules: activeRules.map((r) => r.label),
-      queued: results.filter((r) => r.status === "queued").length,
+      processed: results.length,
+      succeeded,
+      failed,
       results,
     });
   } catch (err) {
