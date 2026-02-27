@@ -49,13 +49,15 @@ export async function POST(req: NextRequest) {
         };
 
         // Allow draft generation even without a specific contact — use owner company as fallback
+        // Prefer explicit contactPerson/contactEmail fields; fall back to enriched contacts[0]
+        const primaryContact = (staged.contacts as Array<{name?: string; email?: string | null; phone?: string | null}> | undefined)?.[0];
         const contact: Contact = {
-          fullName: staged.contactPerson || null,
-          email: staged.contactEmail || null,
-          phone: staged.contactPhone || null,
+          fullName: staged.contactPerson || primaryContact?.name || null,
+          email: staged.contactEmail || primaryContact?.email || null,
+          phone: staged.contactPhone || primaryContact?.phone || null,
           role: "ejer",
           source: "staging",
-          confidence: staged.contactEmail ? 0.8 : 0.3,
+          confidence: (staged.contactEmail || primaryContact?.email) ? 0.8 : 0.3,
         };
 
         const analysis: ResearchAnalysis = {

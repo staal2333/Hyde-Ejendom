@@ -379,7 +379,7 @@ export default function StagingQueue() {
     const propsToSend = properties.filter(p => toSend.includes(p.id));
     const canSend = propsToSend.filter(p =>
       (p.stage === "researched" || p.stage === "approved" || p.stage === "new") &&
-      p.emailDraftSubject && p.contactEmail
+      p.emailDraftSubject && effectiveEmail(p)
     );
     if (canSend.length === 0) {
       addToast("Vælg ejendomme med email-udkast og kontakt-email", "info");
@@ -415,15 +415,23 @@ export default function StagingQueue() {
   const startEditContact = useCallback((prop: StagedProperty) => {
     setEditingContact(prop.id);
     setEditForm({
-      contactPerson: prop.contactPerson || "",
-      contactEmail: prop.contactEmail || "",
-      contactPhone: prop.contactPhone || "",
+      contactPerson: effectiveName(prop) || "",
+      contactEmail: effectiveEmail(prop) || "",
+      contactPhone: effectivePhone(prop) || "",
     });
   }, []);
 
   const saveContactEdit = useCallback(async (propId: string) => {
     setSavingContact(true);
+    const prop = properties.find(p => p.id === propId);
     try {
+      // If the property has a contacts array, sync the edits into contacts[0] so the UI stays consistent
+      const updatedContacts = prop?.contacts && prop.contacts.length > 0
+        ? prop.contacts.map((c, i) => i === 0
+            ? { ...c, name: editForm.contactPerson || c.name, email: editForm.contactEmail || c.email, phone: editForm.contactPhone || c.phone }
+            : c)
+        : undefined;
+
       const res = await fetch(`/api/staged-properties?id=${propId}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -431,6 +439,7 @@ export default function StagingQueue() {
           contactPerson: editForm.contactPerson || undefined,
           contactEmail: editForm.contactEmail || undefined,
           contactPhone: editForm.contactPhone || undefined,
+          ...(updatedContacts ? { contacts: updatedContacts } : {}),
         }),
       });
       const data = await res.json();
@@ -691,13 +700,13 @@ export default function StagingQueue() {
               )}
               {(() => {
                 const readyToSend = properties.filter(p =>
-                  (p.stage === "researched" || p.stage === "approved") && p.emailDraftSubject && p.contactEmail
+                  (p.stage === "researched" || p.stage === "approved") && p.emailDraftSubject && effectiveEmail(p)
                 ).length;
                 return readyToSend > 0 ? (
                   <button
                     onClick={() => {
                       const readyIds = properties
-                        .filter(p => (p.stage === "researched" || p.stage === "approved") && p.emailDraftSubject && p.contactEmail)
+                        .filter(p => (p.stage === "researched" || p.stage === "approved") && p.emailDraftSubject && effectiveEmail(p))
                         .map(p => p.id);
                       handleApproveSend(readyIds);
                     }}
@@ -789,7 +798,7 @@ export default function StagingQueue() {
                 </button>
               )}
               {(() => {
-                const canSend = selectedProps.filter(p => p.emailDraftSubject && p.contactEmail);
+                const canSend = selectedProps.filter(p => p.emailDraftSubject && effectiveEmail(p));
                 return canSend.length > 0 ? (
                   <button
                     onClick={() => handleApproveSend()}
@@ -1367,7 +1376,7 @@ export default function StagingQueue() {
                         )}
 
                         {/* Warning: draft exists but no email → can't send */}
-                        {prop.emailDraftSubject && !prop.contactEmail && prop.stage !== "pushed" && (
+                        {prop.emailDraftSubject && !effectiveEmail(prop) && prop.stage !== "pushed" && (
                           <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
                             <Ic d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" className="w-4 h-4 text-amber-500 flex-shrink-0" />
                             <p className="text-xs text-amber-700">
@@ -1420,7 +1429,7 @@ export default function StagingQueue() {
                               {approving ? "Pusher..." : "Trin 3: Push til HubSpot"}
                             </button>
                           )}
-                          {prop.emailDraftSubject && prop.contactEmail && prop.stage !== "pushed" && !rp && (
+                          {prop.emailDraftSubject && effectiveEmail(prop) && prop.stage !== "pushed" && !rp && (
                             <button
                               onClick={() => handleApproveSend([prop.id])}
                               disabled={approveSending}
@@ -1484,6 +1493,18 @@ function isOOHCandidate(prop: StagedProperty): boolean {
     ((prop.outdoorNotes?.toLowerCase().includes("stillads") ?? false) ||
      (prop.outdoorNotes?.toLowerCase().includes("scaffold") ?? false) ||
      (prop.dailyTraffic ?? 0) >= 15000);
+}
+
+function effectiveEmail(prop: StagedProperty): string | null {
+  return prop.contactEmail || prop.contacts?.[0]?.email || null;
+}
+
+function effectiveName(prop: StagedProperty): string | null {
+  return prop.contactPerson || prop.contacts?.[0]?.name || null;
+}
+
+function effectivePhone(prop: StagedProperty): string | null {
+  return prop.contactPhone || prop.contacts?.[0]?.phone || null;
 }
 
 function getCompleteness(prop: StagedProperty): number {

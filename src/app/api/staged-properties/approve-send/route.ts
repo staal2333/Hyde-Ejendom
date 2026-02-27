@@ -155,12 +155,14 @@ export async function POST(req: NextRequest) {
         });
 
         // 7. Enqueue email if contact email and draft exist
+        // Use contactEmail first, then fall back to contacts[0].email
+        const effectiveEmail = staged.contactEmail || (staged.contacts as Array<{email?: string | null}> | undefined)?.[0]?.email || null;
         let emailQueued = false;
-        if (staged.contactEmail && staged.emailDraftSubject && staged.emailDraftBody) {
+        if (effectiveEmail && staged.emailDraftSubject && staged.emailDraftBody) {
           try {
             await updateEjendom(hubspotId, { outreach_status: "KLAR_TIL_UDSENDELSE" });
             const queueResult = await enqueueEmail(hubspotId, {
-              to: staged.contactEmail,
+              to: effectiveEmail,
               subject: staged.emailDraftSubject,
               body: staged.emailDraftBody,
             });
