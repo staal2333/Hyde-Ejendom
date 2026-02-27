@@ -1,4 +1,4 @@
-﻿// ============================================================
+// ============================================================
 // LLM Client â€“ SPLIT prompts for precision research
 //
 // Prompt 1 (summarizeOwnerAndQuality): Assess owner + CVR + data quality
@@ -13,6 +13,7 @@
 import OpenAI from "openai";
 import { config } from "./config";
 import { logger } from "./logger";
+import { getAISettings } from "./ai-settings";
 import type {
   Property,
   ResearchData,
@@ -506,6 +507,12 @@ export async function generateEmailDraft(
 ): Promise<EmailDraft> {
   const client = getClient();
 
+  // Load live settings from DB (cached 60s) - falls back to config defaults
+  const aiSettings = await getAISettings();
+  const tone = aiSettings.toneOfVoice || config.toneOfVoice;
+  const examples = aiSettings.exampleEmails || config.exampleEmails;
+  const senderName = aiSettings.senderName || "Mads";
+
   const prompt = buildEmailPrompt(property, contact, analysis);
 
   const response = await client.chat.completions.create({
@@ -513,22 +520,23 @@ export async function generateEmailDraft(
     messages: [
       {
         role: "system",
-        content: `Du er en dansk copywriter der skriver outreach-mails til ejendomsejere og administratorer om outdoor reklame-muligheder.
+        content: `Du er en dansk copywriter der skriver outreach-mails til ejendomsejere og administratorer om outdoor reklame-muligheder pa vegne af ${senderName} fra Hyde Media.
 
 TONE OF VOICE:
-${config.toneOfVoice}
+${tone}
 
-EKSEMPLER PÃ… GODE MAILS:
-${config.exampleEmails}
+EKSEMPLER PA GODE MAILS (imiter denne stil praecist):
+${examples}
 
 REGLER:
-- Max 150 ord i brÃ¸dteksten
-- Start ALDRIG med "Jeg hÃ¥ber denne mail finder dig vel" eller lignende
+- Max 150 ord i brodteksten
+- Start ALDRIG med "Jeg haber denne mail finder dig vel" eller lignende
 - Start med noget SPECIFIKT om ejendommen der viser vi har gjort research
-- NÃ¦vn konkrete fordele (trafiktal, facade-stÃ¸rrelse, beliggenhed)
-- Afslut med et klart, lavt-forpligtende call-to-action
+- Naevn konkrete fordele (trafiktal, facade-storrelse, beliggenhed)
+- Afslut med et lavt-forpligtende spoergsmaal som CTA
 - Brug modtagerens navn og rolle naturligt
 - Skriv som et menneske, ikke en robot
+- Underskriv ALTID: Mvh\n${senderName}
 
 Du svarer ALTID i valid JSON med felterne: subject, body_text, short_internal_note.`,
       },

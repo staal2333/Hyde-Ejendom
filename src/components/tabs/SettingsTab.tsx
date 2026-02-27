@@ -121,10 +121,144 @@ interface InspectorResult {
   };
 }
 
+// ─── AI Settings types ───────────────────────────────────────
+
+interface AISettings {
+  toneOfVoice: string;
+  exampleEmails: string;
+  senderName: string;
+}
+
+const DEFAULT_TONE = `- Direkte og konkret — ingen opvarmningssætninger
+- Brug altid modtagerens fornavn: "Hej [Navn]"
+- Start med noget specifikt om ejendommen — vis at vi har gjort research
+- Max 4-5 korte afsnit — aldrig mere end 3 linjer per afsnit
+- Fokus på konkret nytte for modtageren (reducere omkostninger, skabe indtægt)
+- Afslut ALTID med et enkelt åbent spørgsmål som CTA
+- Naturlig hverdagsdansk — skriv som du taler, ikke som en salgstragt
+- Undgå buzzwords og corporate-sprog`;
+
+const DEFAULT_EXAMPLES = `Eksempel 1:
+Hej Amalie
+
+Jeg tillader mig at række ud i forbindelse med ejendommen på Nørregade 14.
+
+Det er en virkelig spændende adresse med god synlighed – og derfor også et ideelt sted til outdoor-annoncering på stillads, hvis der på et tidspunkt skal renoveres.
+
+Vi hjælper ejendomsejere med at reducere deres byggeomkostninger via stilladsreklamer, når der renoveres med stillads.
+
+Vi varetager hele processen – salg, montering, fakturering og indhentning af tilladelser fra kommunen.
+
+Har I planer om at renovere ejendommen i 2026?
+
+---
+
+Eksempel 2:
+Hej Anders
+
+Jeg har lagt mærke til, at I har en stor fri facade på jeres ejendom i Århus, som er oplagt til at annoncere for jeres egne budskaber løbende.
+
+Hos Hyde Media printer vi over 20.000 m² bannere årligt i forbindelse med vores outdoor-kampagner for andre virksomheder, og vi kan derfor tilbyde en meget fordelagtig aftale på både print og montage.
+
+Måden det fungerer på er, at vi monterer et diskret skinnesystem hvor vi løbende kan aktivere jeres egne kampagner.
+
+Vi vil gerne stå for hele processen omkring print og montering af bannere, så I får én samlet løsning.
+
+Kunne det være interessant for jer, at få etableret en facadereklame til jer selv?
+
+Mvh
+Mads
+
+---
+
+Eksempel 3:
+Hej Maria
+
+Jeg skriver angående Nørrebrogade 195 som du administrerer.
+
+Jeg kan se, at foreningen har stillads oppe frem til juni, og der kan vi hjælpe med at reducere deres byggeomkostninger via stilladsreklamer.
+
+Hos Hyde Media står vi fra alt ifm. godkendelser fra kommune, salg, montering/demontering og fakturering. Det eneste foreningen skal gøre er at sende en faktura.
+
+Jeg har vedhæftet et oplæg på indtægter samt håndtering af opgaven.
+
+I og med stilladset allerede står, er det vigtigt at rykke hurtigt så vi kan få kampagner på og skabe omsætning.
+
+Kunne det være interessant for foreningen?
+
+Mvh
+Mads`;
+
 export function SettingsTab() {
   const { systemHealth, addToast } = useDashboard();
   const [autonomyLevel, setAutonomyLevel] = useState(0);
   const [rules, setRules] = useState<Record<RuleId, boolean>>(loadRules);
+
+  // AI Settings state
+  const [aiSettings, setAiSettings] = useState<AISettings>({ toneOfVoice: DEFAULT_TONE, exampleEmails: DEFAULT_EXAMPLES, senderName: "Mads" });
+  const [aiSettingsLoaded, setAiSettingsLoaded] = useState(false);
+  const [savingAi, setSavingAi] = useState(false);
+  const [previewLoading, setPreviewLoading] = useState(false);
+  const [previewResult, setPreviewResult] = useState<{ subject: string; body: string } | null>(null);
+
+  useEffect(() => {
+    fetch("/api/settings/ai")
+      .then(r => r.json())
+      .then(data => {
+        if (data.settings) {
+          setAiSettings({
+            toneOfVoice: data.settings.toneOfVoice || DEFAULT_TONE,
+            exampleEmails: data.settings.exampleEmails || DEFAULT_EXAMPLES,
+            senderName: data.settings.senderName || "Mads",
+          });
+        }
+        setAiSettingsLoaded(true);
+      })
+      .catch(() => setAiSettingsLoaded(true));
+  }, []);
+
+  const saveAiSettings = useCallback(async () => {
+    setSavingAi(true);
+    try {
+      const res = await fetch("/api/settings/ai", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(aiSettings),
+      });
+      if (res.ok) {
+        addToast("AI-indstillinger gemt — bruges ved næste mail-generering", "success");
+      } else {
+        addToast("Fejl ved gemning", "error");
+      }
+    } catch {
+      addToast("Fejl ved gemning", "error");
+    } finally {
+      setSavingAi(false);
+    }
+  }, [aiSettings, addToast]);
+
+  const generatePreview = useCallback(async () => {
+    setPreviewLoading(true);
+    setPreviewResult(null);
+    try {
+      const res = await fetch("/api/settings/ai/preview", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(aiSettings),
+      });
+      const data = await res.json();
+      if (data.subject) {
+        setPreviewResult({ subject: data.subject, body: data.bodyText });
+        addToast("Indstillinger gemt og preview genereret", "success");
+      } else {
+        addToast(data.error || "Preview fejlede", "error");
+      }
+    } catch {
+      addToast("Preview fejlede", "error");
+    } finally {
+      setPreviewLoading(false);
+    }
+  }, [aiSettings, addToast]);
 
   // Research log history state
   const [researchLogs, setResearchLogs] = useState<ResearchLogRecord[]>([]);
@@ -309,6 +443,137 @@ export function SettingsTab() {
   return (
     <div className="animate-fade-in space-y-6">
       <p className="text-xs text-slate-500 mb-4">Autonomi, regler og API-status.</p>
+
+      {/* ═══════ AI TONE OF VOICE ═══════ */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] overflow-hidden">
+        {/* Header */}
+        <div className="flex items-center gap-3 px-6 py-4 border-b border-slate-100"
+          style={{ background: "linear-gradient(135deg, #0d1224 0%, #1e1458 60%, #130f3f 100%)" }}>
+          <div className="w-9 h-9 rounded-xl bg-white/10 flex items-center justify-center flex-shrink-0">
+            <svg className="w-5 h-5 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09z" />
+            </svg>
+          </div>
+          <div className="flex-1">
+            <h3 className="text-sm font-bold text-white">AI Tone of Voice & Skrivestil</h3>
+            <p className="text-[11px] text-slate-400 mt-0.5">Træn AI&apos;en til at skrive ligesom dig — jo bedre eksempler, jo bedre mails</p>
+          </div>
+          {!aiSettingsLoaded && (
+            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+          )}
+        </div>
+
+        <div className="p-6 space-y-6">
+          {/* Sender name */}
+          <div>
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+              Afsendernavn (bruges i signatur)
+            </label>
+            <input
+              type="text"
+              value={aiSettings.senderName}
+              onChange={e => setAiSettings(s => ({ ...s, senderName: e.target.value }))}
+              placeholder="Mads"
+              className="w-full sm:w-64 px-3 py-2 rounded-xl border border-slate-200 text-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">AI skriver &quot;Mvh [navn]&quot; i bunden af alle mails</p>
+          </div>
+
+          {/* Tone of voice */}
+          <div>
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+              Tone of Voice — beskriv din skrivestil
+            </label>
+            <textarea
+              value={aiSettings.toneOfVoice}
+              onChange={e => setAiSettings(s => ({ ...s, toneOfVoice: e.target.value }))}
+              rows={8}
+              placeholder="Beskriv din tone og stil med bullet points..."
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 font-mono leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 resize-y"
+            />
+            <p className="text-[10px] text-slate-400 mt-1">Brug bullet points (- ) for at beskrive din stil, tone, og hvad du vil undgå</p>
+          </div>
+
+          {/* Example emails */}
+          <div>
+            <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-2">
+              Eksempel-mails (few-shot learning)
+            </label>
+            <div className="mb-2 p-3 bg-indigo-50 border border-indigo-100 rounded-xl">
+              <p className="text-[11px] text-indigo-700">
+                <strong>Tip:</strong> Indsæt 3-5 rigtige mails du har skrevet. Adskil dem med <code className="bg-indigo-100 px-1 rounded">---</code> på en linje for sig.
+                AI&apos;en imiterer stilen, sætningslængde og opbygning fra disse eksempler.
+              </p>
+            </div>
+            <textarea
+              value={aiSettings.exampleEmails}
+              onChange={e => setAiSettings(s => ({ ...s, exampleEmails: e.target.value }))}
+              rows={20}
+              placeholder="Hej [Navn]
+
+Indsæt din rigtige mail her...
+
+---
+
+Hej [Navn2]
+
+Endnu et eksempel..."
+              className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-sm text-slate-800 leading-relaxed focus:outline-none focus:ring-2 focus:ring-indigo-300 focus:border-indigo-300 resize-y font-mono"
+            />
+          </div>
+
+          {/* Actions */}
+          <div className="flex flex-wrap items-center gap-3 pt-2 border-t border-slate-100">
+            <button
+              onClick={saveAiSettings}
+              disabled={savingAi}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold text-white transition-all disabled:opacity-50"
+              style={{ background: "linear-gradient(135deg, #4f46e5, #7c3aed)", boxShadow: "0 4px 12px rgba(99,102,241,0.35)" }}
+            >
+              {savingAi ? (
+                <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M4.5 12.75l6 6 9-13.5" />
+                </svg>
+              )}
+              {savingAi ? "Gemmer..." : "Gem indstillinger"}
+            </button>
+            <button
+              onClick={generatePreview}
+              disabled={previewLoading}
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 transition-colors disabled:opacity-50 border border-indigo-200"
+            >
+              {previewLoading ? (
+                <div className="w-4 h-4 border-2 border-indigo-300/40 border-t-indigo-600 rounded-full animate-spin" />
+              ) : (
+                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75m19.5 0A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25m19.5 0v.243a2.25 2.25 0 01-1.07 1.916l-7.5 4.615a2.25 2.25 0 01-2.36 0L3.32 8.91a2.25 2.25 0 01-1.07-1.916V6.75" />
+                </svg>
+              )}
+              {previewLoading ? "Genererer preview..." : "Generer test-mail"}
+            </button>
+            <p className="text-[10px] text-slate-400 ml-auto">Gem → bruges automatisk næste gang AI genererer en mail i Staging</p>
+          </div>
+
+          {/* Preview result */}
+          {previewResult && (
+            <div className="rounded-xl border border-emerald-200 bg-emerald-50/50 p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <div className="w-2 h-2 rounded-full bg-emerald-500" />
+                <h4 className="text-xs font-bold text-emerald-800 uppercase tracking-wide">Test-mail preview — Nørrebrogade 45 til Anders Jensen</h4>
+              </div>
+              <div className="bg-white rounded-lg border border-emerald-100 p-4">
+                <p className="text-xs font-bold text-slate-700 mb-1">Emne: {previewResult.subject}</p>
+                <div className="border-t border-slate-100 pt-3 mt-2">
+                  <p className="text-sm text-slate-700 whitespace-pre-wrap leading-relaxed">{previewResult.body}</p>
+                </div>
+              </div>
+              <p className="text-[10px] text-emerald-600 mt-2">Indstillingerne er gemt og vil blive brugt i alle fremtidige mails.</p>
+            </div>
+          )}
+        </div>
+      </div>
 
       {/* Autonomy Level */}
       <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5">
