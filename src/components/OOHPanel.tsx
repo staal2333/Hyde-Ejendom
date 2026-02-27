@@ -714,6 +714,10 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
   // Using frameId as key so all slots linked to the same frame share the same assignments
   const [presPlacementOverrides, setPresPlacementOverrides] = useState<Record<string, Record<number, string>>>({});
   const [presUseSameCreative, setPresUseSameCreative] = useState(true);
+  // Per-frame creative override (single-placement frames): frameId -> creativeId
+  const [presFrameCreatives, setPresFrameCreatives] = useState<Record<string, string>>({}); 
+  // Which frame slot is currently being picked for in Oplæg (null = global)
+  const [presActiveFramePick, setPresActiveFramePick] = useState<string | null>(null);
   // Text placeholder values for presentation generation
   const [presTextValues, setPresTextValues] = useState<Record<string, string>>({});
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
@@ -2724,58 +2728,277 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
                     })()}
                   </div>
 
-                  {/* Creative mode toggle */}
+                  {/* Creative mode toggle — always show when 2+ frames are linked */}
                   {(() => {
-                    const hasAnyMulti = activePresTemplate.pages.some(p =>
-                      p.imageSlots.some(slot => {
-                        const f = frames.find(fr => fr.id === slot.linkedFrameId);
-                        return f && ensurePlacements(f).length > 1;
-                      })
-                    );
-                    if (!hasAnyMulti) return null;
+                    const linkedFrameIds = new Set<string>();
+                    for (const p of activePresTemplate.pages) {
+                      for (const slot of p.imageSlots) {
+                        if (slot.linkedFrameId) linkedFrameIds.add(slot.linkedFrameId);
+                      }
+                    }
+                    if (linkedFrameIds.size < 2) return null;
                     return (
-                      <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-slate-50 border border-slate-200 rounded-xl">
-                        <Ic d="M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.325.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.241-.438.613-.43.992a7.723 7.723 0 010 .255c-.008.378.137.75.43.991l1.004.827c.424.35.534.955.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.47 6.47 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.281c-.09.543-.56.94-1.11.94h-2.594c-.55 0-1.019-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.991a6.932 6.932 0 010-.255c.007-.38-.138-.751-.43-.992l-1.004-.827a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.086.22-.128.332-.183.582-.495.644-.869l.214-1.28z" className="w-4 h-4 text-slate-400 shrink-0" />
+                      <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-indigo-50 border border-indigo-200/60 rounded-xl">
+                        <div className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center shrink-0">
+                          <Ic d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909m-18 3.75h16.5a1.5 1.5 0 001.5-1.5V6a1.5 1.5 0 00-1.5-1.5H3.75A1.5 1.5 0 002.25 6v12a1.5 1.5 0 001.5 1.5zm10.5-11.25h.008v.008h-.008V8.25zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" className="w-4 h-4 text-indigo-600" />
+                        </div>
                         <div className="flex-1">
-                          <p className="text-[11px] font-semibold text-slate-700">Frames med flere placeringer fundet</p>
-                          <p className="text-[10px] text-slate-500">Vælg om du vil bruge samme creative på alle placeringer eller forskellige</p>
+                          <p className="text-[11px] font-bold text-indigo-800">{linkedFrameIds.size} frames i denne præsentation</p>
+                          <p className="text-[10px] text-indigo-600">Brug ét kreativ til alle, eller vælg et forskelligt kreativ per frame</p>
                         </div>
-                        <div className="flex gap-1 bg-white rounded-lg border border-slate-200 p-0.5">
+                        <div className="flex gap-1 bg-white rounded-lg border border-indigo-200 p-0.5 shrink-0">
                           <button
-                            onClick={() => { setPresUseSameCreative(true); setPresPlacementOverrides({}); }}
-                            className={`px-2.5 py-1.5 rounded-md text-[10px] font-semibold transition-all ${presUseSameCreative ? "bg-violet-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-                          >Samme</button>
+                            onClick={() => { setPresUseSameCreative(true); setPresPlacementOverrides({}); setPresFrameCreatives({}); setPresActiveFramePick(null); }}
+                            className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${presUseSameCreative ? "bg-violet-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                          >Ét kreativ</button>
                           <button
-                            onClick={() => setPresUseSameCreative(false)}
-                            className={`px-2.5 py-1.5 rounded-md text-[10px] font-semibold transition-all ${!presUseSameCreative ? "bg-violet-500 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
-                          >Forskellige</button>
+                            onClick={() => { setPresUseSameCreative(false); }}
+                            className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${!presUseSameCreative ? "bg-violet-600 text-white shadow-sm" : "text-slate-500 hover:text-slate-700"}`}
+                          >Per frame</button>
                         </div>
                       </div>
                     );
                   })()}
 
-                  {/* Creative upload + selection */}
-                  <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">{presUseSameCreative ? "Creative til alle mockups" : "Hoved-creative (brugt som standard)"}</h4>
+                  {/* ─── Creative assignment section ─── */}
+                  {!presUseSameCreative ? (
+                    /* Per-frame creative assignment panel */
+                    (() => {
+                      // Collect unique frames from this template
+                      const frameSlots: { frameId: string; frame: typeof frames[number]; slotLabels: string[] }[] = [];
+                      const seen = new Set<string>();
+                      for (const p of activePresTemplate.pages) {
+                        for (const slot of p.imageSlots) {
+                          if (slot.linkedFrameId && !seen.has(slot.linkedFrameId)) {
+                            seen.add(slot.linkedFrameId);
+                            const f = frames.find(fr => fr.id === slot.linkedFrameId);
+                            if (f) {
+                              frameSlots.push({ frameId: slot.linkedFrameId, frame: f, slotLabels: [slot.label] });
+                            }
+                          } else if (slot.linkedFrameId) {
+                            const entry = frameSlots.find(x => x.frameId === slot.linkedFrameId);
+                            if (entry) entry.slotLabels.push(slot.label);
+                          }
+                        }
+                      }
+                      return (
+                        <div className="mb-4">
+                          <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">Kreativ per frame</h4>
+                          <div className="space-y-3">
+                            {frameSlots.map(({ frameId, frame: f, slotLabels }, fi) => {
+                              const color = PLACEMENT_COLORS[fi % PLACEMENT_COLORS.length];
+                              const assignedId = presFrameCreatives[frameId] || presCreativeId;
+                              const assignedCreative = assignedId ? creatives.find(c => c.id === assignedId) : null;
+                              const isOverridden = !!presFrameCreatives[frameId];
+                              const framePls = ensurePlacements(f);
+                              const hasMultiPl = framePls.length > 1;
+                              const isPickingThis = presActiveFramePick === frameId;
 
-                  {/* Selected creative preview */}
-                  {presCreativeId && (() => {
-                    const selC = creatives.find(c => c.id === presCreativeId);
-                    if (!selC) return null;
-                    return (
-                      <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-violet-50 border border-violet-200 rounded-xl">
-                        <div className="w-14 h-14 rounded-lg overflow-hidden bg-white border border-violet-200 shrink-0">
-                          {selC.thumbnailUrl ? <img src={selC.thumbnailUrl} alt={selC.filename} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300 text-[10px]">{selC.filename}</div>}
+                              return (
+                                <div
+                                  key={frameId}
+                                  className={`rounded-xl border-2 overflow-hidden transition-all ${
+                                    isPickingThis
+                                      ? "border-violet-500 shadow-md shadow-violet-500/20 ring-4 ring-violet-100"
+                                      : isOverridden
+                                      ? "border-emerald-300/80"
+                                      : "border-slate-200"
+                                  }`}
+                                >
+                                  <div className="flex items-center gap-3 p-3">
+                                    {/* Frame thumbnail */}
+                                    <div className="w-16 h-12 rounded-lg overflow-hidden bg-slate-100 shrink-0 border border-slate-200 relative">
+                                      {f.frameImageUrl && (
+                                        <img src={f.frameImageUrl} alt={f.name} className="w-full h-full object-cover" />
+                                      )}
+                                      <span className="absolute bottom-0.5 left-0.5 px-1 rounded text-[8px] font-bold bg-black/60 text-white">
+                                        {slotLabels.join(", ")}
+                                      </span>
+                                    </div>
+
+                                    {/* Frame info + assigned creative */}
+                                    <div className="flex-1 min-w-0">
+                                      <p className="text-xs font-bold text-slate-800 truncate">{f.name}</p>
+                                      <p className="text-[10px] text-slate-400">{f.locationCity || ""}{hasMultiPl ? ` · ${framePls.length} placeringer` : ""}</p>
+                                      {assignedCreative ? (
+                                        <div className="flex items-center gap-1.5 mt-1">
+                                          {assignedCreative.thumbnailUrl && (
+                                            <div className="w-5 h-5 rounded overflow-hidden bg-slate-100 shrink-0">
+                                              <img src={assignedCreative.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                                            </div>
+                                          )}
+                                          <p className="text-[10px] text-emerald-700 font-semibold truncate">
+                                            {assignedCreative.companyName}
+                                            {!isOverridden && <span className="text-slate-400 font-normal"> (standard)</span>}
+                                          </p>
+                                        </div>
+                                      ) : (
+                                        <p className="text-[10px] text-amber-600 mt-0.5">Intet kreativ valgt</p>
+                                      )}
+                                    </div>
+
+                                    {/* Action buttons */}
+                                    <div className="flex gap-1.5 shrink-0">
+                                      <button
+                                        onClick={() => setPresActiveFramePick(isPickingThis ? null : frameId)}
+                                        className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${
+                                          isPickingThis
+                                            ? "bg-violet-600 text-white"
+                                            : "bg-violet-50 text-violet-700 hover:bg-violet-100"
+                                        }`}
+                                      >
+                                        {isPickingThis ? "Luk" : isOverridden ? "Skift" : "Vælg"}
+                                      </button>
+                                      {isOverridden && (
+                                        <button
+                                          onClick={() => {
+                                            setPresFrameCreatives(prev => { const n = { ...prev }; delete n[frameId]; return n; });
+                                            if (presActiveFramePick === frameId) setPresActiveFramePick(null);
+                                          }}
+                                          className="px-2 py-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                                          title="Fjern override"
+                                        >
+                                          <Ic d="M6 18L18 6M6 6l12 12" className="w-3 h-3" />
+                                        </button>
+                                      )}
+                                    </div>
+                                  </div>
+
+                                  {/* Per-placement overrides (only for multi-placement frames) */}
+                                  {hasMultiPl && (
+                                    <div className="px-3 pb-3 pt-0 border-t border-slate-100 mt-0 space-y-1.5">
+                                      <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide pt-2 mb-1">Placeringer</p>
+                                      {framePls.map((pl, pi) => {
+                                        const plColor = PLACEMENT_COLORS[pi % PLACEMENT_COLORS.length];
+                                        const overrideId = presPlacementOverrides[frameId]?.[pi];
+                                        const overrideCreative = overrideId ? creatives.find(c => c.id === overrideId) : null;
+                                        return (
+                                          <div key={pi} className="flex items-center gap-2">
+                                            <span className={`w-2 h-2 rounded-full ${plColor.bg} shrink-0`} />
+                                            <span className="text-[10px] font-medium text-slate-600 min-w-[80px]">{pl.label || `Placering ${pi + 1}`}</span>
+                                            <select
+                                              value={overrideId || ""}
+                                              onChange={e => {
+                                                setPresPlacementOverrides(prev => {
+                                                  const next = { ...prev };
+                                                  if (!next[frameId]) next[frameId] = {};
+                                                  if (e.target.value) { next[frameId] = { ...next[frameId], [pi]: e.target.value }; }
+                                                  else { const s = { ...next[frameId] }; delete s[pi]; next[frameId] = s; }
+                                                  return next;
+                                                });
+                                              }}
+                                              className="flex-1 px-2 py-1 border border-slate-200 rounded-lg text-[10px] bg-white focus:border-violet-300"
+                                            >
+                                              <option value="">Samme som frame-kreativ</option>
+                                              {creatives.map(c => (
+                                                <option key={c.id} value={c.id}>{c.companyName} – {c.filename}</option>
+                                              ))}
+                                            </select>
+                                            {overrideCreative?.thumbnailUrl && (
+                                              <div className="w-6 h-6 rounded overflow-hidden border border-slate-200 shrink-0">
+                                                <img src={overrideCreative.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                                              </div>
+                                            )}
+                                          </div>
+                                        );
+                                      })}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {/* Inline creative picker for active frame */}
+                          {presActiveFramePick && (
+                            <div className="mt-3 p-3 bg-violet-50 rounded-xl border border-violet-200">
+                              <div className="flex items-center justify-between mb-2">
+                                <p className="text-[11px] font-bold text-violet-800">
+                                  Vælg kreativ til:{" "}
+                                  <span className="text-violet-600">
+                                    {frameSlots.find(x => x.frameId === presActiveFramePick)?.frame.name}
+                                  </span>
+                                </p>
+                                <button onClick={() => setPresActiveFramePick(null)} className="text-[10px] text-violet-400 hover:text-violet-600">Luk</button>
+                              </div>
+                              <div className="grid grid-cols-4 sm:grid-cols-5 gap-2">
+                                {creatives.map(c => {
+                                  const isSelected = presFrameCreatives[presActiveFramePick] === c.id;
+                                  return (
+                                    <button
+                                      key={c.id}
+                                      onClick={() => {
+                                        setPresFrameCreatives(prev => ({ ...prev, [presActiveFramePick]: c.id }));
+                                        // Auto-advance to next frame without override
+                                        const fi = frameSlots.findIndex(x => x.frameId === presActiveFramePick);
+                                        const nextUnset = frameSlots.find((x, i) => i > fi && !presFrameCreatives[x.frameId]);
+                                        setPresActiveFramePick(nextUnset?.frameId || null);
+                                      }}
+                                      className={`rounded-lg border-2 overflow-hidden transition-all ${
+                                        isSelected
+                                          ? "border-violet-500 ring-2 ring-violet-200 shadow-md"
+                                          : "border-transparent hover:border-slate-300"
+                                      }`}
+                                    >
+                                      <div className="aspect-square bg-slate-100 relative overflow-hidden">
+                                        {c.thumbnailUrl
+                                          ? <img src={c.thumbnailUrl} alt={c.filename} className="w-full h-full object-cover" />
+                                          : <div className="w-full h-full flex items-center justify-center text-[9px] text-slate-300">{c.filename}</div>
+                                        }
+                                        {isSelected && (
+                                          <div className="absolute top-1 right-1">
+                                            <span className="w-4 h-4 rounded-full bg-violet-500 flex items-center justify-center">
+                                              <Ic d="M4.5 12.75l6 6 9-13.5" className="w-2.5 h-2.5 text-white" />
+                                            </span>
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="p-1">
+                                        <p className="text-[9px] font-semibold text-slate-700 truncate">{c.companyName}</p>
+                                      </div>
+                                    </button>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Standard creative as fallback info */}
+                          {presCreativeId && (
+                            <div className="mt-3 px-3 py-2 bg-slate-50 rounded-lg border border-slate-200 flex items-center gap-2">
+                              <Ic d="M11.25 11.25l.041-.02a.75.75 0 011.063.852l-.708 2.836a.75.75 0 001.063.853l.041-.021M21 12a9 9 0 11-18 0 9 9 0 0118 0zm-9-3.75h.008v.008H12V8.25z" className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+                              <p className="text-[10px] text-slate-500">
+                                Frames uden specifikt kreativ bruger: <strong>{creatives.find(c => c.id === presCreativeId)?.companyName || "standard"}</strong>
+                              </p>
+                            </div>
+                          )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-semibold text-violet-900 truncate">{selC.companyName || selC.filename}</p>
-                          <p className="text-[11px] text-violet-600">{selC.width && selC.height ? `${selC.width}×${selC.height}` : selC.filename}</p>
-                        </div>
-                        <button onClick={() => setPresCreativeId(null)} className="p-1.5 hover:bg-violet-100 rounded-lg transition-colors" title="Fjern valg">
-                          <Ic d="M6 18L18 6M6 6l12 12" className="w-4 h-4 text-violet-400" />
-                        </button>
-                      </div>
-                    );
-                  })()}
+                      );
+                    })()
+                  ) : (
+                    /* Same creative for all — original layout */
+                    <>
+                      <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wide mb-3">Creative til alle mockups</h4>
+                      {presCreativeId && (() => {
+                        const selC = creatives.find(c => c.id === presCreativeId);
+                        if (!selC) return null;
+                        return (
+                          <div className="mb-4 flex items-center gap-3 px-4 py-3 bg-violet-50 border border-violet-200 rounded-xl">
+                            <div className="w-14 h-14 rounded-lg overflow-hidden bg-white border border-violet-200 shrink-0">
+                              {selC.thumbnailUrl ? <img src={selC.thumbnailUrl} alt={selC.filename} className="w-full h-full object-cover" /> : <div className="w-full h-full flex items-center justify-center text-slate-300 text-[10px]">{selC.filename}</div>}
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-sm font-semibold text-violet-900 truncate">{selC.companyName || selC.filename}</p>
+                              <p className="text-[11px] text-violet-600">{selC.width && selC.height ? `${selC.width}×${selC.height}` : selC.filename}</p>
+                            </div>
+                            <button onClick={() => setPresCreativeId(null)} className="p-1.5 hover:bg-violet-100 rounded-lg transition-colors" title="Fjern valg">
+                              <Ic d="M6 18L18 6M6 6l12 12" className="w-4 h-4 text-violet-400" />
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </>
+                  )}
 
                   {/* Upload zone */}
                   <div
@@ -2902,9 +3125,9 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
                 <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0">
                   <button onClick={() => setActivePresTemplate(null)} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-xl">Annuller</button>
                   <button
-                    disabled={!presCreativeId || presGenerating}
+                    disabled={(!presCreativeId && Object.keys(presFrameCreatives).length === 0) || presGenerating}
                     onClick={async () => {
-                      if (!presCreativeId || !activePresTemplate) return;
+                      if ((!presCreativeId && Object.keys(presFrameCreatives).length === 0) || !activePresTemplate) return;
                       setPresGenerating(true);
                       try {
                         // Build slot assignments: each slot with a linked frame gets the creative
@@ -2913,8 +3136,12 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
                         for (const page of activePresTemplate.pages) {
                           for (const slot of page.imageSlots) {
                             if (slot.linkedFrameId) {
-                              const sa: typeof slotAssignments[string] = { frameId: slot.linkedFrameId, creativeId: presCreativeId };
-                              // Add per-placement overrides if in "different" mode (keyed by frameId)
+                              // In "per frame" mode, use frame-specific creative if set, else fall back to global
+                              const frameCreativeId = !presUseSameCreative
+                                ? (presFrameCreatives[slot.linkedFrameId] || presCreativeId)
+                                : presCreativeId;
+                              const sa: typeof slotAssignments[string] = { frameId: slot.linkedFrameId, creativeId: frameCreativeId };
+                              // Add per-placement overrides if in "different" mode (for multi-placement frames)
                               if (!presUseSameCreative && presPlacementOverrides[slot.linkedFrameId]) {
                                 sa.creativeAssignments = presPlacementOverrides[slot.linkedFrameId];
                               }
