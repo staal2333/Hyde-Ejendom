@@ -1527,7 +1527,9 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
                                     className="w-8 h-8 rounded-lg flex items-center justify-center"
                                     style={{ background: color.fill, border: `1.5px solid ${color.stroke}` }}
                                   >
-                                    <Ic d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" className="w-4 h-4" style={{ color: color.stroke }} />
+                                    <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke={color.stroke}>
+                                      <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" />
+                                    </svg>
                                   </div>
                                   <span className="text-[10px] text-slate-400 font-medium">Intet kreativ</span>
                                 </div>
@@ -3138,8 +3140,8 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
                             if (slot.linkedFrameId) {
                               // In "per frame" mode, use frame-specific creative if set, else fall back to global
                               const frameCreativeId = !presUseSameCreative
-                                ? (presFrameCreatives[slot.linkedFrameId] || presCreativeId)
-                                : presCreativeId;
+                                ? (presFrameCreatives[slot.linkedFrameId] || presCreativeId || "")
+                                : (presCreativeId || "");
                               const sa: typeof slotAssignments[string] = { frameId: slot.linkedFrameId, creativeId: frameCreativeId };
                               // Add per-placement overrides if in "different" mode (for multi-placement frames)
                               if (!presUseSameCreative && presPlacementOverrides[slot.linkedFrameId]) {
