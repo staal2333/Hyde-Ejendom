@@ -1109,14 +1109,18 @@ function DashboardContent() {
       <div className={`layout-top-bar flex-1 min-h-0 w-full ${loading ? "invisible" : ""}`}>
         {/* ─── Top bar ─── */}
         <header className="top-bar">
-          <div className="flex items-center gap-2 shrink-0">
-            <div className="w-8 h-8 rounded-lg bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-sm">
+          {/* Logo */}
+          <div className="top-bar-logo">
+            <div className="top-bar-logo-icon">
               <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75" />
               </svg>
             </div>
-            <span className="font-bold text-sm text-slate-800 hidden sm:inline">Ejendom AI</span>
+            <span className="top-bar-logo-text hidden sm:inline">Ejendom AI</span>
           </div>
+
+          {/* Divider */}
+          <div className="hidden sm:block w-px h-5 bg-white/10 flex-shrink-0" />
 
           <nav className="top-bar-nav">
             {NAV_TABS.map((nav) => {
@@ -1142,56 +1146,79 @@ function DashboardContent() {
                   className={`top-bar-tab ${isActive ? "active" : ""}`}
                   title={nav.label}
                 >
-                  <svg className="w-4 h-4 shrink-0 opacity-80" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
+                  <svg className="w-3.5 h-3.5 shrink-0" fill="none" viewBox="0 0 24 24" strokeWidth={1.75} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d={nav.icon} />
                   </svg>
                   <span>{nav.label}</span>
                   {nav.id === "properties" && properties.length > 0 && (
-                    <span className="tabular-nums text-[10px] opacity-70">({properties.length})</span>
+                    <span className="text-[10px] opacity-50 font-normal tabular-nums">{properties.length}</span>
                   )}
                   {nav.id === "staging" && (dashboard?.staging?.awaitingAction || 0) > 0 && (
-                    <span className="relative inline-flex items-center justify-center min-w-[18px] h-[18px] px-1 rounded-full bg-amber-500 text-white text-[10px] font-bold tabular-nums shadow-sm">
+                    <span className="relative inline-flex items-center justify-center min-w-[16px] h-[16px] px-1 rounded-full bg-amber-400 text-amber-900 text-[9px] font-bold tabular-nums shadow-sm">
                       {dashboard?.staging?.awaitingAction}
-                      <span className="absolute -top-0.5 -right-0.5 w-2 h-2 rounded-full bg-amber-400 animate-ping" />
+                      <span className="absolute -top-0.5 -right-0.5 w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
                     </span>
                   )}
-                  {showDot && <span className="tab-dot bg-indigo-500 animate-pulse" />}
+                  {showDot && <span className="tab-dot bg-indigo-400 animate-pulse shadow-sm shadow-indigo-500/50" />}
                 </button>
               );
             })}
           </nav>
 
+          {/* Right side: stats + status + logout */}
           <div className="top-bar-stats">
+            {/* Keyboard shortcut hint */}
+            <button
+              type="button"
+              onClick={() => setCommandPaletteOpen(true)}
+              className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-slate-500 bg-white/5 border border-white/8 hover:bg-white/10 transition-colors mr-1"
+              title="Åbn command palette (Ctrl+K)"
+            >
+              <svg className="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607Z" />
+              </svg>
+              <kbd className="text-[10px] opacity-50">⌘K</kbd>
+            </button>
+
             <div className="top-bar-stat">
-              <div className="top-bar-stat-value text-slate-700">{dashboard?.totalProperties ?? 0}</div>
-              <div className="top-bar-stat-label">Total</div>
+              <div className="top-bar-stat-value">{dashboard?.totalProperties ?? 0}</div>
+              <div className="top-bar-stat-label">Ejendomme</div>
             </div>
             <div className="top-bar-stat">
-              <div className="top-bar-stat-value text-emerald-600">{dashboard?.readyToSend ?? 0}</div>
+              <div className="top-bar-stat-value" style={{ color: "#34d399" }}>{dashboard?.readyToSend ?? 0}</div>
               <div className="top-bar-stat-label">Klar</div>
             </div>
-            <div className="top-bar-stat" title={`Ny: ${dashboard?.staging?.new ?? 0} · Researched: ${dashboard?.staging?.researched ?? 0} · Pushed: ${dashboard?.staging?.pushed ?? 0}`}>
-              <div className="top-bar-stat-value text-amber-600">{dashboard?.staging?.awaitingAction ?? 0}</div>
+            <div className="top-bar-stat" title={`Ny: ${dashboard?.staging?.new ?? 0} · Researched: ${dashboard?.staging?.researched ?? 0}`}>
+              <div className="top-bar-stat-value" style={{ color: "#fbbf24" }}>{dashboard?.staging?.awaitingAction ?? 0}</div>
               <div className="top-bar-stat-label">Stage</div>
             </div>
             <div className="top-bar-stat">
-              <div className="top-bar-stat-value text-indigo-600">{dashboard?.mailsSent ?? 0}</div>
+              <div className="top-bar-stat-value" style={{ color: "#818cf8" }}>{dashboard?.mailsSent ?? 0}</div>
               <div className="top-bar-stat-label">Sendt</div>
             </div>
+
+            {/* System health dot */}
             {systemHealth && (
-              <div className="flex items-center gap-1.5 pl-2" title={systemHealth.status === "healthy" ? "Alle systemer OK" : systemHealth.status === "degraded" ? "Delvis nedsat" : "Problemer"}>
-                <span className={`w-2 h-2 rounded-full shrink-0 ${
-                  systemHealth.status === "healthy" ? "bg-emerald-500" :
-                  systemHealth.status === "degraded" ? "bg-amber-500" : "bg-red-500"
+              <div
+                className="flex items-center justify-center w-7 h-7 rounded-md bg-white/5 border border-white/8"
+                title={systemHealth.status === "healthy" ? "Alle systemer OK" : systemHealth.status === "degraded" ? "Delvis nedsat" : "Problemer"}
+              >
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                  systemHealth.status === "healthy" ? "bg-emerald-400 shadow-sm shadow-emerald-400/60" :
+                  systemHealth.status === "degraded" ? "bg-amber-400 animate-pulse" : "bg-red-400 animate-pulse"
                 }`} />
               </div>
             )}
+
             <button
               type="button"
               onClick={logout}
-              className="ml-1 px-3 py-1.5 rounded-lg text-xs font-medium text-slate-500 hover:text-slate-700 hover:bg-slate-100 transition-colors"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-[11px] font-medium text-slate-400 hover:text-white hover:bg-white/8 transition-colors border border-transparent hover:border-white/10"
             >
-              Log ud
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M15.75 9V5.25A2.25 2.25 0 0013.5 3h-6a2.25 2.25 0 00-2.25 2.25v13.5A2.25 2.25 0 007.5 21h6a2.25 2.25 0 002.25-2.25V15m3 0l3-3m0 0l-3-3m3 3H9" />
+              </svg>
+              <span className="hidden sm:inline">Log ud</span>
             </button>
           </div>
         </header>
@@ -1309,29 +1336,36 @@ function DashboardContent() {
           const subTab = navTab.children?.find(c => c.id === activeTab);
           const title = subTab ? subTab.label : navTab.label;
           return (
-            <div className="mt-4 mb-1 px-4 sm:px-6 max-w-6xl mx-auto">
+            <div className="mt-5 mb-1 px-4 sm:px-6 max-w-6xl mx-auto">
               <div className="flex items-center gap-3">
+                {/* Icon bubble */}
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
+                  style={{ background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)", boxShadow: "0 4px 12px rgba(99,102,241,0.3)" }}>
+                  <svg className="w-4.5 h-4.5 text-white w-[18px] h-[18px]" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d={navTab.icon} />
+                  </svg>
+                </div>
                 <div>
-                  <h1 className="text-lg font-bold text-slate-800 tracking-tight">{title}</h1>
-                  {navTab.desc && <p className="text-xs text-slate-500 mt-0.5">{navTab.desc}</p>}
+                  <h1 className="text-xl font-extrabold text-slate-900 tracking-tight leading-none">{title}</h1>
+                  {navTab.desc && <p className="text-xs text-slate-400 mt-0.5 font-medium">{navTab.desc}</p>}
                 </div>
               </div>
               {navTab.children && navTab.children.length > 1 && (
-                <div className="flex items-center gap-1 mt-3 -mb-1 border-b border-slate-200/60">
+                <div className="flex items-center gap-1 mt-4 border-b border-slate-200/70">
                   {navTab.children.map(child => (
                     <button
                       key={child.id}
                       type="button"
                       onClick={() => setActiveTab(child.id)}
-                      className={`px-3 py-2 text-xs font-semibold rounded-t-lg transition-all relative ${
+                      className={`px-4 py-2 text-xs font-semibold rounded-t-lg transition-all relative ${
                         activeTab === child.id
-                          ? "text-indigo-700 bg-indigo-50/80"
-                          : "text-slate-500 hover:text-slate-700 hover:bg-slate-50"
+                          ? "text-indigo-700 bg-white shadow-sm border border-slate-200/70 border-b-white"
+                          : "text-slate-500 hover:text-slate-700 hover:bg-white/60"
                       }`}
                     >
                       {child.label}
                       {activeTab === child.id && (
-                        <span className="absolute bottom-0 left-2 right-2 h-0.5 bg-indigo-500 rounded-t" />
+                        <span className="absolute bottom-0 left-0 right-0 h-0.5 bg-gradient-to-r from-indigo-500 to-violet-500 rounded-t" />
                       )}
                     </button>
                   ))}

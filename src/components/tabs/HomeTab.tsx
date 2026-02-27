@@ -1,4 +1,4 @@
-"use client";
+﻿"use client";
 
 import { useState, useEffect } from "react";
 import { useDashboard } from "@/contexts/DashboardContext";
@@ -37,7 +37,7 @@ export function HomeTab({
   setFullCircleOpen,
   setStatusFilter,
   setExpandedProperty,
-  scaffoldCity = "København",
+  scaffoldCity = "KÃ¸benhavn",
 }: HomeTabProps) {
   const {
     setActiveTab,
@@ -47,7 +47,7 @@ export function HomeTab({
     systemHealth,
   } = useDashboard();
 
-  const stilladsSectionTitle = "Stilladser (dagen før)";
+  const stilladsSectionTitle = "Stilladser (dagen fÃ¸r)";
 
   const hasScaffoldData = (dashboard?.scaffoldingNewApplications?.at ?? scaffoldPeriodCounts?.at) != null;
   const scaffoldDisplayValue = (dashboard?.scaffoldingNewApplications?.previousDay ?? scaffoldPeriodCounts?.previousDay) ?? null;
@@ -70,112 +70,108 @@ export function HomeTab({
 
   return (
     <div className="animate-fade-in w-full max-w-full">
-      {/* Full Circle – primær CTA */}
-      <div className="mb-6 flex justify-center">
-        <button
-          onClick={() => setFullCircleOpen(true)}
-          className="flex items-center gap-3 px-8 py-4 rounded-2xl bg-gradient-to-r from-indigo-600 to-violet-600 text-white text-base font-bold shadow-lg hover:shadow-xl transition-all border border-white/20"
-        >
-          <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 19.644l3.181-3.182" />
-          </svg>
-          Full Circle – find leads, research, godkend og send
-        </button>
+      {/* â”€â”€â”€ Hero Banner â”€â”€â”€ */}
+      <div className="relative mb-6 rounded-2xl overflow-hidden"
+        style={{ background: "linear-gradient(135deg, #0d1224 0%, #1e1458 50%, #130f3f 100%)" }}>
+        {/* Background glow blobs */}
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute -top-8 -left-8 w-48 h-48 rounded-full bg-indigo-500/20 blur-3xl" />
+          <div className="absolute -bottom-8 -right-8 w-48 h-48 rounded-full bg-violet-500/20 blur-3xl" />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-32 rounded-full bg-blue-500/10 blur-3xl" />
+        </div>
+        <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-5">
+          <div>
+            <div className="flex items-center gap-2 mb-1">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400" />
+              <span className="text-[10px] font-semibold text-emerald-400/80 uppercase tracking-widest">System klar</span>
+            </div>
+            <h2 className="text-xl font-extrabold text-white tracking-tight leading-none">
+              Ejendom AI Pipeline
+            </h2>
+            <p className="text-xs text-slate-400 mt-1">
+              {dashboard?.totalProperties ?? 0} ejendomme Â· {dashboard?.readyToSend ?? 0} klar Â· {dashboard?.mailsSent ?? 0} sendt
+            </p>
+          </div>
+          <button
+            onClick={() => setFullCircleOpen(true)}
+            className="flex items-center gap-2.5 px-5 py-3 rounded-xl font-bold text-sm text-white transition-all flex-shrink-0"
+            style={{
+              background: "linear-gradient(135deg, #4f46e5 0%, #7c3aed 100%)",
+              boxShadow: "0 4px 20px rgba(99,102,241,0.5), inset 0 1px 0 rgba(255,255,255,0.15)",
+            }}
+          >
+            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182M2.985 19.644l3.181-3.182" />
+            </svg>
+            Full Circle Pipeline
+          </button>
+        </div>
       </div>
 
-      {/* KPI Cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4 mb-6">
+      {/* KPI Cards â€” full vivid gradient */}
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
         {[
           {
             label: "Ejendomme",
             value: dashboard?.totalProperties ?? 0,
             icon: "M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75",
-            gradient: "from-indigo-500 to-blue-600",
-            ring: "ring-indigo-100",
-            textColor: "text-indigo-700",
-            bgColor: "bg-indigo-50/80",
+            style: { background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)", boxShadow: "0 8px 24px rgba(99,102,241,0.35)" },
+            onClick: () => setActiveTab("properties" as TabId),
           },
           {
             label: "Afventer research",
             value: dashboard?.pendingResearch ?? 0,
             icon: "M12 6v6h4.5m4.5 0a9 9 0 11-18 0 9 9 0 0118 0z",
-            gradient: "from-amber-500 to-orange-500",
-            ring: "ring-amber-100",
-            textColor: "text-amber-700",
-            bgColor: "bg-amber-50/80",
+            style: { background: "linear-gradient(135deg, #d97706 0%, #f59e0b 100%)", boxShadow: "0 8px 24px rgba(217,119,6,0.35)" },
+            onClick: () => setActiveTab("research" as TabId),
           },
           {
             label: "Klar til udsendelse",
             value: dashboard?.readyToSend ?? 0,
             icon: "M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z",
-            gradient: "from-emerald-500 to-green-600",
-            ring: "ring-emerald-100",
-            textColor: "text-emerald-700",
-            bgColor: "bg-emerald-50/80",
+            style: { background: "linear-gradient(135deg, #059669 0%, #10b981 100%)", boxShadow: "0 8px 24px rgba(5,150,105,0.35)" },
+            onClick: () => setActiveTab("outreach" as TabId),
           },
           {
             label: "Mails sendt",
             value: dashboard?.mailsSent ?? 0,
             icon: "M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5",
-            gradient: "from-violet-500 to-purple-600",
-            ring: "ring-violet-100",
-            textColor: "text-violet-700",
-            bgColor: "bg-violet-50/80",
+            style: { background: "linear-gradient(135deg, #7c3aed 0%, #8b5cf6 100%)", boxShadow: "0 8px 24px rgba(124,58,237,0.35)" },
+            onClick: () => setActiveTab("outreach" as TabId),
           },
           {
-            label: "Nye stillads ansøgninger (dagen før)",
-            value: typeof scaffoldDisplayValue === "number" ? scaffoldDisplayValue : (hasScaffoldData ? 0 : "—"),
+            label: "Stilladser (dagen fÃ¸r)",
+            value: typeof scaffoldDisplayValue === "number" ? scaffoldDisplayValue : (hasScaffoldData ? 0 : "â€”"),
             icon: "M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18",
-            gradient: "from-cyan-500 to-teal-600",
-            ring: "ring-cyan-100",
-            textColor: "text-cyan-700",
-            bgColor: "bg-cyan-50/80",
+            style: { background: "linear-gradient(135deg, #0284c7 0%, #0ea5e9 100%)", boxShadow: "0 8px 24px rgba(2,132,199,0.35)" },
+            onClick: () => setActiveTab("scaffolding" as TabId),
             isStillads: true,
           },
-        ].map((kpi, ki) => {
-          const Wrapper = kpi.isStillads ? "button" : "div";
-          return (
-            <Wrapper
-              key={kpi.label}
-              {...(kpi.isStillads ? { onClick: () => setActiveTab("scaffolding" as TabId) } : {})}
-              className={`relative ${kpi.bgColor} rounded-2xl p-5 overflow-hidden card-hover border border-white/60 ring-1 ${kpi.ring} text-left ${kpi.isStillads ? "cursor-pointer hover:shadow-md" : ""}`}
-              style={{ animationDelay: `${ki * 80}ms` }}
-            >
-              <div className="flex items-start justify-between">
-                <div>
-                  <p className="text-[10px] font-bold text-slate-500/80 uppercase tracking-wider">{kpi.label}</p>
-                  <p className={`text-3xl font-extrabold tabular-nums mt-2 tracking-tight ${kpi.textColor}`}>
-                    {kpi.value}
-                  </p>
-                  {kpi.isStillads && (dashboard?.scaffoldingNewApplications?.at || scaffoldPeriodCounts?.at) && (
-                    <p className="text-[9px] text-slate-400 mt-0.5">
-                      Live · opdateres hvert 10. min
-                    </p>
-                  )}
-                  {kpi.isStillads && !hasScaffoldData && (
-                    <p className="text-[9px] text-slate-400 mt-0.5">Scan ikke kørt endnu · Stilladser</p>
-                  )}
-                </div>
-                <div
-                  className={`w-10 h-10 rounded-xl bg-gradient-to-br ${kpi.gradient} flex items-center justify-center shadow-lg`}
-                >
-                  <svg
-                    className="w-5 h-5 text-white"
-                    fill="none"
-                    viewBox="0 0 24 24"
-                    strokeWidth={2}
-                    stroke="currentColor"
-                  >
+        ].map((kpi, ki) => (
+          <button
+            key={kpi.label}
+            onClick={kpi.onClick}
+            className="relative rounded-2xl p-4 overflow-hidden text-left text-white card-hover"
+            style={{ ...kpi.style, animationDelay: `${ki * 60}ms` }}
+          >
+            {/* Glow orb */}
+            <div className="absolute -bottom-3 -right-3 w-20 h-20 rounded-full bg-white/10 blur-xl" />
+            <div className="relative z-10">
+              <div className="flex items-start justify-between mb-3">
+                <div className="w-8 h-8 rounded-lg bg-white/15 backdrop-blur-sm flex items-center justify-center">
+                  <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d={kpi.icon} />
                   </svg>
                 </div>
               </div>
-              <div
-                className={`absolute -bottom-4 -right-4 w-24 h-24 rounded-full bg-gradient-to-br ${kpi.gradient} opacity-[0.07] blur-2xl`}
-              />
-            </Wrapper>
-          );
-        })}
+              <p className="text-3xl font-extrabold tabular-nums tracking-tight leading-none">{kpi.value}</p>
+              <p className="text-[10px] font-semibold text-white/70 uppercase tracking-wider mt-1.5">{kpi.label}</p>
+              {kpi.isStillads && !hasScaffoldData && (
+                <p className="text-[9px] text-white/50 mt-0.5">Scan ikke kÃ¸rt endnu</p>
+              )}
+            </div>
+          </button>
+        ))}
       </div>
 
       {((dashboard?.scaffoldingNewApplications?.previousDayPermits?.length ?? 0) > 0) && (
@@ -214,28 +210,23 @@ export function HomeTab({
       {(dashboard?.staging?.awaitingAction || 0) > 0 && (
         <button
           onClick={() => setActiveTab("staging")}
-          className="w-full flex items-center gap-4 rounded-2xl bg-gradient-to-r from-amber-50 via-orange-50 to-amber-50 border border-amber-200/50 px-5 py-4 mb-6 hover:shadow-lg transition-all group card-hover"
+          className="w-full flex items-center gap-4 rounded-2xl px-5 py-4 mb-5 hover:opacity-95 transition-all group card-hover text-white"
+          style={{ background: "linear-gradient(135deg, #b45309 0%, #d97706 50%, #f59e0b 100%)", boxShadow: "0 8px 24px rgba(180,83,9,0.3)" }}
         >
-          <div className="w-11 h-11 rounded-xl bg-gradient-to-br from-amber-500 to-orange-500 flex items-center justify-center flex-shrink-0 shadow-lg shadow-amber-500/20">
-            <span className="text-lg font-bold text-white">{dashboard?.staging?.awaitingAction || 0}</span>
+          <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
+            <span className="text-xl font-extrabold text-white">{dashboard?.staging?.awaitingAction || 0}</span>
           </div>
           <div className="flex-1 text-left">
-            <p className="text-sm font-bold text-amber-900">
+            <p className="text-sm font-bold text-white">
               Ejendom{(dashboard?.staging?.awaitingAction || 0) !== 1 ? "me" : ""} afventer godkendelse
             </p>
-            <p className="text-xs text-amber-600/80 mt-0.5">
+            <p className="text-xs text-white/70 mt-0.5">
               {(dashboard?.staging?.new || 0) > 0 && `${dashboard?.staging?.new} nye`}
-              {(dashboard?.staging?.researched || 0) > 0 && ` · ${dashboard?.staging?.researched} klar`}
-              {(dashboard?.staging?.researching || 0) > 0 && ` · ${dashboard?.staging?.researching} researching`}
+              {(dashboard?.staging?.researched || 0) > 0 && ` Â· ${dashboard?.staging?.researched} klar til udkast`}
+              {(dashboard?.staging?.researching || 0) > 0 && ` Â· ${dashboard?.staging?.researching} researching`}
             </p>
           </div>
-          <svg
-            className="w-5 h-5 text-amber-400 group-hover:translate-x-1 transition-transform"
-            fill="none"
-            viewBox="0 0 24 24"
-            strokeWidth={2}
-            stroke="currentColor"
-          >
+          <svg className="w-5 h-5 text-white/70 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" strokeWidth={2.5} stroke="currentColor">
             <path strokeLinecap="round" strokeLinejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
           </svg>
         </button>
@@ -253,7 +244,7 @@ export function HomeTab({
         ];
         const maxVal = Math.max(...steps.map(s => s.value), 1);
         return (
-          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5 mb-6">
             <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
                 <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -297,7 +288,7 @@ export function HomeTab({
         const trend = dashboard.analytics.trend as { snapshotDate: string; discovered: number; staged: number; sent: number }[];
         const maxV = Math.max(...trend.map(t => t.discovered), 1);
         return (
-          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5 mb-6">
             <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center">
                 <svg className="w-4 h-4 text-cyan-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -333,7 +324,7 @@ export function HomeTab({
         );
       })()}
 
-      {/* ═══ Dagens opgaver ═══ */}
+      {/* â•â•â• Dagens opgaver â•â•â• */}
       {(() => {
         const ls = dashboard?.leadSummary;
         const st = dashboard?.staging;
@@ -358,7 +349,7 @@ export function HomeTab({
             count: ls.overdueFollowups,
             priority: "urgent" as const,
             label: "Forfaldne follow-ups",
-            sub: "Kontakt disse leads nu – de er overskredet",
+            sub: "Kontakt disse leads nu â€“ de er overskredet",
             action: () => setActiveTab("lead_sourcing" as TabId),
             dotColor: "bg-red-500 animate-pulse",
             badgeBg: "bg-red-500",
@@ -371,7 +362,7 @@ export function HomeTab({
             count: ls.todayFollowups,
             priority: "high" as const,
             label: "Follow-ups forfald i dag",
-            sub: "Planlæg kontakt inden dagen er omme",
+            sub: "PlanlÃ¦g kontakt inden dagen er omme",
             action: () => setActiveTab("lead_sourcing" as TabId),
             dotColor: "bg-orange-500",
             badgeBg: "bg-orange-500",
@@ -397,7 +388,7 @@ export function HomeTab({
             count: st.approved,
             priority: "medium" as const,
             label: "Klar til HubSpot",
-            sub: "Godkendte ejendomme – push og klar til udsendelse",
+            sub: "Godkendte ejendomme â€“ push og klar til udsendelse",
             action: () => setActiveTab("staging"),
             dotColor: "bg-emerald-500",
             badgeBg: "bg-emerald-500",
@@ -423,7 +414,7 @@ export function HomeTab({
             count: st.new,
             priority: "low" as const,
             label: "Nye ejendomme til research",
-            sub: "Kør research for at finde kontaktinfo og score",
+            sub: "KÃ¸r research for at finde kontaktinfo og score",
             action: () => setActiveTab("staging"),
             dotColor: "bg-blue-400",
             badgeBg: "bg-blue-100",
@@ -436,7 +427,7 @@ export function HomeTab({
             count: ls.counts.new,
             priority: "low" as const,
             label: "Nye leads at berige",
-            sub: "Kør auto-berigelse for CVR, kontakt og økonomi",
+            sub: "KÃ¸r auto-berigelse for CVR, kontakt og Ã¸konomi",
             action: () => setActiveTab("lead_sourcing" as TabId),
             dotColor: "bg-indigo-400",
             badgeBg: "bg-indigo-100",
@@ -448,7 +439,7 @@ export function HomeTab({
 
         if (tasks.length === 0) {
           return (
-            <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-6 mb-6 text-center">
+            <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-6 mb-6 text-center">
               <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center mx-auto mb-3">
                 <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -461,7 +452,7 @@ export function HomeTab({
         }
 
         return (
-          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5 mb-6">
             <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
                 <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -499,7 +490,7 @@ export function HomeTab({
         );
       })()}
 
-      {/* ═══ Leads Action Center ═══ */}
+      {/* â•â•â• Leads Action Center â•â•â• */}
       {(() => {
         const ls = dashboard?.leadSummary;
         if (!ls) return null;
@@ -507,7 +498,7 @@ export function HomeTab({
         if (totalLeads === 0 && ls.overdueFollowups === 0) return null;
         const urgentCount = ls.overdueFollowups + ls.todayFollowups;
         return (
-          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
+          <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5 mb-6">
             <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center">
                 <svg className="w-4 h-4 text-violet-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -573,7 +564,7 @@ export function HomeTab({
                       <div className="flex-1 min-w-0">
                         <p className="text-sm font-medium text-slate-800 truncate">{l.name}</p>
                         <p className="text-[10px] text-slate-400">
-                          {l.source_platform} · {new Date(l.discovered_at).toLocaleDateString("da-DK")}
+                          {l.source_platform} Â· {new Date(l.discovered_at).toLocaleDateString("da-DK")}
                         </p>
                       </div>
                       {l.contact_email ? (
@@ -610,7 +601,7 @@ export function HomeTab({
               </span>
               Seneste OOH-mockups
             </h2>
-            <span className="text-[10px] text-violet-600 font-semibold">Klik for at åbne OOH</span>
+            <span className="text-[10px] text-violet-600 font-semibold">Klik for at Ã¥bne OOH</span>
           </div>
           <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-3">
             {oohProposals.slice(0, 6).map((p) => (
@@ -649,22 +640,22 @@ export function HomeTab({
             <div>
               <p className="text-sm font-bold text-slate-900">OOH Kampagne-performance</p>
               <p className="text-xs text-slate-500">
-                Sendt: {oohAnalytics.totalSent} · Åbnet: {oohAnalytics.opened ?? 0} · Klikket: {oohAnalytics.clicked ?? 0} · Svar: {oohAnalytics.replied ?? 0}
-                {(oohAnalytics.meetings ?? 0) > 0 && ` · Møder: ${oohAnalytics.meetings}`}
-                {(oohAnalytics.sold ?? 0) > 0 && ` · Solgt: ${oohAnalytics.sold}`}
+                Sendt: {oohAnalytics.totalSent} Â· Ã…bnet: {oohAnalytics.opened ?? 0} Â· Klikket: {oohAnalytics.clicked ?? 0} Â· Svar: {oohAnalytics.replied ?? 0}
+                {(oohAnalytics.meetings ?? 0) > 0 && ` Â· MÃ¸der: ${oohAnalytics.meetings}`}
+                {(oohAnalytics.sold ?? 0) > 0 && ` Â· Solgt: ${oohAnalytics.sold}`}
               </p>
             </div>
           </div>
-          <span className="text-[10px] text-violet-600 font-semibold shrink-0">Se i OOH →</span>
+          <span className="text-[10px] text-violet-600 font-semibold shrink-0">Se i OOH â†’</span>
         </button>
       )}
 
       {/* Visual Pipeline */}
-      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-6 mb-6">
+      <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-6 mb-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-sm font-bold text-slate-900">Pipeline</h2>
           <span className="text-[10px] text-slate-400 bg-slate-50 px-2.5 py-1 rounded-full">
-            Discovery → Research → Approve → Send
+            Discovery â†’ Research â†’ Approve â†’ Send
           </span>
         </div>
         {(() => {
@@ -812,12 +803,12 @@ export function HomeTab({
               return (
                 <>
                   <span>
-                    Research → Klar{" "}
+                    Research â†’ Klar{" "}
                     <strong className="text-slate-700 ml-1">{Math.round((ready / total) * 100)}%</strong>
                   </span>
                   <span className="w-px h-3 bg-slate-200" />
                   <span>
-                    Klar → Sendt{" "}
+                    Klar â†’ Sendt{" "}
                     <strong className="text-slate-700 ml-1">
                       {ready > 0 ? Math.round((sent / ready) * 100) : 0}%
                     </strong>
@@ -836,7 +827,7 @@ export function HomeTab({
 
       {/* Status Breakdown + Quick Actions */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
-        <div className="lg:col-span-3 bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5">
+        <div className="lg:col-span-3 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5">
           <h2 className="text-xs font-bold text-slate-900 mb-4 uppercase tracking-wide">HubSpot Status</h2>
           <div className="space-y-2.5">
             {(() => {
@@ -898,7 +889,7 @@ export function HomeTab({
             </div>
           )}
         </div>
-        <div className="lg:col-span-2 bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5">
+        <div className="lg:col-span-2 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5">
           <h2 className="text-xs font-bold text-slate-900 mb-3 uppercase tracking-wide">Genveje</h2>
           <div className="grid grid-cols-2 gap-2">
             {[
@@ -980,9 +971,9 @@ export function HomeTab({
         </div>
       </div>
 
-      {/* Analytics Overview – kun når der er sendt mails */}
+      {/* Analytics Overview â€“ kun nÃ¥r der er sendt mails */}
       {dashboard?.analytics && totalSent > 0 && (
-        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-5 mb-6">
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5 mb-6">
           <h2 className="text-xs font-bold text-slate-900 mb-4 uppercase tracking-wide">Analytics</h2>
           <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4">
             {[
@@ -1077,7 +1068,7 @@ export function HomeTab({
 
       {/* Recent Activity + System Health */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-6">
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-slate-900">Seneste ejendomme</h2>
             <button
@@ -1108,7 +1099,7 @@ export function HomeTab({
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-slate-800 truncate">{p.name || p.address}</p>
                       <p className="text-[10px] text-slate-400 truncate">
-                        {p.city} · {sc.label}
+                        {p.city} Â· {sc.label}
                       </p>
                     </div>
                     {p.outdoorScore != null && (
@@ -1130,7 +1121,7 @@ export function HomeTab({
             </div>
           )}
         </div>
-        <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-6">
+        <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-slate-900">System Status</h2>
             {systemHealth && (
@@ -1242,3 +1233,4 @@ export function HomeTab({
     </div>
   );
 }
+
