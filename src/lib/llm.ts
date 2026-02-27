@@ -572,33 +572,37 @@ function buildEmailPrompt(
   contact: Contact,
   analysis: ResearchAnalysis
 ): string {
-  return `## Kontekst
-Vi vil gerne kontakte en person angÃ¥ende outdoor reklame-muligheder pÃ¥ en ejendom.
-
-## Ejendom
-- Adresse: ${property.address}, ${property.postalCode} ${property.city}
-- Outdoor score: ${analysis.outdoorPotentialScore}/10
-- OOH pitch-argument: ${analysis.oohPitchArgument || ""}
-- NÃ¸gleindsigter: ${analysis.keyInsights}
-
-## Kontaktperson
-- Navn: ${contact.fullName || "Ukendt"}
-- Rolle: ${contact.role || "Ukendt"}
-- Email: ${contact.email || "Ukendt"}
-- Virksomhed: ${analysis.ownerCompanyName}
-
-## Opgave
-Skriv en kort, personlig outreach-mail. Brug vores tone of voice.
-Referer til noget SPECIFIKT om ejendommen.
-
-Svar i JSON:
-{
-  "subject": "Konkret, nysgerrighedsvÃ¦kkende emnelinje",
-  "body_text": "BrÃ¸dtekst med \\n for linjeskift. Max 150 ord.",
-  "short_internal_note": "Kort intern note"
-}`;
+  const lines = [
+    "## Kontekst",
+    "Vi vil gerne kontakte en person angaende muligheder for outdoor reklame paa en ejendom.",
+    "",
+    "## Ejendom",
+    `- Adresse: ${property.address}, ${property.postalCode} ${property.city}`,
+    `- Konkret pitch-vinkel (INSPIRER mailen – naevn IKKE direkte): ${analysis.oohPitchArgument || ""}`,
+    `- Noegleindsigter: ${analysis.keyInsights}`,
+    "",
+    "## Kontaktperson",
+    `- Navn: ${contact.fullName || "Ukendt"}`,
+    `- Rolle: ${contact.role || "Ukendt"}`,
+    `- Virksomhed: ${analysis.ownerCompanyName}`,
+    "",
+    "## Opgave",
+    "Skriv en kort, personlig outreach-mail i vores tone of voice.",
+    "Start med noget SPECIFIKT og KONKRET om ejendommen (facade, beliggenhed, trafik, synlighed).",
+    "",
+    "DU MAA ALDRIG NAEVNE:",
+    "- outdoor score, score, OOH score, potentiale-score eller nogen intern vurdering",
+    "- Tal som 8/10 eller scorede hojt – det er interne metrikker der IKKE maer relevante for modtageren",
+    "",
+    "Svar i JSON:",
+    "{",
+    '  "subject": "Konkret emnelinje – ingen buzzwords",',
+    '  "body_text": "Brodtekst med \\n for linjeskift. Max 150 ord.",',
+    '  "short_internal_note": "Kort intern note"',
+    "}"
+  ];
+  return lines.join("\n");
 }
-
 
 // ─── OOH Pitch Generator for Leads ──────────────────────────
 
