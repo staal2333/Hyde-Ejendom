@@ -119,6 +119,22 @@ function quadBounds(pts: [Point2D, Point2D, Point2D, Point2D]) {
   return { x: Math.round(Math.min(...xs)), y: Math.round(Math.min(...ys)), width: Math.round(Math.max(...xs) - Math.min(...xs)), height: Math.round(Math.max(...ys) - Math.min(...ys)) };
 }
 
+/** Returns a human-readable aspect ratio label for a placement */
+function getAspectRatioInfo(width: number, height: number): { label: string; desc: string; paddingPct: number } {
+  const ratio = width / height;
+  const paddingPct = Math.min(Math.max((height / width) * 100, 25), 200);
+  let label = "";
+  let desc = "";
+  if (ratio >= 3) { label = "Ultra Wide"; desc = "Bred format (3:1+)"; }
+  else if (ratio >= 2) { label = "Wide"; desc = "Horisontal bredt format"; }
+  else if (ratio >= 1.6) { label = "16:9"; desc = "Horisontal standard"; }
+  else if (ratio >= 1.2) { label = "4:3"; desc = "Næsten kvadratisk"; }
+  else if (ratio >= 0.9) { label = "1:1"; desc = "Kvadratformat"; }
+  else if (ratio >= 0.6) { label = "2:3"; desc = "Vertikal standard"; }
+  else { label = "Vertikal"; desc = "Smalt vertikalt format"; }
+  return { label, desc, paddingPct };
+}
+
 function ensureQuad(p: FramePlacement): [Point2D, Point2D, Point2D, Point2D] {
   if (p.quadPoints) return p.quadPoints;
   return [
@@ -645,6 +661,8 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
   const [selectedCreative, setSelectedCreative] = useState<Creative | null>(null);
   // Multi-placement creative assignments: placementIndex -> creativeId
   const [creativeAssignments, setCreativeAssignments] = useState<Record<number, string>>({});
+  // Which placement slot is currently being picked for (null = default / global pick)
+  const [activePlacementSlot, setActivePlacementSlot] = useState<number | null>(null);
   const [editingFrameId, setEditingFrameId] = useState<string | null>(null);
   const [savingPlacement, setSavingPlacement] = useState(false);
 
@@ -1383,7 +1401,7 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
                     {frames.map(f => {
                       const isSelected = selectedFrame?.id === f.id;
                       return (
-                        <button key={f.id} onClick={() => { setSelectedFrame(f); setStep("creative"); }}
+                        <button key={f.id} onClick={() => { setSelectedFrame(f); setStep("creative"); setCreativeAssignments({}); setActivePlacementSlot(null); }}
                           className={`group text-left rounded-2xl border-2 overflow-hidden transition-all ${isSelected ? "border-violet-500 ring-4 ring-violet-100 shadow-lg" : "border-slate-200/80 hover:border-violet-300 hover:shadow-md bg-white"}`}>
                           <div className="aspect-[4/3] bg-slate-100 relative overflow-hidden">
                             {f.frameImageUrl && <img src={f.frameImageUrl} alt={f.name} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />}
@@ -1436,61 +1454,214 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
                 </label>
               </div>
 
-              {/* Multi-placement creative assignment panel */}
-              {selectedFrame && ensurePlacements(selectedFrame).length > 1 && !batchMode && (
-                <div className="bg-white rounded-2xl border border-slate-200/80 shadow-sm p-5 mb-4">
-                  <h4 className="text-xs font-bold text-slate-700 uppercase tracking-wide mb-3">Tildel creative per placering</h4>
-                  <p className="text-[11px] text-slate-500 mb-3">Denne frame har {ensurePlacements(selectedFrame).length} placeringer. Vælg et creative for hver, eller klik direkte på et creative nedenfor for at bruge det til alle.</p>
-                  <div className="space-y-2">
-                    {ensurePlacements(selectedFrame).map((p, idx) => {
-                      const color = PLACEMENT_COLORS[idx % PLACEMENT_COLORS.length];
-                      const assignedId = creativeAssignments[idx];
-                      const assignedCreative = assignedId ? creatives.find(c => c.id === assignedId) : null;
-                      return (
-                        <div key={idx} className="flex items-center gap-3 px-3 py-2.5 bg-slate-50 rounded-xl">
-                          <span className={`w-3 h-3 rounded-full ${color.bg} shrink-0`} />
-                          <span className="text-xs font-semibold text-slate-800 min-w-[100px]">{p.label || `Placering ${idx + 1}`}</span>
-                          <select
-                            value={assignedId || ""}
-                            onChange={e => {
-                              const val = e.target.value;
-                              setCreativeAssignments(prev => {
-                                const next = { ...prev };
-                                if (val) { next[idx] = val; } else { delete next[idx]; }
-                                return next;
-                              });
-                            }}
-                            className="flex-1 px-3 py-1.5 border border-slate-200 rounded-lg text-xs bg-white focus:border-violet-300 focus:ring-2 focus:ring-violet-100"
+              {/* ═══ Multi-placement creative slot picker ═══ */}
+              {selectedFrame && !batchMode && (() => {
+                const pls = ensurePlacements(selectedFrame);
+                const hasMulti = pls.length > 1;
+                const allAssigned = pls.every((_, idx) => !!creativeAssignments[idx]);
+                const anyAssigned = pls.some((_, idx) => !!creativeAssignments[idx]);
+
+                return (
+                  <div className="mb-5">
+                    {/* Header */}
+                    <div className="flex items-center justify-between mb-3">
+                      <div>
+                        <h4 className="text-sm font-bold text-slate-800">
+                          {hasMulti ? `${pls.length} placeringer på denne frame` : "Placering"}
+                        </h4>
+                        <p className="text-[11px] text-slate-400 mt-0.5">
+                          {hasMulti
+                            ? "Klik 'Vælg' på en placering, og vælg derefter et kreativ i biblioteket nedenfor"
+                            : "Vælg et kreativ til denne placering fra biblioteket nedenfor"}
+                        </p>
+                      </div>
+                      {hasMulti && anyAssigned && (
+                        <button
+                          onClick={() => setCreativeAssignments({})}
+                          className="text-[11px] text-slate-400 hover:text-red-500 transition-colors"
+                        >
+                          Nulstil alle
+                        </button>
+                      )}
+                    </div>
+
+                    {/* Placement slot cards */}
+                    <div className={`grid gap-3 ${pls.length === 1 ? "grid-cols-1" : pls.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-3"}`}>
+                      {pls.map((p, idx) => {
+                        const color = PLACEMENT_COLORS[idx % PLACEMENT_COLORS.length];
+                        const assignedId = creativeAssignments[idx];
+                        const assignedCreative = assignedId ? creatives.find(c => c.id === assignedId) : null;
+                        const arInfo = getAspectRatioInfo(p.width || 1, p.height || 1);
+                        const isActive = activePlacementSlot === idx;
+
+                        return (
+                          <div
+                            key={idx}
+                            className={`rounded-2xl border-2 overflow-hidden transition-all ${
+                              isActive
+                                ? "border-violet-500 shadow-lg shadow-violet-500/20 ring-4 ring-violet-100"
+                                : assignedCreative
+                                ? "border-emerald-300/80 bg-emerald-50/30"
+                                : "border-slate-200 bg-white hover:border-slate-300"
+                            }`}
                           >
-                            <option value="">Ingen valgt</option>
-                            {creatives.map(c => (
-                              <option key={c.id} value={c.id}>{c.companyName} – {c.filename}</option>
-                            ))}
-                          </select>
-                          {assignedCreative?.thumbnailUrl && (
-                            <div className="w-8 h-8 rounded-lg overflow-hidden border border-slate-200 shrink-0">
-                              <img src={assignedCreative.thumbnailUrl} alt="" className="w-full h-full object-cover" />
+                            {/* Aspect ratio preview area */}
+                            <div
+                              className="relative w-full overflow-hidden bg-slate-100"
+                              style={{ paddingTop: `${arInfo.paddingPct}%` }}
+                            >
+                              {/* Creative thumbnail or empty state */}
+                              {assignedCreative?.thumbnailUrl ? (
+                                <img
+                                  src={assignedCreative.thumbnailUrl}
+                                  alt=""
+                                  className="absolute inset-0 w-full h-full object-cover"
+                                />
+                              ) : (
+                                <div className="absolute inset-0 flex flex-col items-center justify-center gap-1">
+                                  <div
+                                    className="w-8 h-8 rounded-lg flex items-center justify-center"
+                                    style={{ background: color.fill, border: `1.5px solid ${color.stroke}` }}
+                                  >
+                                    <Ic d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" className="w-4 h-4" style={{ color: color.stroke }} />
+                                  </div>
+                                  <span className="text-[10px] text-slate-400 font-medium">Intet kreativ</span>
+                                </div>
+                              )}
+
+                              {/* Aspect ratio badge */}
+                              <div className="absolute top-2 left-2">
+                                <span
+                                  className="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-bold"
+                                  style={{
+                                    background: color.fill,
+                                    border: `1px solid ${color.stroke}`,
+                                    color: color.stroke,
+                                  }}
+                                >
+                                  {arInfo.label}
+                                </span>
+                              </div>
+
+                              {/* Assigned badge */}
+                              {assignedCreative && (
+                                <div className="absolute top-2 right-2">
+                                  <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-500 text-white text-[9px] font-bold">
+                                    <Ic d="M4.5 12.75l6 6 9-13.5" className="w-2.5 h-2.5" />
+                                    Valgt
+                                  </span>
+                                </div>
+                              )}
+
+                              {/* Active indicator overlay */}
+                              {isActive && (
+                                <div className="absolute inset-0 bg-violet-500/10 flex items-center justify-center">
+                                  <span className="px-3 py-1.5 bg-violet-600 text-white text-[11px] font-bold rounded-lg shadow-lg">
+                                    Vælg kreativ nedenfor ↓
+                                  </span>
+                                </div>
+                              )}
                             </div>
-                          )}
+
+                            {/* Slot info + actions */}
+                            <div className="p-2.5">
+                              <div className="flex items-start justify-between gap-2 mb-2">
+                                <div className="min-w-0">
+                                  <div className="flex items-center gap-1.5 mb-0.5">
+                                    <span className={`w-2 h-2 rounded-full shrink-0 ${color.bg}`} />
+                                    <p className="text-xs font-bold text-slate-800 truncate">{p.label || `Placering ${idx + 1}`}</p>
+                                  </div>
+                                  <p className="text-[10px] text-slate-400">{Math.round(p.width)}×{Math.round(p.height)}px · {arInfo.desc}</p>
+                                  {assignedCreative && (
+                                    <p className="text-[10px] text-emerald-600 font-medium truncate mt-0.5">{assignedCreative.companyName}</p>
+                                  )}
+                                </div>
+                              </div>
+
+                              <div className="flex gap-1.5">
+                                <button
+                                  onClick={() => setActivePlacementSlot(isActive ? null : idx)}
+                                  className={`flex-1 py-1.5 rounded-lg text-[11px] font-semibold transition-all ${
+                                    isActive
+                                      ? "bg-violet-600 text-white"
+                                      : "bg-violet-50 text-violet-700 hover:bg-violet-100"
+                                  }`}
+                                >
+                                  {isActive ? "Annuller" : assignedCreative ? "Skift" : "Vælg kreativ"}
+                                </button>
+
+                                {/* Upload directly to this slot */}
+                                <label className="px-2.5 py-1.5 rounded-lg bg-slate-100 text-slate-600 hover:bg-slate-200 transition-colors cursor-pointer" title="Upload til denne placering">
+                                  <Ic d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" className="w-3.5 h-3.5" />
+                                  <input
+                                    type="file"
+                                    accept="image/*"
+                                    className="hidden"
+                                    onChange={async e => {
+                                      const file = e.target.files?.[0];
+                                      if (!file) return;
+                                      // Upload and auto-assign to this slot
+                                      setActivePlacementSlot(idx);
+                                      await uploadFile(file, "creative");
+                                    }}
+                                  />
+                                </label>
+
+                                {/* Clear slot */}
+                                {assignedCreative && (
+                                  <button
+                                    onClick={() => {
+                                      setCreativeAssignments(prev => {
+                                        const next = { ...prev };
+                                        delete next[idx];
+                                        return next;
+                                      });
+                                      if (activePlacementSlot === idx) setActivePlacementSlot(null);
+                                    }}
+                                    className="px-2 py-1.5 rounded-lg bg-red-50 text-red-500 hover:bg-red-100 transition-colors"
+                                    title="Fjern kreativ fra slot"
+                                  >
+                                    <Ic d="M6 18L18 6M6 6l12 12" className="w-3.5 h-3.5" />
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+
+                    {/* Generate CTA when slots have assignments */}
+                    {hasMulti && anyAssigned && (
+                      <div className="mt-3 p-3 bg-violet-50 rounded-xl border border-violet-200/60">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="text-xs font-bold text-violet-800">
+                              {Object.keys(creativeAssignments).length}/{pls.length} placeringer tildelt
+                            </p>
+                            <p className="text-[11px] text-violet-600">
+                              {allAssigned
+                                ? "Alle placeringer er klar — generer mockup nu"
+                                : `${pls.length - Object.keys(creativeAssignments).length} placeringer mangler stadig et kreativ`}
+                            </p>
+                          </div>
+                          <button
+                            onClick={() => {
+                              const firstCreative = creatives.find(c => c.id === Object.values(creativeAssignments)[0]);
+                              if (firstCreative) { setSelectedCreative(firstCreative); generateProposal(firstCreative); }
+                            }}
+                            disabled={batchGenerating || generating || !anyAssigned}
+                            className="px-4 py-2 bg-gradient-to-r from-violet-600 to-purple-600 hover:from-violet-700 hover:to-purple-700 text-white text-xs font-bold rounded-xl flex items-center gap-2 shadow-md shadow-violet-500/25 disabled:opacity-40 whitespace-nowrap flex-shrink-0"
+                          >
+                            <Ic d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" className="w-3.5 h-3.5" />
+                            Generer mockup
+                          </button>
                         </div>
-                      );
-                    })}
+                      </div>
+                    )}
                   </div>
-                  {Object.keys(creativeAssignments).length > 0 && (
-                    <button
-                      onClick={() => {
-                        const firstCreative = creatives.find(c => c.id === Object.values(creativeAssignments)[0]);
-                        if (firstCreative) { setSelectedCreative(firstCreative); generateProposal(firstCreative); }
-                      }}
-                      disabled={batchGenerating || generating}
-                      className="mt-3 w-full px-4 py-2.5 bg-gradient-to-r from-violet-500 to-purple-600 hover:from-violet-600 hover:to-purple-700 text-white text-xs font-bold rounded-xl flex items-center justify-center gap-2 shadow-lg shadow-violet-500/20 disabled:opacity-40"
-                    >
-                      <Ic d="M3.75 13.5l10.5-11.25L12 10.5h8.25L9.75 21.75 12 13.5H3.75z" className="w-4 h-4" />
-                      Generer mockup med {Object.keys(creativeAssignments).length} placering{Object.keys(creativeAssignments).length > 1 ? "er" : ""}
-                    </button>
-                  )}
-                </div>
-              )}
+                );
+              })()}
 
               {/* Batch generating progress */}
               {batchGenerating && (
@@ -1511,8 +1682,60 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
                 </div>
               )}
 
-              <div className="mb-4 relative"><Ic d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-                <input type="text" value={creativeSearch} onChange={e => setCreativeSearch(e.target.value)} placeholder="Søg..." className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-violet-300 focus:ring-2 focus:ring-violet-100" />
+              {/* ─── Creative library header ─── */}
+              <div className="flex items-center justify-between mb-3">
+                {activePlacementSlot !== null ? (
+                  <div className="flex items-center gap-2">
+                    <div
+                      className="w-3 h-3 rounded-full"
+                      style={{ background: PLACEMENT_COLORS[activePlacementSlot % PLACEMENT_COLORS.length].stroke }}
+                    />
+                    <p className="text-sm font-bold text-slate-800">
+                      Vælger kreativ til{" "}
+                      <span style={{ color: PLACEMENT_COLORS[activePlacementSlot % PLACEMENT_COLORS.length].stroke }}>
+                        {selectedFrame ? (ensurePlacements(selectedFrame)[activePlacementSlot]?.label || `Placering ${activePlacementSlot + 1}`) : `Placering ${activePlacementSlot + 1}`}
+                      </span>
+                    </p>
+                    <button
+                      onClick={() => setActivePlacementSlot(null)}
+                      className="text-[10px] text-slate-400 hover:text-slate-600 ml-1"
+                    >
+                      Annuller
+                    </button>
+                  </div>
+                ) : (
+                  <p className="text-sm font-semibold text-slate-700">Kreativ bibliotek</p>
+                )}
+                <div className="flex items-center gap-2">
+                  {activePlacementSlot === null && (
+                    <p className="text-[10px] text-slate-400">Klik på et kreativ for at tildele det</p>
+                  )}
+                  <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-violet-600 hover:bg-violet-700 text-white text-xs font-semibold rounded-lg cursor-pointer shadow-sm">
+                    <Ic d="M12 4.5v15m7.5-7.5h-15" className="w-3.5 h-3.5" />
+                    Upload
+                    <input type="file" accept="image/*" className="hidden" onChange={e => e.target.files?.[0] && uploadFile(e.target.files[0], "creative")} />
+                  </label>
+                </div>
+              </div>
+
+              {/* ─── Slot picker mode banner ─── */}
+              {activePlacementSlot !== null && (
+                <div
+                  className="mb-3 px-4 py-2.5 rounded-xl text-xs font-semibold flex items-center gap-2"
+                  style={{
+                    background: PLACEMENT_COLORS[activePlacementSlot % PLACEMENT_COLORS.length].fill,
+                    border: `1px solid ${PLACEMENT_COLORS[activePlacementSlot % PLACEMENT_COLORS.length].stroke}`,
+                    color: PLACEMENT_COLORS[activePlacementSlot % PLACEMENT_COLORS.length].stroke,
+                  }}
+                >
+                  <Ic d="M15.042 21.672L13.684 16.6m0 0l-2.51 2.225.569-9.47 5.227 6.021-3.286 1.206zm0 0L12 13.5" className="w-4 h-4 shrink-0" />
+                  Klik på et kreativ nedenfor for at tildele det til denne placering
+                </div>
+              )}
+
+              <div className="mb-3 relative">
+                <Ic d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+                <input type="text" value={creativeSearch} onChange={e => setCreativeSearch(e.target.value)} placeholder="Søg kreativ..." className="w-full pl-10 pr-4 py-2.5 border border-slate-200 rounded-xl text-sm focus:border-violet-300 focus:ring-2 focus:ring-violet-100" />
               </div>
               <div onDrop={e => handleDrop(e, "creative")} onDragOver={e => handleDragOver(e, "creative")} onDragLeave={() => setDragOver(null)}
                 className={`rounded-2xl border-2 border-dashed transition-all ${dragOver === "creative" ? "border-violet-400 bg-violet-50/50" : "border-transparent"}`}>
@@ -1521,33 +1744,83 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
                     <div className="w-14 h-14 rounded-2xl bg-violet-100 flex items-center justify-center mx-auto mb-3">
                       <Ic d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" className="w-6 h-6 text-violet-500" />
                     </div>
-                    <p className="text-sm font-bold text-slate-800 mb-1">Upload dit creative</p>
+                    <p className="text-sm font-bold text-slate-800 mb-1">Upload dit kreativ</p>
                     <p className="text-xs text-slate-400 mb-3">Træk dit reklamebillede hertil, eller klik Upload knappen ovenfor</p>
                   </div>
                 ) : (
                   <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-5 gap-3">
-                    {creatives.map(c => (
-                      <button key={c.id} disabled={batchGenerating}
-                        onClick={() => {
-                          setSelectedCreative(c);
-                          if (batchMode && selectedFrameIds.size > 0) {
-                            generateBatchMockups(c);
-                          } else {
-                            generateProposal(c);
-                          }
-                        }}
-                        className={`group relative rounded-xl border-2 overflow-hidden transition-all disabled:opacity-40 ${selectedCreative?.id === c.id ? "border-violet-500 ring-4 ring-violet-100 shadow-lg" : "border-slate-200/80 hover:border-violet-300 hover:shadow-md bg-white"}`}>
-                        <div className="aspect-square bg-slate-50 relative overflow-hidden">
-                          {c.thumbnailUrl ? <img src={c.thumbnailUrl} alt={c.filename} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" /> : <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-300">{c.filename}</div>}
-                          <div className="absolute inset-0 bg-violet-600/0 group-hover:bg-violet-600/20 transition-colors flex items-center justify-center">
-                            <span className="px-3 py-1.5 bg-white/90 backdrop-blur-sm rounded-lg text-[10px] font-bold text-violet-700 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity">
-                              {batchMode && selectedFrameIds.size > 0 ? `Generer ${selectedFrameIds.size} mockups` : "Generer mockup"}
-                            </span>
+                    {creatives.map(c => {
+                      const isAssignedToSlot = activePlacementSlot !== null && creativeAssignments[activePlacementSlot] === c.id;
+                      const isSelected = selectedCreative?.id === c.id;
+                      const assignedSlots = Object.entries(creativeAssignments)
+                        .filter(([, id]) => id === c.id)
+                        .map(([idx]) => {
+                          const pls = selectedFrame ? ensurePlacements(selectedFrame) : [];
+                          return pls[Number(idx)]?.label || `P${Number(idx) + 1}`;
+                        });
+
+                      return (
+                        <button key={c.id} disabled={batchGenerating}
+                          onClick={() => {
+                            if (activePlacementSlot !== null) {
+                              // Assign to the active placement slot
+                              setCreativeAssignments(prev => ({ ...prev, [activePlacementSlot]: c.id }));
+                              setSelectedCreative(c);
+                              // Auto-advance to next empty slot
+                              const pls = selectedFrame ? ensurePlacements(selectedFrame) : [];
+                              const nextEmpty = pls.findIndex((_, i) => i !== activePlacementSlot && !creativeAssignments[i]);
+                              setActivePlacementSlot(nextEmpty >= 0 ? nextEmpty : null);
+                            } else if (batchMode && selectedFrameIds.size > 0) {
+                              setSelectedCreative(c);
+                              generateBatchMockups(c);
+                            } else {
+                              setSelectedCreative(c);
+                              generateProposal(c);
+                            }
+                          }}
+                          className={`group relative rounded-xl border-2 overflow-hidden transition-all disabled:opacity-40 ${
+                            isAssignedToSlot
+                              ? "border-violet-500 ring-4 ring-violet-100 shadow-lg"
+                              : isSelected && activePlacementSlot === null
+                              ? "border-indigo-400 ring-2 ring-indigo-100 shadow-md"
+                              : assignedSlots.length > 0
+                              ? "border-emerald-400/70 bg-emerald-50/20"
+                              : "border-slate-200/80 hover:border-violet-300 hover:shadow-md bg-white"
+                          }`}
+                        >
+                          <div className="aspect-square bg-slate-50 relative overflow-hidden">
+                            {c.thumbnailUrl
+                              ? <img src={c.thumbnailUrl} alt={c.filename} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500" />
+                              : <div className="w-full h-full flex items-center justify-center text-[10px] text-slate-300">{c.filename}</div>
+                            }
+                            {/* Hover overlay */}
+                            <div className="absolute inset-0 bg-violet-600/0 group-hover:bg-violet-600/20 transition-colors flex items-center justify-center">
+                              <span className="px-2 py-1 bg-white/90 backdrop-blur-sm rounded-lg text-[10px] font-bold text-violet-700 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity text-center">
+                                {activePlacementSlot !== null
+                                  ? "Tildel til placering"
+                                  : batchMode && selectedFrameIds.size > 0
+                                  ? `Generer ${selectedFrameIds.size} mockups`
+                                  : "Generer mockup"}
+                              </span>
+                            </div>
+                            {/* Already assigned badges */}
+                            {assignedSlots.length > 0 && (
+                              <div className="absolute bottom-1 left-1 flex flex-wrap gap-0.5">
+                                {assignedSlots.map(label => (
+                                  <span key={label} className="px-1 py-0.5 bg-emerald-500 text-white text-[8px] font-bold rounded">
+                                    {label}
+                                  </span>
+                                ))}
+                              </div>
+                            )}
                           </div>
-                        </div>
-                        <div className="p-2"><p className="text-[11px] font-semibold text-slate-700 truncate">{c.companyName}</p><p className="text-[10px] text-slate-400 truncate">{c.campaignName || c.filename}</p></div>
-                      </button>
-                    ))}
+                          <div className="p-2">
+                            <p className="text-[11px] font-semibold text-slate-700 truncate">{c.companyName}</p>
+                            <p className="text-[10px] text-slate-400 truncate">{c.campaignName || c.filename}</p>
+                          </div>
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
               </div>
@@ -1788,7 +2061,7 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
                           <Ic d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931z" className="w-3 h-3 inline mr-0.5" />Rediger
                         </button>
                         <button onClick={() => { setSelectedFrame(f); setEditingFrameId(f.id); setTab("builder"); setStep("frame"); }} className="px-2.5 py-1.5 bg-white/90 backdrop-blur-sm rounded-lg text-[10px] font-semibold text-violet-700 hover:bg-white shadow-sm">Placement</button>
-                        <button onClick={() => { setSelectedFrame(f); setTab("builder"); setStep("creative"); }} className="px-2.5 py-1.5 bg-violet-600/90 backdrop-blur-sm rounded-lg text-[10px] font-semibold text-white hover:bg-violet-700 shadow-sm">Brug →</button>
+                        <button onClick={() => { setSelectedFrame(f); setTab("builder"); setStep("creative"); setCreativeAssignments({}); setActivePlacementSlot(null); }} className="px-2.5 py-1.5 bg-violet-600/90 backdrop-blur-sm rounded-lg text-[10px] font-semibold text-white hover:bg-violet-700 shadow-sm">Brug →</button>
                       </div>
                     )}
                   </div>
