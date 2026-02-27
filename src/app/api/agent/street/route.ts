@@ -37,6 +37,17 @@ export async function POST(req: NextRequest) {
 
       const isCancelled = () => cancelled;
 
+      // Heartbeat: keep SSE connection alive every 20s (prevents Vercel/proxy timeout)
+      const heartbeat = setInterval(() => {
+        if (cancelled) { clearInterval(heartbeat); return; }
+        try {
+          controller.enqueue(encoder.encode(`: heartbeat\n\n`));
+        } catch {
+          cancelled = true;
+          clearInterval(heartbeat);
+        }
+      }, 20_000);
+
       try {
         // ══════════════════════════════════════════════════
         // Phase 1: DISCOVERY – Find buildings on the street
@@ -160,22 +171,43 @@ export async function POST(req: NextRequest) {
             researchTotal: newProperties.length,
           });
 
-          const run = await processStagedProperty(
-            stagedProp,
-            (event) => {
-              const subPct = event.progress || 0;
-              const scaledPct = propStartPct + Math.round((subPct / 100) * (propEndPct - propStartPct));
-              send({
-                ...event,
-                agentPhase: "research",
-                progress: scaledPct,
-                researchIndex: i + 1,
-                researchTotal: newProperties.length,
-              });
-            },
-            isCancelled,
-            { skipEmailDraft: false }
-          );
+          // Timeout per property: 90s max — skip and continue if it hangs
+          const PROPERTY_TIMEOUT_MS = 90_000;
+          let run: Awaited<ReturnType<typeof processStagedProperty>>;
+          try {
+            run = await Promise.race([
+              processStagedProperty(
+                stagedProp,
+                (event) => {
+                  const subPct = event.progress || 0;
+                  const scaledPct = propStartPct + Math.round((subPct / 100) * (propEndPct - propStartPct));
+                  send({
+                    ...event,
+                    agentPhase: "research",
+                    progress: scaledPct,
+                    researchIndex: i + 1,
+                    researchTotal: newProperties.length,
+                  });
+                },
+                isCancelled,
+                { skipEmailDraft: false }
+              ),
+              new Promise<never>((_, reject) =>
+                setTimeout(() => reject(new Error("Timeout efter 90s")), PROPERTY_TIMEOUT_MS)
+              ),
+            ]);
+          } catch (propErr) {
+            researchFailed++;
+            send({
+              phase: "research_property_failed",
+              message: `[${i + 1}/${newProperties.length}] ${stagedProp.address}: ${propErr instanceof Error ? propErr.message : "Fejl"} — springer over`,
+              progress: propEndPct,
+              agentPhase: "research",
+              researchIndex: i + 1,
+              researchTotal: newProperties.length,
+            });
+            continue;
+          }
 
           if (run.status === "completed") {
             researchCompleted++;
@@ -241,6 +273,7 @@ export async function POST(req: NextRequest) {
           });
         }
       } finally {
+        clearInterval(heartbeat);
         if (!cancelled) {
           try { controller.close(); } catch { /* already closed */ }
         }
