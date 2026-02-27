@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { useDashboard } from "@/contexts/DashboardContext";
 
 interface DiscoveryConfig {
@@ -50,6 +50,35 @@ function loadRules(): Record<RuleId, boolean> {
   }
 }
 
+// ─── Research Log types ──────────────────────────────────────
+
+interface WorkflowStepLog {
+  stepId: string;
+  stepName: string;
+  status: "pending" | "running" | "completed" | "failed" | "skipped";
+  startedAt?: string;
+  completedAt?: string;
+  details?: string;
+  error?: string;
+}
+
+interface ResearchLogRecord {
+  id: string;
+  property_id: string;
+  property_name: string | null;
+  started_at: string;
+  finished_at: string | null;
+  status: string;
+  steps: WorkflowStepLog[];
+  cvr_found: string | null;
+  emails_found: string[];
+  contacts_found: { fullName?: string | null; role?: string; email?: string | null }[] | null;
+  error_message: string | null;
+  created_at: string;
+}
+
+// ─── Inspector Contact ────────────────────────────────────────
+
 interface InspectorContact {
   name: string;
   role?: string;
@@ -96,6 +125,36 @@ export function SettingsTab() {
   const { systemHealth, addToast } = useDashboard();
   const [autonomyLevel, setAutonomyLevel] = useState(0);
   const [rules, setRules] = useState<Record<RuleId, boolean>>(loadRules);
+
+  // Research log history state
+  const [researchLogs, setResearchLogs] = useState<ResearchLogRecord[]>([]);
+  const [logsLoading, setLogsLoading] = useState(false);
+  const [logsError, setLogsError] = useState<string | null>(null);
+  const [expandedLogId, setExpandedLogId] = useState<string | null>(null);
+  const [logStatusFilter, setLogStatusFilter] = useState<"all" | "completed" | "failed">("all");
+  const logsLoadedRef = useRef(false);
+
+  const fetchResearchLogs = useCallback(async () => {
+    setLogsLoading(true);
+    setLogsError(null);
+    try {
+      const res = await fetch("/api/research-logs?limit=30");
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Fejl");
+      setResearchLogs(Array.isArray(data.logs) ? data.logs : []);
+    } catch (e) {
+      setLogsError(e instanceof Error ? e.message : "Ukendt fejl");
+    } finally {
+      setLogsLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!logsLoadedRef.current) {
+      logsLoadedRef.current = true;
+      fetchResearchLogs();
+    }
+  }, [fetchResearchLogs]);
 
   // Research inspector state
   const [inspectorCvr, setInspectorCvr] = useState("");
@@ -887,6 +946,264 @@ export function SettingsTab() {
             {inspectorResult.website?.error && (
               <div className="p-3 bg-red-50 rounded-xl border border-red-200 text-xs text-red-600">Website-scraping fejlede: {inspectorResult.website.error}</div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* ═══════ RESEARCH LOG HISTORY ═══════ */}
+      <div className="bg-white rounded-2xl border border-slate-200/60 shadow-[var(--card-shadow)] p-6">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="w-7 h-7 rounded-lg bg-indigo-50 flex items-center justify-center">
+              <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3.75 12h16.5m-16.5 3.75h16.5M3.75 19.5h16.5M5.625 4.5h12.75a1.875 1.875 0 010 3.75H5.625a1.875 1.875 0 010-3.75z" />
+              </svg>
+            </div>
+            <div>
+              <h3 className="text-sm font-bold text-slate-800 uppercase tracking-wide">Research Log History</h3>
+              <p className="text-[10px] text-slate-400">Alle pipeline-kørsler — se hvad der fandt sted, step for step</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-slate-200 overflow-hidden text-[10px] font-semibold">
+              {(["all", "completed", "failed"] as const).map((f) => (
+                <button
+                  key={f}
+                  type="button"
+                  onClick={() => setLogStatusFilter(f)}
+                  className={`px-3 py-1.5 transition-colors ${logStatusFilter === f ? "bg-indigo-600 text-white" : "text-slate-600 hover:bg-slate-50"}`}
+                >
+                  {f === "all" ? "Alle" : f === "completed" ? "Gennemført" : "Fejlet"}
+                </button>
+              ))}
+            </div>
+            <button
+              type="button"
+              onClick={fetchResearchLogs}
+              disabled={logsLoading}
+              className="p-2 rounded-lg border border-slate-200 text-slate-500 hover:bg-slate-50 hover:text-slate-800 transition-colors disabled:opacity-40"
+              title="Opdater"
+            >
+              <svg className={`w-4 h-4 ${logsLoading ? "animate-spin" : ""}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" />
+              </svg>
+            </button>
+          </div>
+        </div>
+
+        {/* Summary stats */}
+        {researchLogs.length > 0 && (() => {
+          const completed = researchLogs.filter(l => l.status === "completed").length;
+          const failed = researchLogs.filter(l => l.status === "failed").length;
+          const withCvr = researchLogs.filter(l => l.cvr_found).length;
+          const withEmail = researchLogs.filter(l => l.emails_found && l.emails_found.length > 0).length;
+          return (
+            <div className="grid grid-cols-4 gap-2 mb-4">
+              {[
+                { label: "Total kørsler", val: researchLogs.length, color: "bg-slate-50 border-slate-200 text-slate-700" },
+                { label: "Gennemført", val: completed, color: "bg-emerald-50 border-emerald-200 text-emerald-700" },
+                { label: "Fejlet", val: failed, color: "bg-red-50 border-red-200 text-red-600" },
+                { label: "CVR fundet", val: withCvr, color: "bg-blue-50 border-blue-200 text-blue-700" },
+              ].map(s => (
+                <div key={s.label} className={`p-3 rounded-xl border text-center ${s.color}`}>
+                  <div className="text-xl font-bold">{s.val}</div>
+                  <div className="text-[9px] font-semibold uppercase tracking-wide mt-0.5 opacity-75">{s.label}</div>
+                </div>
+              ))}
+            </div>
+          );
+        })()}
+
+        {logsError && (
+          <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-xs text-red-700 mb-3">
+            Fejl ved hentning af logs: {logsError}
+          </div>
+        )}
+
+        {logsLoading && researchLogs.length === 0 ? (
+          <div className="flex flex-col items-center py-10 text-slate-400">
+            <div className="w-6 h-6 border-2 border-slate-300/30 border-t-indigo-500 rounded-full animate-spin mb-2" />
+            <p className="text-xs">Henter research logs...</p>
+          </div>
+        ) : (() => {
+          const filtered = logStatusFilter === "all"
+            ? researchLogs
+            : researchLogs.filter(l => l.status === logStatusFilter);
+
+          if (filtered.length === 0) {
+            return (
+              <div className="text-center py-10 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
+                <svg className="w-8 h-8 mx-auto mb-2 opacity-40" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m0 12.75h7.5m-7.5 3H12M10.5 2.25H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z" />
+                </svg>
+                <p className="text-sm">
+                  {logStatusFilter === "all"
+                    ? "Ingen research logs endnu. Kør research på en ejendom for at se logs her."
+                    : `Ingen ${logStatusFilter === "completed" ? "gennemførte" : "fejlede"} kørsler.`}
+                </p>
+              </div>
+            );
+          }
+
+          return (
+            <div className="space-y-2">
+              {filtered.map((log) => {
+                const isExpanded = expandedLogId === log.id;
+                const durationMs = log.finished_at && log.started_at
+                  ? new Date(log.finished_at).getTime() - new Date(log.started_at).getTime()
+                  : null;
+                const durationStr = durationMs != null
+                  ? durationMs >= 60000 ? `${Math.round(durationMs / 60000)}m ${Math.round((durationMs % 60000) / 1000)}s`
+                    : `${Math.round(durationMs / 1000)}s`
+                  : "–";
+
+                const statusConfig = {
+                  completed: { label: "Gennemført", cls: "bg-emerald-100 text-emerald-700" },
+                  failed: { label: "Fejlet", cls: "bg-red-100 text-red-700" },
+                  running: { label: "Kører", cls: "bg-blue-100 text-blue-700" },
+                }[log.status] ?? { label: log.status, cls: "bg-slate-100 text-slate-600" };
+
+                const completedSteps = log.steps?.filter(s => s.status === "completed").length ?? 0;
+                const failedSteps = log.steps?.filter(s => s.status === "failed").length ?? 0;
+                const totalSteps = log.steps?.length ?? 0;
+
+                return (
+                  <div key={log.id} className={`rounded-xl border transition-all ${log.status === "failed" ? "border-red-200 bg-red-50/30" : log.status === "completed" ? "border-emerald-200/60 bg-emerald-50/20" : "border-slate-200 bg-slate-50/30"}`}>
+                    {/* Log header row */}
+                    <button
+                      type="button"
+                      onClick={() => setExpandedLogId(isExpanded ? null : log.id)}
+                      className="w-full flex items-center gap-3 p-3 text-left hover:bg-black/[0.02] rounded-xl transition-colors"
+                    >
+                      {/* Status indicator */}
+                      <div className={`w-2 h-2 rounded-full shrink-0 ${log.status === "completed" ? "bg-emerald-500" : log.status === "failed" ? "bg-red-500" : "bg-blue-400 animate-pulse"}`} />
+
+                      {/* Property name */}
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-semibold text-slate-800 truncate">
+                          {log.property_name || log.property_id || "Ukendt ejendom"}
+                        </p>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {new Date(log.started_at).toLocaleDateString("da-DK", { day: "2-digit", month: "short", year: "numeric" })}
+                          {" · "}
+                          {new Date(log.started_at).toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit" })}
+                          {" · "}
+                          {durationStr}
+                        </p>
+                      </div>
+
+                      {/* Data found badges */}
+                      <div className="flex items-center gap-1.5 shrink-0">
+                        {log.cvr_found && (
+                          <span className="px-2 py-0.5 rounded-md bg-blue-100 text-blue-700 text-[9px] font-bold">CVR {log.cvr_found}</span>
+                        )}
+                        {log.emails_found && log.emails_found.length > 0 && (
+                          <span className="px-2 py-0.5 rounded-md bg-violet-100 text-violet-700 text-[9px] font-bold">{log.emails_found.length} email{log.emails_found.length > 1 ? "s" : ""}</span>
+                        )}
+                        {log.contacts_found && log.contacts_found.length > 0 && (
+                          <span className="px-2 py-0.5 rounded-md bg-emerald-100 text-emerald-700 text-[9px] font-bold">{log.contacts_found.length} kontakt{log.contacts_found.length > 1 ? "er" : ""}</span>
+                        )}
+                        <span className={`px-2 py-0.5 rounded-md text-[9px] font-bold ${statusConfig.cls}`}>{statusConfig.label}</span>
+                        <svg className={`w-3.5 h-3.5 text-slate-400 transition-transform ${isExpanded ? "rotate-180" : ""}`} fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                          <path strokeLinecap="round" strokeLinejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+                        </svg>
+                      </div>
+                    </button>
+
+                    {/* Expanded detail */}
+                    {isExpanded && (
+                      <div className="px-4 pb-4 space-y-3 border-t border-slate-100 pt-3">
+
+                        {/* Error message */}
+                        {log.error_message && (
+                          <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-xs text-red-700">
+                            <span className="font-bold">Fejl: </span>{log.error_message}
+                          </div>
+                        )}
+
+                        {/* Step breakdown */}
+                        {log.steps && log.steps.length > 0 && (
+                          <div>
+                            <h5 className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mb-2">
+                              Pipeline steps ({completedSteps}/{totalSteps} gennemført{failedSteps > 0 ? `, ${failedSteps} fejlet` : ""})
+                            </h5>
+                            <div className="space-y-1">
+                              {log.steps.map((step, i) => {
+                                const stepIcon = {
+                                  completed: <span className="text-emerald-500">✓</span>,
+                                  failed: <span className="text-red-500">✕</span>,
+                                  skipped: <span className="text-slate-300">–</span>,
+                                  running: <span className="text-blue-400">●</span>,
+                                  pending: <span className="text-slate-300">○</span>,
+                                }[step.status] ?? <span className="text-slate-300">?</span>;
+
+                                const stepDur = step.completedAt && step.startedAt
+                                  ? Math.round((new Date(step.completedAt).getTime() - new Date(step.startedAt).getTime()) / 1000)
+                                  : null;
+
+                                return (
+                                  <div key={i} className={`flex items-start gap-2 p-2 rounded-lg text-xs ${step.status === "failed" ? "bg-red-50 border border-red-100" : step.status === "completed" ? "bg-white border border-slate-100" : "bg-slate-50 border border-slate-100 opacity-60"}`}>
+                                    <span className="font-mono text-[10px] w-4 shrink-0 mt-0.5">{stepIcon}</span>
+                                    <div className="flex-1 min-w-0">
+                                      <span className="font-semibold text-slate-700">{step.stepName || step.stepId}</span>
+                                      {step.details && <p className="text-[10px] text-slate-500 mt-0.5 truncate">{step.details}</p>}
+                                      {step.error && <p className="text-[10px] text-red-600 mt-0.5">{step.error}</p>}
+                                    </div>
+                                    {stepDur != null && <span className="text-[9px] text-slate-400 shrink-0">{stepDur}s</span>}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Found data */}
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          {/* Emails */}
+                          {log.emails_found && log.emails_found.length > 0 && (
+                            <div className="p-3 bg-violet-50 border border-violet-100 rounded-lg">
+                              <h5 className="text-[10px] font-bold text-violet-700 uppercase tracking-wide mb-1.5">Emails fundet</h5>
+                              <div className="space-y-0.5">
+                                {log.emails_found.map((email, i) => (
+                                  <a key={i} href={`mailto:${email}`} className="block text-xs text-violet-700 hover:underline truncate">{email}</a>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Contacts */}
+                          {log.contacts_found && log.contacts_found.length > 0 && (
+                            <div className="p-3 bg-emerald-50 border border-emerald-100 rounded-lg">
+                              <h5 className="text-[10px] font-bold text-emerald-700 uppercase tracking-wide mb-1.5">Kontakter ranket</h5>
+                              <div className="space-y-1">
+                                {log.contacts_found.slice(0, 4).map((c, i) => (
+                                  <div key={i} className="flex items-center gap-1.5">
+                                    <span className="w-4 h-4 rounded-full bg-emerald-200 text-emerald-800 text-[8px] flex items-center justify-center font-bold shrink-0">{i + 1}</span>
+                                    <span className="text-xs font-medium text-slate-700 truncate">{c.fullName || "Ukendt"}</span>
+                                    {c.role && <span className="text-[9px] text-slate-400 shrink-0">{c.role}</span>}
+                                    {c.email && <span className="text-[9px] text-violet-600 shrink-0 ml-auto">{c.email}</span>}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          )}
+                        </div>
+
+                        {/* Property ID */}
+                        <p className="text-[9px] text-slate-300 font-mono">ID: {log.property_id} · Log: {log.id}</p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          );
+        })()}
+
+        {!logsLoading && researchLogs.length === 0 && !logsError && (
+          <div className="text-center py-8 text-slate-400 border-2 border-dashed border-slate-200 rounded-xl">
+            <p className="text-sm">Ingen logs fundet. Kør research på en ejendom for at se resultater her.</p>
+            <p className="text-xs mt-1 text-slate-300">Logs gemmes automatisk til Supabase efter hver research-kørsel.</p>
           </div>
         )}
       </div>
