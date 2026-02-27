@@ -942,9 +942,10 @@ function DashboardContent() {
   };
 
   // ── Street Agent ──
-  // Two-phase approach to avoid Vercel timeout:
-  // Phase 1: Discovery only (fast, single request) → get staged property IDs
-  // Phase 2: Research each property individually via /api/run-research (separate requests)
+  // Three-phase client-orchestrated approach to avoid Vercel timeout:
+  // Phase 1: Fetch address list from DAWA (1 fast request, <2s)
+  // Phase 2: Score addresses in batches of 15 (each batch = separate <10s request)
+  // Phase 3: Research each staged property individually (separate <60s requests)
   const triggerStreetAgent = async () => {
     if (!agentStreet.trim()) return;
     const controller = new AbortController();
@@ -955,53 +956,151 @@ function DashboardContent() {
     setAgentPhaseLabel("discovery");
     setAgentStats(null);
 
-    addToast(`Gade-agent starter: ${agentStreet.trim()}, ${agentCity}...`, "info");
+    const street = agentStreet.trim();
+    const city = agentCity.trim();
 
-    // ── Phase 1: Discovery only ──
-    let stagedPropertyIds: string[] = [];
-    let discoveryStats: Record<string, number> = {};
-
-    await consumeSSE(
-      "/api/agent/street", "POST",
-      { street: agentStreet.trim(), city: agentCity.trim(), discoveryOnly: true },
-      setAgentEvents, setAgentPct, setAgentPhaseLabel,
-      (pe) => {
-        const raw = pe as unknown as Record<string, unknown>;
-        const agentPhase = raw.agentPhase as string | undefined;
-        if (agentPhase) setAgentPhaseLabel(agentPhase);
-        if (raw.stats) discoveryStats = raw.stats as Record<string, number>;
-        if (Array.isArray(raw.stagedPropertyIds)) {
-          stagedPropertyIds = raw.stagedPropertyIds as string[];
-        }
-        if (pe.phase === "agent_done") {
-          addToast(pe.message || "Ingen nye ejendomme fundet", "info");
-        }
-      },
-      () => { /* keep running=true, we continue to phase 2 */ },
-      controller.signal
-    );
-
-    if (controller.signal.aborted || stagedPropertyIds.length === 0) {
-      const created = discoveryStats.created ?? 0;
-      if (created === 0) {
-        addToast("Ingen nye ejendomme fundet på denne gade", "info");
-      }
-      setAgentRunning(false);
-      agentAbortRef.current = null;
-      setAgentStats(discoveryStats);
-      return;
-    }
-
-    // ── Phase 2: Research each property one by one ──
-    setAgentPhaseLabel("research");
     const addEvent = (ev: { phase: string; message: string; detail?: string; progress?: number }) => {
       setAgentEvents(prev => [...prev, { ...ev, timestamp: Date.now() }]);
     };
 
+    addToast(`Gade-agent starter: ${street}, ${city}...`, "info");
+
+    // ── Phase 1: Get address list ──
+    addEvent({ phase: "scan", message: `Henter adresser på ${street}...`, progress: 2 });
+
+    let addresses: unknown[] = [];
+    let trafficDaily = 0;
+    let trafficFormatted = "";
+
+    try {
+      const addrRes = await fetch(
+        `/api/agent/street/addresses?street=${encodeURIComponent(street)}&city=${encodeURIComponent(city)}`,
+        { signal: controller.signal }
+      );
+      if (!addrRes.ok) throw new Error(`Adresse-opslag fejlede (${addrRes.status})`);
+      const addrData = await addrRes.json() as {
+        addresses: unknown[];
+        total: number;
+        trafficEstimate: { daily: number; formatted: string; source: string; confidence: number };
+      };
+      addresses = addrData.addresses;
+      trafficDaily = addrData.trafficEstimate.daily;
+      trafficFormatted = addrData.trafficEstimate.formatted;
+
+      addEvent({
+        phase: "scan_done",
+        message: `${addresses.length} adresser fundet på ${street} · Trafik: ${trafficFormatted}/dag`,
+        progress: 5,
+      });
+    } catch (e) {
+      if (controller.signal.aborted) { setAgentRunning(false); return; }
+      addEvent({ phase: "error", message: `Fejl ved adresse-opslag: ${e instanceof Error ? e.message : e}`, progress: 100 });
+      setAgentRunning(false);
+      return;
+    }
+
+    if (addresses.length === 0) {
+      addEvent({ phase: "done", message: "Ingen adresser fundet på denne gade", progress: 100 });
+      setAgentRunning(false);
+      return;
+    }
+
+    // ── Phase 2: Score in batches of 15 ──
+    const BATCH_SIZE = 15;
+    const batches: unknown[][] = [];
+    for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
+      batches.push(addresses.slice(i, i + BATCH_SIZE));
+    }
+
+    addEvent({
+      phase: "scoring",
+      message: `AI vurderer ${addresses.length} bygninger i ${batches.length} batches...`,
+      progress: 8,
+    });
+
+    const stagedPropertyIds: string[] = [];
+    let totalCreated = 0;
+    let totalAlreadyExists = 0;
+    let totalSkipped = 0;
+
+    for (let i = 0; i < batches.length; i++) {
+      if (controller.signal.aborted) break;
+
+      const pct = 8 + Math.round(((i) / batches.length) * 55);
+      addEvent({
+        phase: "scoring_batch",
+        message: `AI scorer batch ${i + 1}/${batches.length} (${batches[i].length} bygninger)`,
+        progress: pct,
+      });
+      setAgentPct(pct);
+
+      try {
+        const batchRes = await fetch("/api/agent/street/score-batch", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ addresses: batches[i], street, city, trafficDaily }),
+          signal: controller.signal,
+        });
+
+        if (batchRes.ok) {
+          const batchData = await batchRes.json() as {
+            scored: { address: string; score: number; reason: string }[];
+            staged: { id: string; address: string }[];
+            created: number;
+            alreadyExists: number;
+            skipped: number;
+            error?: string;
+          };
+
+          totalCreated += batchData.created || 0;
+          totalAlreadyExists += batchData.alreadyExists || 0;
+          totalSkipped += batchData.skipped || 0;
+
+          if (batchData.staged?.length) {
+            for (const s of batchData.staged) stagedPropertyIds.push(s.id);
+            const top = batchData.scored.sort((a, b) => b.score - a.score)[0];
+            addEvent({
+              phase: "staging_created",
+              message: `Batch ${i + 1}: ${batchData.created} ny ejendom staged${top ? ` — Top: ${top.address} (${top.score}/10)` : ""}`,
+              progress: pct,
+            });
+          }
+        }
+      } catch (e) {
+        if (controller.signal.aborted) break;
+        addEvent({ phase: "scoring_batch_error", message: `Batch ${i + 1} fejlede: ${e instanceof Error ? e.message : e}`, progress: pct });
+      }
+    }
+
+    if (controller.signal.aborted) {
+      setAgentRunning(false);
+      return;
+    }
+
+    const scoringPct = 63;
+    setAgentPct(scoringPct);
+    addEvent({
+      phase: "scoring_done",
+      message: `Discovery færdig: ${totalCreated} nye ejendomme staged, ${totalAlreadyExists} eksisterede allerede`,
+      progress: scoringPct,
+    });
+
+    if (totalCreated === 0) {
+      setAgentStats({ totalBuildings: addresses.length, created: 0, alreadyExists: totalAlreadyExists, researchCompleted: 0, researchFailed: 0, emailDraftsGenerated: 0 });
+      setAgentPhaseLabel("done");
+      setAgentPct(100);
+      addEvent({ phase: "agent_done", message: "Ingen nye ejendomme at researche — alle eksisterer allerede eller scorede for lavt", progress: 100 });
+      setAgentRunning(false);
+      agentAbortRef.current = null;
+      return;
+    }
+
+    // ── Phase 3: Research each staged property ──
+    setAgentPhaseLabel("research");
     addEvent({
       phase: "research_start",
-      message: `Fase 2: Researcher ${stagedPropertyIds.length} ejendomme individuelt...`,
-      progress: 31,
+      message: `Fase 3: Researcher ${stagedPropertyIds.length} ejendomme individuelt...`,
+      progress: scoringPct,
     });
 
     let researchCompleted = 0;
@@ -1011,14 +1110,15 @@ function DashboardContent() {
     for (let i = 0; i < stagedPropertyIds.length; i++) {
       if (controller.signal.aborted) break;
       const propId = stagedPropertyIds[i];
+      const pct = scoringPct + Math.round((i / stagedPropertyIds.length) * (95 - scoringPct));
 
       addEvent({
         phase: "research_property",
         message: `[${i + 1}/${stagedPropertyIds.length}] Researcher ejendom...`,
-        progress: 31 + Math.round((i / stagedPropertyIds.length) * 65),
+        progress: pct,
       });
+      setAgentPct(pct);
 
-      // Each research call is a separate short-lived SSE connection
       let propDone = false;
       let propFailed = false;
       await consumeSSE(
@@ -1042,14 +1142,15 @@ function DashboardContent() {
         addEvent({ phase: "research_property_failed", message: `[${i + 1}/${stagedPropertyIds.length}] Fejlet – springer over`, progress: undefined });
       } else {
         researchCompleted++;
-        addEvent({ phase: "research_property_done", message: `[${i + 1}/${stagedPropertyIds.length}] Research OK`, progress: undefined });
+        addEvent({ phase: "research_property_done", message: `[${i + 1}/${stagedPropertyIds.length}] Research OK ✓`, progress: undefined });
       }
-
-      setAgentPct(31 + Math.round(((i + 1) / stagedPropertyIds.length) * 65));
+      setAgentPct(scoringPct + Math.round(((i + 1) / stagedPropertyIds.length) * (95 - scoringPct)));
     }
 
     const finalStats = {
-      ...discoveryStats,
+      totalBuildings: addresses.length,
+      created: totalCreated,
+      alreadyExists: totalAlreadyExists,
       researchCompleted,
       researchFailed,
       emailDraftsGenerated,
