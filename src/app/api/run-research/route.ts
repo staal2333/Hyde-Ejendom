@@ -3,6 +3,8 @@
 // GET  /api/run-research → runs all pending (HubSpot + staging)
 // POST /api/run-research → single property with SSE stream
 //   Body: { propertyId: string } for HubSpot properties
+
+export const maxDuration = 300; // 5 min – requires Vercel Pro
 //         { stagedPropertyId: string } for staged properties
 // ============================================================
 

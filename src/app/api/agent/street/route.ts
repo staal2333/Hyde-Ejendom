@@ -4,6 +4,8 @@
 // Properties land in staging – user must approve before HubSpot push.
 // ============================================================
 
+export const maxDuration = 300; // 5 min – requires Vercel Pro
+
 import { NextRequest } from "next/server";
 import { discoverStreet } from "@/lib/discovery";
 import { processStagedProperty } from "@/lib/workflow/engine";
