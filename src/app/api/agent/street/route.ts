@@ -13,7 +13,7 @@ import { listStagedProperties } from "@/lib/staging/store";
 
 export async function POST(req: NextRequest) {
   const body = await req.json();
-  const { street, city = "København", minScore = 6, minTraffic = 10000 } = body;
+  const { street, city = "København", minScore = 6, minTraffic = 10000, discoveryOnly = false } = body;
 
   if (!street) {
     return new Response(JSON.stringify({ error: "street is required" }), {
@@ -97,12 +97,45 @@ export async function POST(req: NextRequest) {
           },
         });
 
+        // Fetch staged property IDs for this street so frontend can research individually
+        const allStagedAfter = await listStagedProperties({ stage: "new" });
+        const streetLowerCheck = street.toLowerCase().trim();
+        const streetWordsCheck = streetLowerCheck.split(/[\s,]+/).filter((w: string) => w.length > 2);
+        const stagedForStreet = allStagedAfter.filter(p => {
+          const addr = (p.address || "").toLowerCase();
+          const name = (p.name || "").toLowerCase();
+          if (addr.includes(streetLowerCheck) || name.includes(streetLowerCheck)) return true;
+          if (streetWordsCheck.length > 0 && streetWordsCheck.every((w: string) => addr.includes(w) || name.includes(w))) return true;
+          return false;
+        });
+
         if (createdCount === 0 && discoveryResult.alreadyExists === 0) {
           send({
             phase: "agent_done",
             message: "Agent færdig: Ingen nye ejendomme at researche",
             progress: 100,
             agentPhase: "done",
+            stagedPropertyIds: [],
+          });
+          controller.close();
+          return;
+        }
+
+        // If discoveryOnly mode: stop here and return the staged property IDs
+        // Frontend will research each property individually via /api/run-research
+        if (discoveryOnly) {
+          send({
+            phase: "discovery_complete",
+            message: `Discovery færdig: ${createdCount} nye ejendomme staged`,
+            progress: 100,
+            agentPhase: "discovery",
+            stagedPropertyIds: stagedForStreet.map(p => p.id),
+            stats: {
+              totalBuildings: totalCandidates,
+              created: createdCount,
+              alreadyExists: discoveryResult.alreadyExists,
+              skipped: discoveryResult.skipped,
+            },
           });
           controller.close();
           return;

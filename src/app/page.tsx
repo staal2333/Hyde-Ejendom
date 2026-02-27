@@ -942,6 +942,9 @@ function DashboardContent() {
   };
 
   // ── Street Agent ──
+  // Two-phase approach to avoid Vercel timeout:
+  // Phase 1: Discovery only (fast, single request) → get staged property IDs
+  // Phase 2: Research each property individually via /api/run-research (separate requests)
   const triggerStreetAgent = async () => {
     if (!agentStreet.trim()) return;
     const controller = new AbortController();
@@ -949,32 +952,125 @@ function DashboardContent() {
     setAgentRunning(true);
     setAgentEvents([]);
     setAgentPct(0);
-    setAgentPhaseLabel("");
+    setAgentPhaseLabel("discovery");
     setAgentStats(null);
 
     addToast(`Gade-agent starter: ${agentStreet.trim()}, ${agentCity}...`, "info");
 
+    // ── Phase 1: Discovery only ──
+    let stagedPropertyIds: string[] = [];
+    let discoveryStats: Record<string, number> = {};
+
     await consumeSSE(
       "/api/agent/street", "POST",
-      { street: agentStreet.trim(), city: agentCity.trim() },
+      { street: agentStreet.trim(), city: agentCity.trim(), discoveryOnly: true },
       setAgentEvents, setAgentPct, setAgentPhaseLabel,
       (pe) => {
-        // Use agentPhase for the step indicator (discovery/research/done)
-        const agentPhase = (pe as unknown as Record<string, unknown>).agentPhase as string | undefined;
+        const raw = pe as unknown as Record<string, unknown>;
+        const agentPhase = raw.agentPhase as string | undefined;
         if (agentPhase) setAgentPhaseLabel(agentPhase);
-        if (pe.stats) setAgentStats(pe.stats as Record<string, number>);
+        if (raw.stats) discoveryStats = raw.stats as Record<string, number>;
+        if (Array.isArray(raw.stagedPropertyIds)) {
+          stagedPropertyIds = raw.stagedPropertyIds as string[];
+        }
         if (pe.phase === "agent_done") {
-          addToast(pe.message || "Agent faerdig!", "success");
+          addToast(pe.message || "Ingen nye ejendomme fundet", "info");
         }
       },
-      () => { setAgentRunning(false); agentAbortRef.current = null; },
+      () => { /* keep running=true, we continue to phase 2 */ },
       controller.signal
     );
+
+    if (controller.signal.aborted || stagedPropertyIds.length === 0) {
+      const created = discoveryStats.created ?? 0;
+      if (created === 0) {
+        addToast("Ingen nye ejendomme fundet på denne gade", "info");
+      }
+      setAgentRunning(false);
+      agentAbortRef.current = null;
+      setAgentStats(discoveryStats);
+      return;
+    }
+
+    // ── Phase 2: Research each property one by one ──
+    setAgentPhaseLabel("research");
+    const addEvent = (ev: { phase: string; message: string; detail?: string; progress?: number }) => {
+      setAgentEvents(prev => [...prev, { ...ev, timestamp: Date.now() }]);
+    };
+
+    addEvent({
+      phase: "research_start",
+      message: `Fase 2: Researcher ${stagedPropertyIds.length} ejendomme individuelt...`,
+      progress: 31,
+    });
+
+    let researchCompleted = 0;
+    let researchFailed = 0;
+    let emailDraftsGenerated = 0;
+
+    for (let i = 0; i < stagedPropertyIds.length; i++) {
+      if (controller.signal.aborted) break;
+      const propId = stagedPropertyIds[i];
+
+      addEvent({
+        phase: "research_property",
+        message: `[${i + 1}/${stagedPropertyIds.length}] Researcher ejendom...`,
+        progress: 31 + Math.round((i / stagedPropertyIds.length) * 65),
+      });
+
+      // Each research call is a separate short-lived SSE connection
+      let propDone = false;
+      let propFailed = false;
+      await consumeSSE(
+        "/api/run-research", "POST",
+        { stagedPropertyId: propId },
+        setAgentEvents,
+        setAgentPct,
+        setAgentPhaseLabel,
+        (pe) => {
+          if (pe.phase === "complete" || pe.phase === "done") propDone = true;
+          if (pe.phase === "error") propFailed = true;
+          const raw = pe as unknown as Record<string, unknown>;
+          if (raw.stepId === "generate_email_draft" && raw.status === "completed") emailDraftsGenerated++;
+        },
+        () => { if (!propDone && !propFailed) propFailed = true; },
+        controller.signal
+      );
+
+      if (propFailed) {
+        researchFailed++;
+        addEvent({ phase: "research_property_failed", message: `[${i + 1}/${stagedPropertyIds.length}] Fejlet – springer over`, progress: undefined });
+      } else {
+        researchCompleted++;
+        addEvent({ phase: "research_property_done", message: `[${i + 1}/${stagedPropertyIds.length}] Research OK`, progress: undefined });
+      }
+
+      setAgentPct(31 + Math.round(((i + 1) / stagedPropertyIds.length) * 65));
+    }
+
+    const finalStats = {
+      ...discoveryStats,
+      researchCompleted,
+      researchFailed,
+      emailDraftsGenerated,
+    };
+    setAgentStats(finalStats);
+    setAgentPhaseLabel("done");
+    setAgentPct(100);
+    addEvent({
+      phase: "agent_done",
+      message: `Færdig! ${researchCompleted} researched, ${emailDraftsGenerated} email-udkast — gå til Staging`,
+      progress: 100,
+    });
+    addToast(`Agent færdig: ${researchCompleted} ejendomme researched`, "success");
+    setAgentRunning(false);
+    agentAbortRef.current = null;
   };
 
   const stopStreetAgent = () => {
     agentAbortRef.current?.abort();
     agentAbortRef.current = null;
+    setAgentRunning(false);
     addToast("Gade-agent stoppet", "info");
   };
 
