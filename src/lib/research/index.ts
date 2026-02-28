@@ -20,7 +20,7 @@ import {
   type OwnershipType,
 } from "./validator";
 import { isSupportedLocation, resolveKommuneName, SUPPORTED_CITIES } from "../supported-cities";
-import type { Property, ResearchData, WebSearchResult } from "@/types";
+import type { Property, ResearchData, WebSearchResult, CvrResult } from "@/types";
 import { logger } from "../logger";
 
 /** Progress callback for research steps */
@@ -205,39 +205,57 @@ export async function researchProperty(
         : `Søger efter ejer/administrator for ${property.address}`,
     });
 
-    // Priority 1: OIS owner name → scored CVR lookup
+    // Priority 1: OIS owner name → scored CVR lookup (with name-variant expansion for associations)
     if (!cvrData && oisOwnerName) {
-      emit({
-        step: "cvr",
-        message: `CVR: Scorer match for OIS-ejer "${oisOwnerName}" (strikt)...`,
-      });
+      // Build search name variants — cvrapi.dk only returns one result per query,
+      // so we try multiple variants and pick the best-scoring match
+      const searchVariants: string[] = [oisOwnerName];
 
-      const scored = await lookupCvrBestMatch(
-        oisOwnerName,
-        property.address,
-        property.postalCode,
-        oisData?.kommune || undefined
-      );
+      // For housing associations, also try abbreviated forms (A/B, E/F)
+      const streetMatch = property.address.match(/^(.+?)\s+(\d+\w?)$/);
+      const streetName = streetMatch?.[1] || "";
+      const houseNr = streetMatch?.[2] || "";
+      const isAssociation = /andels|ejerforening|a\/b\s|e\/f\s/i.test(oisOwnerName);
+      if (isAssociation && streetName) {
+        searchVariants.push(`A/B ${streetName} ${houseNr}`.trim());
+        searchVariants.push(`E/F ${streetName} ${houseNr}`.trim());
+        searchVariants.push(`Andelsboligforeningen ${streetName} ${houseNr}`.trim());
+        searchVariants.push(`Ejerforeningen ${streetName} ${houseNr}`.trim());
+      }
 
-      if (scored.result) {
-        cvrData = scored.result;
+      let bestScored: { result: CvrResult | null; score: number; reasons: string[]; discardReason?: string } = { result: null, score: 0, reasons: [] };
+
+      for (const variant of searchVariants) {
+        if (bestScored.result && bestScored.score >= 60) break; // Good enough, stop early
+        emit({ step: "cvr", message: `CVR: Prøver "${variant}"...` });
+        const scored = await lookupCvrBestMatch(
+          variant,
+          property.address,
+          property.postalCode,
+          oisData?.kommune || undefined
+        );
+        if (scored.result && scored.score > bestScored.score) {
+          bestScored = scored;
+        }
+        if (scored.result) break; // First hit for non-association is good enough
+      }
+
+      if (bestScored.result) {
+        cvrData = bestScored.result;
         emit({
           step: "cvr",
-          message: `CVR ✓ "${cvrData.companyName}" (CVR ${cvrData.cvr}) – Score: ${scored.score}/100`,
-          detail: `Årsager: ${scored.reasons.join(", ")} | Adresse: ${cvrData.address}`,
+          message: `CVR ✓ "${cvrData.companyName}" (CVR ${cvrData.cvr}) – Score: ${bestScored.score}/100`,
+          detail: `Årsager: ${bestScored.reasons.join(", ")} | Adresse: ${cvrData.address}${cvrData.email ? ` | Email: ${cvrData.email}` : ""}`,
         });
       } else {
         emit({
           step: "cvr",
-          message: `CVR: Ingen god match for "${oisOwnerName}" (score ${scored.score} < ${35})`,
-          detail: scored.discardReason || scored.reasons.join(", "),
+          message: `CVR: Ingen god match for "${oisOwnerName}" (bedste score: ${bestScored.score})`,
+          detail: bestScored.discardReason || bestScored.reasons.join(", "),
         });
 
         // Fallback to proff.dk
-        emit({
-          step: "cvr",
-          message: `CVR: Prøver proff.dk som fallback for "${oisOwnerName}"...`,
-        });
+        emit({ step: "cvr", message: `CVR: Prøver proff.dk som fallback for "${oisOwnerName}"...` });
         cvrData = await lookupProff(oisOwnerName);
         if (cvrData) {
           emit({

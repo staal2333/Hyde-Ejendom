@@ -357,14 +357,17 @@ export async function summarizeResearch(
   // From CVR
   if (research.cvrData) {
     if (research.cvrData.email) {
-      const cvrOwnerName = research.cvrData.owners?.[0] || null;
+      // CVR email is the official registered contact — mark clearly so LLM ranks it high
+      const cvrOwnerName = research.cvrData.owners?.[0] || research.cvrData.companyName || null;
+      // Determine role hint: for associations, "administrator" is more accurate than "ejer"
+      const isAssociation = /andels|ejerforening/i.test(research.cvrData.companyName || "");
       rawContacts.push({
         index: idx++,
         name: cvrOwnerName,
         email: research.cvrData.email,
         phone: research.cvrData.phone || null,
-        source: `CVR ${research.cvrData.cvr} (${research.cvrData.companyName})`,
-        role_hint: "ejer",
+        source: `CVR ${research.cvrData.cvr} – OFFICIEL KONTAKT (${research.cvrData.companyName})`,
+        role_hint: isAssociation ? "administrator" : "ejer",
       });
     }
     // CVR owners without email
@@ -468,6 +471,43 @@ export async function summarizeResearch(
   const rankedContacts = rawContacts.length > 0
     ? await rankContacts(property, research, ownerAssessment, rawContacts)
     : [];
+
+  // ── CVR email guarantee: if CVR has a confirmed email and it's not already #1, inject it ──
+  // CVR email is 100% verified (official registration) — should always be reachable.
+  // We boost it to 0.9 confidence so it bypasses the quality gate.
+  if (research.cvrData?.email) {
+    const cvrEmail = research.cvrData.email.toLowerCase();
+    const alreadyTop = rankedContacts[0]?.email?.toLowerCase() === cvrEmail;
+    if (!alreadyTop) {
+      const existing = rankedContacts.find(c => c.email?.toLowerCase() === cvrEmail);
+      if (existing) {
+        // Already ranked somewhere — bump its confidence and move to front
+        existing.confidence = Math.max(existing.confidence, 0.88);
+        existing.source = existing.source || "CVR officiel";
+        const idx2 = rankedContacts.indexOf(existing);
+        rankedContacts.splice(idx2, 1);
+        rankedContacts.unshift(existing);
+      } else {
+        // Not ranked at all — inject as top contact
+        const isAssociation = /andels|ejerforening/i.test(research.cvrData.companyName || "");
+        rankedContacts.unshift({
+          fullName: research.cvrData.owners?.[0] || research.cvrData.companyName || null,
+          email: research.cvrData.email,
+          phone: research.cvrData.phone || null,
+          role: isAssociation ? "administrator" : "ejer",
+          source: `CVR ${research.cvrData.cvr} – officiel kontakt`,
+          confidence: 0.88,
+          relevance: "direct",
+          relevanceReason: "Officielt registreret kontakt i CVR",
+        });
+      }
+    } else {
+      // Already top — ensure confidence is high enough to pass gate
+      if (rankedContacts[0].confidence < 0.88) {
+        rankedContacts[0].confidence = 0.88;
+      }
+    }
+  }
 
   // Extract company domain from CVR or ranked contacts
   let companyDomain: string | null = null;
