@@ -419,9 +419,14 @@ export async function lookupCvrBestMatch(
   propertyPostalCode: string,
   propertyKommune?: string
 ): Promise<CvrLookupResultWithScore> {
-  // Search CVR API
+  // For housing associations and similar entities (andelsboligforening, ejerforening, A/B, E/F),
+  // their CVR-registered address is ALWAYS the administrator's address — never the property itself.
+  // Strict name matching is also unreliable because OIS may abbreviate the name.
+  // Use score-only matching for these cases.
+  const isHousingAssociation = /andels|ejerforening|a\/b\s|e\/f\s|ab\s|ef\s/i.test(ownerName);
+
   const scored = await lookupCvrScored(ownerName, {
-    strictNameMatch: true,
+    strictNameMatch: !isHousingAssociation,
     searchedName: ownerName,
     expectedAddress: { address: propertyAddress, postalCode: propertyPostalCode },
     expectedKommune: propertyKommune,

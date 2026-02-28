@@ -444,9 +444,22 @@ export function scoreCvrMatch(
     }
   }
 
+  // ── Strong bonus: CVR company NAME contains the property street ──
+  // Andelsboligforeninger and ejerforeninger are typically named after their address.
+  // If the CVR name contains the property street, that IS the address proof.
+  const propStreetNorm = propStreet.replace(/[^a-zæøå0-9]/g, "");
+  const cvrNameNorm = normCvr.replace(/[^a-zæøå0-9]/g, "");
+  const nameContainsStreet = propStreetNorm.length >= 5 && cvrNameNorm.includes(propStreetNorm);
+  if (nameContainsStreet) {
+    score += 25;
+    reasons.push(`CVR name contains property street "${propStreet}" (+25)`);
+  }
+
   // ── Penalties ──
   // If CVR address is in completely different city/region → big penalty
-  if (propertyPostalCode) {
+  // BUT skip this penalty when the CVR company name already contains the property address
+  // (andelsboligforeninger are registered at their administrator's address, not the property)
+  if (propertyPostalCode && !nameContainsStreet) {
     const propRegion = propertyPostalCode.substring(0, 1); // 1xxx = KBH, 2xxx = Sjælland, etc.
     const cvrPostalMatch = cvrAddrLower.match(/\b(\d{4})\b/);
     if (cvrPostalMatch) {
