@@ -40,17 +40,27 @@ export function LogPanel({ logRef, events, running, maxHeight = "max-h-80" }: {
       </div>
       <div ref={logRef} className={`px-5 py-4 ${maxHeight} overflow-y-auto log-scroll space-y-1 font-mono text-[12px] leading-relaxed`}>
         {events.map((evt, i) => {
-          const icon = getPhaseIcon(evt.phase);
-          const color = getPhaseColor(evt.phase);
+          // Use step field as fallback for icon lookup (research_step events carry step=ois/cvr/bbr/etc.)
+          const lookupPhase = (evt as unknown as Record<string, unknown>).step as string | undefined;
+          const icon = getPhaseIcon(evt.phase) !== "▶️"
+            ? getPhaseIcon(evt.phase)
+            : lookupPhase ? getPhaseIcon(lookupPhase) : "▶️";
+          const color = getPhaseColor(evt.phase) !== "text-slate-300"
+            ? getPhaseColor(evt.phase)
+            : lookupPhase ? getPhaseColor(lookupPhase) : "text-slate-300";
           const time = new Date(evt.timestamp).toLocaleTimeString("da-DK", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
 
+          // Dim very low-level sub-steps slightly
+          const isSubStep = evt.phase === "research_step" || evt.phase === "step";
+          const opacity = isSubStep ? "opacity-75" : "";
+
           return (
-            <div key={i} className={`${color} animate-fade-in`} style={{ animationDelay: `${Math.min(i * 10, 100)}ms` }}>
+            <div key={i} className={`${color} ${opacity} animate-fade-in`} style={{ animationDelay: `${Math.min(i * 10, 100)}ms` }}>
               <span className="text-slate-600 mr-2 select-none tabular-nums">{time}</span>
               <span className="mr-1.5">{icon}</span>
               <span>{evt.message}</span>
               {evt.detail && (
-                <div className="ml-[7rem] text-slate-500/80 mt-0.5 whitespace-pre-wrap text-[11px]">{evt.detail}</div>
+                <div className="ml-[7rem] text-slate-500/80 mt-0.5 whitespace-pre-wrap text-[11px] leading-snug">{evt.detail}</div>
               )}
             </div>
           );

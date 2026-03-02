@@ -436,10 +436,67 @@ export async function processProperty(
     emit({
       phase: "llm_done",
       step: "llm_summarize",
-      message: `Datakvalitet: ${qualityEmoji} ${analysis.dataQuality.toUpperCase()} | ${analysis.recommendedContacts.length} kontakter`,
+      message: `Datakvalitet: ${qualityEmoji} ${analysis.dataQuality.toUpperCase()} | ${analysis.recommendedContacts.length} kontakter ranket`,
       detail: `Kontakter:\n${contactSummary}\nOutdoor score: ${analysis.outdoorPotentialScore}/10`,
       progress: 58,
     });
+
+    // Verbose: show each ranked contact individually
+    analysis.recommendedContacts.slice(0, 5).forEach((c, i) => {
+      emit({
+        phase: i === 0 ? "contact_chosen" : "contact_ranked",
+        step: "llm_summarize",
+        message: `${i === 0 ? "⭐ Valgt" : `#${i + 1}`}: ${c.fullName || "Ukendt"} (${c.role || "?"}) ${c.email ? `→ ${c.email}` : "→ ingen email"} [${Math.round((c.confidence || 0) * 100)}% confidence, ${c.relevance || "?"}]`,
+        detail: c.relevanceReason || c.source || undefined,
+        progress: undefined,
+      });
+    });
+
+    // Verbose: show OIS link if BFE was found
+    if (researchData.oisData?.bfe) {
+      emit({
+        phase: "ois",
+        step: "research_property",
+        message: `OIS link: https://ois.dk/search/${researchData.oisData.bfe} (BFE: ${researchData.oisData.bfe})`,
+        detail: researchData.oisData.ejerforholdstekst
+          ? `Ejertype: ${researchData.oisData.ejerforholdstekst} | Kommune: ${researchData.oisData.kommune || "?"}`
+          : undefined,
+        progress: undefined,
+      });
+    }
+
+    // Verbose: show CVR info if found
+    if (researchData.cvrData) {
+      emit({
+        phase: "cvr",
+        step: "research_property",
+        message: `CVR ${researchData.cvrData.cvr}: ${researchData.cvrData.companyName}${researchData.cvrData.email ? ` · Email: ${researchData.cvrData.email}` : ""}${researchData.cvrData.phone ? ` · Tlf: ${researchData.cvrData.phone}` : ""}`,
+        detail: `Adresse: ${researchData.cvrData.address} · Status: ${researchData.cvrData.status}${researchData.cvrData.website ? ` · Web: ${researchData.cvrData.website}` : ""}`,
+        progress: undefined,
+      });
+    }
+
+    // Verbose: show BBR info if found
+    if (researchData.bbrData) {
+      emit({
+        phase: "bbr",
+        step: "research_property",
+        message: `BBR: ${researchData.bbrData.area ? `${researchData.bbrData.area} m²` : "?"} · ${researchData.bbrData.floors ? `${researchData.bbrData.floors} etager` : "?"} · Bygget ${researchData.bbrData.buildingYear || "ukendt"}`,
+        detail: researchData.bbrData.usage ? `Anvendelse: ${researchData.bbrData.usage}` : undefined,
+        progress: undefined,
+      });
+    }
+
+    // Verbose: show all emails found from web scraping
+    if (researchData.websiteContent?.emails && researchData.websiteContent.emails.length > 0) {
+      emit({
+        phase: "scrape_done",
+        step: "research_property",
+        message: `Web-emails fundet: ${researchData.websiteContent.emails.join(" · ")}`,
+        detail: researchData.websiteContent.url ? `Fra: ${researchData.websiteContent.url}` : undefined,
+        progress: undefined,
+      });
+    }
 
     completeStep(step3);
 
@@ -971,12 +1028,42 @@ export async function processStagedProperty(
     ].join(" | ");
     completeStep(step2);
 
+    // Verbose: data sources summary
     emit({
       phase: "research_done",
       step: "research_property",
-      message: `Research færdig – ${researchData.companySearchResults.length} resultater, ${researchData.websiteContent?.emails.length || 0} emails`,
+      message: `Research færdig`,
+      detail: [
+        researchData.oisData ? `OIS ✓ Ejer: ${researchData.oisData.owners.map(o => o.name).join(", ") || "?"}${researchData.oisData.bfe ? ` (BFE: ${researchData.oisData.bfe})` : ""}` : "OIS ✗",
+        researchData.cvrData ? `CVR ✓ ${researchData.cvrData.companyName} (${researchData.cvrData.cvr})${researchData.cvrData.email ? ` – Email: ${researchData.cvrData.email}` : ""}` : "CVR ✗",
+        researchData.bbrData ? `BBR ✓ ${researchData.bbrData.area || "?"}m² / ${researchData.bbrData.floors || "?"}etg` : "BBR ✗",
+        `${researchData.companySearchResults.length} søgeresultater`,
+        researchData.websiteContent?.emails.length ? `Emails: ${researchData.websiteContent.emails.join(", ")}` : "Ingen emails fra web",
+      ].join("\n"),
       progress: 45,
     });
+
+    // Verbose: OIS link
+    if (researchData.oisData?.bfe) {
+      emit({
+        phase: "ois_bfe_found",
+        step: "research_property",
+        message: `OIS link: https://ois.dk/search/${researchData.oisData.bfe}`,
+        detail: researchData.oisData.ejerforholdstekst ? `Ejertype: ${researchData.oisData.ejerforholdstekst} | Kommune: ${researchData.oisData.kommune || "?"}` : undefined,
+        progress: undefined,
+      });
+    }
+
+    // Verbose: CVR details
+    if (researchData.cvrData) {
+      emit({
+        phase: "cvr",
+        step: "research_property",
+        message: `CVR ${researchData.cvrData.cvr}: ${researchData.cvrData.companyName}${researchData.cvrData.email ? ` · ${researchData.cvrData.email}` : ""}${researchData.cvrData.phone ? ` · ${researchData.cvrData.phone}` : ""}`,
+        detail: `Adresse: ${researchData.cvrData.address}${researchData.cvrData.website ? ` · ${researchData.cvrData.website}` : ""}`,
+        progress: undefined,
+      });
+    }
 
     if (checkCancelled()) {
       run.status = "failed";
@@ -1011,8 +1098,34 @@ export async function processStagedProperty(
         detail: corrections.join("\n"),
         progress: 57,
       });
+    } else {
+      emit({
+        phase: "validation_clean",
+        step: "validate_llm",
+        message: "✓ Validering OK",
+        progress: 57,
+      });
     }
     completeStep(stepValidate);
+
+    // Verbose: contact ranking result
+    const topContacts = analysis.recommendedContacts.slice(0, 5);
+    topContacts.forEach((c, i) => {
+      emit({
+        phase: i === 0 ? "contact_chosen" : "contact_ranked",
+        step: "llm_summarize",
+        message: `${i === 0 ? "⭐ Valgt" : `  #${i + 1}`}: ${c.fullName || "Ukendt"} (${c.role || "?"}) ${c.email ? `→ ${c.email}` : "→ ingen email"} [${Math.round((c.confidence || 0) * 100)}%]`,
+        detail: c.relevanceReason || c.source || undefined,
+        progress: undefined,
+      });
+    });
+
+    emit({
+      phase: "llm_done",
+      step: "llm_summarize",
+      message: `AI færdig: ${analysis.ownerCompanyName} · Kvalitet: ${analysis.dataQuality.toUpperCase()} · ${analysis.recommendedContacts.length} kontakter`,
+      progress: 58,
+    });
     completeStep(step3);
 
     // ── Email hunt for ALL top contacts missing email ──
