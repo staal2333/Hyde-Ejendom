@@ -1,4 +1,5 @@
 {
+  "regions": ["iad1"],
   "crons": [
     { "path": "/api/cron/auto-discover", "schedule": "0 6 * * *" },
     { "path": "/api/cron/ooh-followup", "schedule": "0 8 * * 1-5" },
