@@ -527,6 +527,17 @@ function DashboardContent() {
   const [agentPhaseLabel, setAgentPhaseLabel] = useState("");
   const [agentStats, setAgentStats] = useState<Record<string, number> | null>(null);
   const agentLogRef = useRef<HTMLDivElement>(null);
+  const agentRunIdRef = useRef<string | null>(null);
+
+  // Live activity (shared across all users via Supabase)
+  interface AgentActivityRun {
+    id: string; street: string; city: string;
+    phase: string; progress: number; message?: string | null;
+    buildings_found?: number | null; created_count?: number | null;
+    research_completed?: number | null; research_total?: number | null;
+    started_at: string; updated_at: string; completed_at?: string | null;
+  }
+  const [liveActivity, setLiveActivity] = useState<AgentActivityRun[]>([]);
 
   // Outreach / Email Queue
   const [outreachData, setOutreachData] = useState<{
@@ -587,6 +598,35 @@ function DashboardContent() {
   useEffect(() => {
     if (fullCircleOpen) setFullCircleRunningInBackground(false);
   }, [fullCircleOpen]);
+
+  // ── Live activity polling (every 12 seconds) ──
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch("/api/agent/activity");
+        if (res.ok) {
+          const data = await res.json() as { runs: AgentActivityRun[] };
+          setLiveActivity((data.runs || []).filter(r =>
+            r.phase !== "done" && r.phase !== "stopped"
+          ));
+        }
+      } catch { /* ignore */ }
+    };
+    poll();
+    const interval = setInterval(poll, 12000);
+    return () => clearInterval(interval);
+  }, []);
+
+  // ── Helper: post agent activity update ──
+  const postActivity = async (update: Partial<AgentActivityRun & { id: string; street: string; city: string }>) => {
+    try {
+      await fetch("/api/agent/activity", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(update),
+      });
+    } catch { /* non-critical */ }
+  };
 
   // Cleanup: abort in-flight SSE on unmount so processes don't stay "running"
   useEffect(() => {
@@ -959,11 +999,18 @@ function DashboardContent() {
     const street = agentStreet.trim();
     const city = agentCity.trim();
 
+    // Create a unique run ID for this session
+    const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    agentRunIdRef.current = runId;
+
     const addEvent = (ev: { phase: string; message: string; detail?: string; progress?: number }) => {
       setAgentEvents(prev => [...prev, { ...ev, timestamp: Date.now() }]);
     };
 
     addToast(`Gade-agent starter: ${street}, ${city}...`, "info");
+
+    // Broadcast start to all users
+    await postActivity({ id: runId, street, city, phase: "discovery", progress: 0, message: "Henter adresser...", started_at: new Date().toISOString() });
 
     // ── Phase 1: Get address list ──
     addEvent({ phase: "scan", message: `Henter adresser på ${street}...`, progress: 2 });
@@ -1001,9 +1048,13 @@ function DashboardContent() {
 
     if (addresses.length === 0) {
       addEvent({ phase: "done", message: "Ingen adresser fundet på denne gade", progress: 100 });
+      await postActivity({ id: runId, street, city, phase: "done", progress: 100, message: "Ingen adresser fundet", completed_at: new Date().toISOString() });
       setAgentRunning(false);
       return;
     }
+
+    // Broadcast address count
+    await postActivity({ id: runId, street, city, phase: "scoring", progress: 8, message: `Scorer ${addresses.length} bygninger...`, buildings_found: addresses.length });
 
     // ── Phase 2: Score in batches of 15 ──
     const BATCH_SIZE = 15;
@@ -1090,10 +1141,14 @@ function DashboardContent() {
       setAgentPhaseLabel("done");
       setAgentPct(100);
       addEvent({ phase: "agent_done", message: "Ingen nye ejendomme at researche — alle eksisterer allerede eller scorede for lavt", progress: 100 });
+      await postActivity({ id: runId, street, city, phase: "done", progress: 100, message: "Ingen nye ejendomme fundet", created_count: 0, completed_at: new Date().toISOString() });
       setAgentRunning(false);
       agentAbortRef.current = null;
       return;
     }
+
+    // Broadcast research start
+    await postActivity({ id: runId, street, city, phase: "research", progress: scoringPct, message: `Researcher ${stagedPropertyIds.length} ejendomme...`, created_count: totalCreated, research_total: stagedPropertyIds.length, research_completed: 0 });
 
     // ── Phase 3: Research each staged property ──
     setAgentPhaseLabel("research");
@@ -1144,7 +1199,12 @@ function DashboardContent() {
         researchCompleted++;
         addEvent({ phase: "research_property_done", message: `[${i + 1}/${stagedPropertyIds.length}] Research OK ✓`, progress: undefined });
       }
-      setAgentPct(scoringPct + Math.round(((i + 1) / stagedPropertyIds.length) * (95 - scoringPct)));
+      const newPct = scoringPct + Math.round(((i + 1) / stagedPropertyIds.length) * (95 - scoringPct));
+      setAgentPct(newPct);
+      // Broadcast progress every 3 properties
+      if ((i + 1) % 3 === 0 || i + 1 === stagedPropertyIds.length) {
+        await postActivity({ id: runId, street, city, phase: "research", progress: newPct, message: `Researcher ${i + 1}/${stagedPropertyIds.length}...`, research_completed: researchCompleted, research_total: stagedPropertyIds.length });
+      }
     }
 
     const finalStats = {
@@ -1164,6 +1224,8 @@ function DashboardContent() {
       progress: 100,
     });
     addToast(`Agent færdig: ${researchCompleted} ejendomme researched`, "success");
+    await postActivity({ id: runId, street, city, phase: "done", progress: 100, message: `Færdig: ${researchCompleted} researched`, research_completed: researchCompleted, research_total: stagedPropertyIds.length, completed_at: new Date().toISOString() });
+    agentRunIdRef.current = null;
     setAgentRunning(false);
     agentAbortRef.current = null;
   };
@@ -1173,6 +1235,11 @@ function DashboardContent() {
     agentAbortRef.current = null;
     setAgentRunning(false);
     addToast("Gade-agent stoppet", "info");
+    // Broadcast stop to all users
+    if (agentRunIdRef.current) {
+      fetch(`/api/agent/activity?id=${agentRunIdRef.current}`, { method: "DELETE" }).catch(() => {});
+      agentRunIdRef.current = null;
+    }
   };
 
   // ── Outreach / Email Queue ──
@@ -1393,6 +1460,28 @@ function DashboardContent() {
               <div className="top-bar-stat-value" style={{ color: "#818cf8" }}>{dashboard?.mailsSent ?? 0}</div>
               <div className="top-bar-stat-label">Sendt</div>
             </div>
+
+            {/* Live activity badge — shows when any user is running a street agent */}
+            {liveActivity.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setActiveTab("street_agent")}
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-amber-500/15 border border-amber-500/30 hover:bg-amber-500/25 transition-colors"
+                title={liveActivity.map(r => `${r.street}, ${r.city} — ${r.message || r.phase}`).join("\n")}
+              >
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
+                <span className="text-[10px] font-semibold text-amber-300 leading-none">
+                  {liveActivity.length === 1
+                    ? `${liveActivity[0].street}`
+                    : `${liveActivity.length} agents`}
+                </span>
+                {liveActivity[0].research_completed != null && liveActivity[0].research_total != null && (
+                  <span className="text-[9px] text-amber-400/70 font-mono tabular-nums">
+                    {liveActivity[0].research_completed}/{liveActivity[0].research_total}
+                  </span>
+                )}
+              </button>
+            )}
 
             {/* System health dot */}
             {systemHealth && (
