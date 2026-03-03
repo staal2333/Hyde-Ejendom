@@ -66,6 +66,14 @@ export function TilbudTab({ onToast }: TilbudTabProps) {
   const [pf, setPf] = useState({ name: "", areaSqm: 0, listPricePerSqmPerWeek: 0, kommunaleGebyr: 0, notes: "" });
 
   const [aftalPris, setAftalPris] = useState("");
+  const [globalFromWeek, setGlobalFromWeek] = useState<number | undefined>(undefined);
+  const [globalToWeek, setGlobalToWeek] = useState<number | undefined>(undefined);
+
+  const setGlobalWeeks = (from: number | undefined, to: number | undefined) => {
+    setGlobalFromWeek(from);
+    setGlobalToWeek(to);
+    setForm((p) => ({ ...p, lines: p.lines.map((l) => ({ ...l, fromWeek: from, toWeek: to })) }));
+  };
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -88,6 +96,8 @@ export function TilbudTab({ onToast }: TilbudTabProps) {
     setSelectedId(t.id);
     setActiveCalcLineId(t.lines[0]?.id ?? null);
     setAftalPris("");
+    setGlobalFromWeek(t.lines[0]?.fromWeek);
+    setGlobalToWeek(t.lines[0]?.toWeek);
   }, []);
 
   const createNew = useCallback(() => {
@@ -230,10 +240,12 @@ export function TilbudTab({ onToast }: TilbudTabProps) {
             </div>
           </div>
 
-          {/* Meta fields — 3 cols */}
-          <div className="grid grid-cols-3 gap-x-3 gap-y-2 text-[11px] mb-4">
+          {/* Meta fields */}
+          <div className="grid grid-cols-4 gap-x-3 gap-y-2 text-[11px] mb-4">
             <label className="text-slate-500">Tilbudsnr. <input className="input-field mt-0.5 !py-1 !text-xs" value={form.offerNumber} onChange={(e) => updateField("offerNumber", e.target.value)} /></label>
             <label className="text-slate-500">Dato <input type="date" className="input-field mt-0.5 !py-1 !text-xs" value={form.offerDate} onChange={(e) => updateField("offerDate", e.target.value)} /></label>
+            <label className="text-slate-500">Uge fra <input type="number" min={1} max={53} className="input-field mt-0.5 !py-1 !text-xs text-right" placeholder="—" value={globalFromWeek ?? ""} onChange={(e) => setGlobalWeeks(e.target.value === "" ? undefined : Number(e.target.value), globalToWeek)} /></label>
+            <label className="text-slate-500">Uge til <input type="number" min={1} max={53} className="input-field mt-0.5 !py-1 !text-xs text-right" placeholder="—" value={globalToWeek ?? ""} onChange={(e) => setGlobalWeeks(globalFromWeek, e.target.value === "" ? undefined : Number(e.target.value))} /></label>
             <label className="text-slate-500">Kunde <input className="input-field mt-0.5 !py-1 !text-xs" value={form.clientName} onChange={(e) => updateField("clientName", e.target.value)} /></label>
             <label className="text-slate-500">Kampagne <input className="input-field mt-0.5 !py-1 !text-xs" value={form.campaignName || ""} onChange={(e) => updateField("campaignName", e.target.value)} /></label>
             <label className="text-slate-500">Vores ref. <input className="input-field mt-0.5 !py-1 !text-xs" value={form.ourReference || ""} onChange={(e) => updateField("ourReference", e.target.value)} /></label>
@@ -245,12 +257,10 @@ export function TilbudTab({ onToast }: TilbudTabProps) {
             <table className="w-full text-[10px] table-fixed">
               <thead>
                 <tr className="bg-slate-900 text-white">
-                  <th className="text-left px-1.5 py-1 font-medium w-[30%]">Navn</th>
-                  <th className="text-right px-1 py-1 font-medium w-[9%]">Uge fra</th>
-                  <th className="text-right px-1 py-1 font-medium w-[9%]">Uge til</th>
-                  <th className="text-right px-1 py-1 font-medium w-[7%]">Antal</th>
-                  <th className="text-right px-1 py-1 font-medium w-[15%]">Listepris</th>
-                  <th className="text-right px-1 py-1 font-medium w-[15%]">Nettopris</th>
+                  <th className="text-left px-1.5 py-1 font-medium w-[38%]">Navn</th>
+                  <th className="text-right px-1 py-1 font-medium w-[10%]">Antal</th>
+                  <th className="text-right px-1 py-1 font-medium w-[20%]">Listepris</th>
+                  <th className="text-right px-1 py-1 font-medium w-[20%]">Nettopris</th>
                   <th className="text-center px-1 py-1 font-medium w-[5%]"></th>
                 </tr>
               </thead>
@@ -261,8 +271,6 @@ export function TilbudTab({ onToast }: TilbudTabProps) {
                   return (
                     <tr key={line.id} className={`border-t border-slate-100 cursor-pointer transition-colors ${active ? "bg-orange-50" : "bg-white hover:bg-slate-50"}`} onClick={() => setActiveCalcLineId(line.id)}>
                       <td className="px-1 py-0.5"><input className={CI} placeholder="Fx Medievisning" value={line.name} onChange={(e) => updateLine(line.id, { name: e.target.value })} /></td>
-                      <td className="px-0.5 py-0.5"><input type="number" min={0} className={CIR} value={line.fromWeek ?? ""} onChange={(e) => updateLine(line.id, { fromWeek: e.target.value === "" ? undefined : Number(e.target.value) })} /></td>
-                      <td className="px-0.5 py-0.5"><input type="number" min={0} className={CIR} value={line.toWeek ?? ""} onChange={(e) => updateLine(line.id, { toWeek: e.target.value === "" ? undefined : Number(e.target.value) })} /></td>
                       <td className="px-0.5 py-0.5"><input type="number" min={1} className={CIR} value={line.quantity} onChange={(e) => updateLine(line.id, { quantity: Number(e.target.value || 1) })} /></td>
                       <td className="px-0.5 py-0.5"><input type="number" min={0} className={CIR} value={line.listPrice} onChange={(e) => updateLine(line.id, { listPrice: Number(e.target.value || 0) })} /></td>
                       <td className="px-0.5 py-0.5"><input type="number" min={0} className={CIR} value={line.netPrice ?? lt.lineTotal} onChange={(e) => updateLine(line.id, { netPrice: Number(e.target.value || 0) })} /></td>
@@ -305,10 +313,14 @@ export function TilbudTab({ onToast }: TilbudTabProps) {
                 {totals.fixedCostsTotal > 0 && <div className="flex justify-between"><span className="text-slate-500">Faste omkostninger</span><span className="tabular-nums">{fmt(totals.fixedCostsTotal, form.currency)}</span></div>}
                 <div className="flex justify-between font-semibold border-t border-slate-200 pt-1"><span>Subtotal</span><span className="tabular-nums">{fmt(totals.subtotal, form.currency)}</span></div>
               </div>
-              <div className="rounded-md border border-slate-200 p-2.5 space-y-1">
-                <div className="grid grid-cols-2 gap-1">
-                  <label className="text-slate-500">Info.godtg. %<input type="number" min={0} className="input-field mt-0.5 !py-0.5 !text-[10px] text-right" value={form.infoCompensationPct} onChange={(e) => updateField("infoCompensationPct", Number(e.target.value || 0))} /></label>
-                  <label className="text-slate-500">Sikkerhed %<input type="number" min={0} className="input-field mt-0.5 !py-0.5 !text-[10px] text-right" value={form.securityPct} onChange={(e) => updateField("securityPct", Number(e.target.value || 0))} /></label>
+              <div className="rounded-md border border-slate-200 p-2.5 space-y-1.5">
+                <div className="flex items-center justify-between gap-2">
+                  <label className="flex items-center gap-1.5 text-slate-600 cursor-pointer"><input type="checkbox" checked={form.infoCompensationPct > 0} onChange={(e) => updateField("infoCompensationPct", e.target.checked ? 15 : 0)} className="accent-indigo-500" /><span>Info.godtg.</span></label>
+                  {form.infoCompensationPct > 0 && <input type="number" min={0} className="w-16 input-field !py-0.5 !text-[10px] text-right" value={form.infoCompensationPct} onChange={(e) => updateField("infoCompensationPct", Number(e.target.value || 0))} />}
+                </div>
+                <div className="flex items-center justify-between gap-2">
+                  <label className="flex items-center gap-1.5 text-slate-600 cursor-pointer"><input type="checkbox" checked={form.securityPct > 0} onChange={(e) => updateField("securityPct", e.target.checked ? 10 : 0)} className="accent-indigo-500" /><span>Sikkerhedsstillelse</span></label>
+                  {form.securityPct > 0 && <input type="number" min={0} className="w-16 input-field !py-0.5 !text-[10px] text-right" value={form.securityPct} onChange={(e) => updateField("securityPct", Number(e.target.value || 0))} />}
                 </div>
                 <label className="text-slate-500 block">Moms %<input type="number" min={0} className="input-field mt-0.5 !py-0.5 !text-[10px] text-right w-1/2" value={form.vatPct} onChange={(e) => updateField("vatPct", Number(e.target.value || 0))} /></label>
                 <div className="border-t border-slate-200 pt-1 mt-1 space-y-0.5">
