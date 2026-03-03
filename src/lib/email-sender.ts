@@ -328,6 +328,23 @@ export async function listInboxThreads(maxResults = 50): Promise<{ id: string; s
   }));
 }
 
+/** Search Gmail threads by email address (to/from). */
+export async function searchThreadsByEmail(email: string, maxResults = 15): Promise<MailThread[]> {
+  const gmail = getGmailClient();
+  const res = await gmail.users.threads.list({
+    userId: "me",
+    q: `to:${email} OR from:${email}`,
+    maxResults,
+  });
+  const threadIds = (res.data.threads || []).map((t) => t.id!).filter(Boolean);
+  const results: MailThread[] = [];
+  for (const tid of threadIds.slice(0, maxResults)) {
+    const thread = await getThreadWithMessages(tid);
+    if (thread) results.push(thread);
+  }
+  return results;
+}
+
 /** Get full thread with decoded messages (for reply draft and In-Reply-To). */
 export async function getThreadWithMessages(threadId: string): Promise<MailThread | null> {
   const gmail = getGmailClient();

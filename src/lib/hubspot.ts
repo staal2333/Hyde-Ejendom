@@ -426,6 +426,56 @@ export async function createFollowUpTask(
   }
 }
 
+// ─── Contact lookup ─────────────────────────────────────────
+
+export async function findContactByEmail(email: string): Promise<{
+  id: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+} | null> {
+  try {
+    const result = await hubspotPost("/crm/v3/objects/contacts/search", {
+      filterGroups: [{ filters: [{ propertyName: "email", operator: "EQ", value: email }] }],
+      properties: ["email", "firstname", "lastname", "phone"],
+      limit: 1,
+    }) as { results?: { id: string; properties?: Record<string, string> }[] };
+    const hit = result.results?.[0];
+    if (!hit) return null;
+    return {
+      id: hit.id,
+      firstName: hit.properties?.firstname,
+      lastName: hit.properties?.lastname,
+      email: hit.properties?.email,
+      phone: hit.properties?.phone,
+    };
+  } catch {
+    return null;
+  }
+}
+
+export async function getContactEngagements(contactId: string, limit = 20): Promise<{
+  type: string;
+  timestamp: number;
+  body?: string;
+  subject?: string;
+}[]> {
+  try {
+    const data = await hubspotGet(
+      `/engagements/v1/engagements/associated/contact/${contactId}/paged?limit=${limit}`
+    ) as { results?: { engagement?: { type?: string; timestamp?: number }; metadata?: { body?: string; subject?: string } }[] };
+    return (data.results || []).map((r) => ({
+      type: r.engagement?.type || "UNKNOWN",
+      timestamp: r.engagement?.timestamp || 0,
+      body: r.metadata?.body,
+      subject: r.metadata?.subject,
+    }));
+  } catch {
+    return [];
+  }
+}
+
 // ─── Associate contact to ejendom ───────────────────────────
 
 /**
