@@ -29,8 +29,7 @@ export const fixedCostSchema = z.object({
   enabled: z.boolean().default(true),
 });
 
-export const REQUIRED_FIXED_COST_LABELS = [
-] as const;
+export const REQUIRED_FIXED_COST_LABELS: string[] = [];
 
 export const REQUIRED_LINE_NAMES = [
   "Medievisning",
