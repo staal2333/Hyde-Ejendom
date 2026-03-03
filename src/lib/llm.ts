@@ -147,7 +147,23 @@ Temperature: 0.1 â€“ vÃ¦r sÃ¥ deterministisk som muligt.`,
   const content = response.choices[0]?.message?.content;
   if (!content) throw new Error("LLM returned empty response for owner assessment");
 
-  const parsed = JSON.parse(content);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsed: any;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    logger.error("LLM returned invalid JSON for owner assessment", { service: "llm", metadata: { content: content.slice(0, 500) } });
+    return {
+      ownerCompanyName: "Ukendt",
+      ownerCompanyCvr: null,
+      outdoorPotentialScore: 5,
+      keyInsights: "",
+      evidenceChain: "",
+      oohPitchArgument: "",
+      dataQuality: "low" as const,
+      dataQualityReason: "LLM returnerede ugyldigt JSON",
+    };
+  }
   return {
     ownerCompanyName: parsed.owner_company_name || parsed.ownerCompanyName || "Ukendt",
     ownerCompanyCvr: parsed.owner_company_cvr || parsed.ownerCompanyCvr || null,
@@ -283,7 +299,14 @@ Temperature: 0.1 â€“ vÃ¦r konservativ.`,
   const content = response.choices[0]?.message?.content;
   if (!content) return [];
 
-  const parsed = JSON.parse(content);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsed: any;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    logger.error("LLM returned invalid JSON for contact ranking", { service: "llm", metadata: { content: content.slice(0, 500) } });
+    return [];
+  }
   const ranked: Contact[] = [];
 
   for (const item of (parsed.ranked_contacts || [])) {
@@ -595,7 +618,14 @@ Du svarer ALTID i valid JSON med felterne: subject, body_text, short_internal_no
     throw new Error("LLM returned empty response for email generation");
   }
 
-  const parsed = JSON.parse(content);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let parsed: any;
+  try {
+    parsed = JSON.parse(content);
+  } catch {
+    logger.error("LLM returned invalid JSON for email draft", { service: "llm", metadata: { content: content.slice(0, 500) } });
+    throw new Error("LLM returnerede ugyldigt JSON for email-udkast");
+  }
 
   return {
     subject: parsed.subject || "UdendÃ¸rsarealer â€“ et uudnyttet potentiale?",

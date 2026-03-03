@@ -9,9 +9,15 @@ import { config } from "@/lib/config";
 export const maxDuration = 60;
 
 export async function POST(req: NextRequest) {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let body: any;
   try {
-    const body = await req.json();
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
+  try {
     const {
       type = "cold",
       companyName,
@@ -62,7 +68,6 @@ export async function POST(req: NextRequest) {
 
     const composed = await composeEmail(input);
 
-    // Build the full HTML with template wrapper
     const html = buildEmailFromTemplate(type as EmailTemplateType, {
       recipientName: (recipientName || "").split(" ")[0] || "der",
       companyName,

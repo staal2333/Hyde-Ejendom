@@ -32,6 +32,7 @@ import { HomeTab } from "../components/tabs/HomeTab";
 import { DiscoverTab } from "../components/tabs/DiscoverTab";
 import { StagingTab } from "../components/tabs/StagingTab";
 import { OOHTab } from "../components/tabs/OOHTab";
+import { TilbudTab } from "../components/tabs/TilbudTab";
 import { PropertiesTab } from "../components/tabs/PropertiesTab";
 import { ResearchTab } from "../components/tabs/ResearchTab";
 import { StreetAgentTab } from "../components/tabs/StreetAgentTab";
@@ -273,6 +274,7 @@ const NAV_TABS: NavTab[] = [
       { id: "ooh", label: "OOH Proposals" },
       { id: "outreach", label: "Email Kø" },
     ] },
+  { id: "tilbud", label: "Tilbud", desc: "Builder & PDF", icon: "M9 12h6m-6 4h6M7.5 3h9A2.25 2.25 0 0118.75 5.25v13.5A2.25 2.25 0 0116.5 21h-9a2.25 2.25 0 01-2.25-2.25V5.25A2.25 2.25 0 017.5 3z" },
   { id: "settings", label: "Indstillinger", desc: "System & regler", icon: "M9.594 3.94c.09-.542.56-.94 1.11-.94h2.593c.55 0 1.02.398 1.11.94l.213 1.281c.063.374.313.686.645.87.074.04.147.083.22.127.324.196.72.257 1.075.124l1.217-.456a1.125 1.125 0 011.37.49l1.296 2.247a1.125 1.125 0 01-.26 1.431l-1.003.827c-.293.24-.438.613-.431.992a6.759 6.759 0 010 .255c-.007.378.138.75.43.99l1.005.828c.424.35.534.954.26 1.43l-1.298 2.247a1.125 1.125 0 01-1.369.491l-1.217-.456c-.355-.133-.75-.072-1.076.124a6.57 6.57 0 01-.22.128c-.331.183-.581.495-.644.869l-.213 1.28c-.09.543-.56.941-1.11.941h-2.594c-.55 0-1.02-.398-1.11-.94l-.213-1.281c-.062-.374-.312-.686-.644-.87a6.52 6.52 0 01-.22-.127c-.325-.196-.72-.257-1.076-.124l-1.217.456a1.125 1.125 0 01-1.369-.49l-1.297-2.247a1.125 1.125 0 01.26-1.431l1.004-.827c.292-.24.437-.613.43-.992a6.932 6.932 0 010-.255c.007-.378-.138-.75-.43-.99l-1.004-.828a1.125 1.125 0 01-.26-1.43l1.297-2.247a1.125 1.125 0 011.37-.491l1.216.456c.356.133.751.072 1.076-.124.072-.044.146-.087.22-.128.332-.183.582-.495.644-.869l.214-1.281z" },
 ];
 
@@ -1387,8 +1389,7 @@ function DashboardContent() {
           <div className="hidden sm:block w-px h-5 bg-white/10 flex-shrink-0" />
 
           <nav className="top-bar-nav">
-            {NAV_TABS.map((nav) => {
-              const activeNavTab = getNavTabForActive(activeTab);
+            {(() => { const activeNavTab = getNavTabForActive(activeTab); return NAV_TABS.map((nav) => {
               const isActive = activeNavTab.id === nav.id;
               const childIds = nav.children?.map(c => c.id) ?? [nav.id];
               const showDot =
@@ -1426,7 +1427,7 @@ function DashboardContent() {
                   {showDot && <span className="tab-dot bg-indigo-400 animate-pulse shadow-sm shadow-indigo-500/50" />}
                 </button>
               );
-            })}
+            }); })()}
           </nav>
 
           {/* Right side: stats + status + logout */}
@@ -1466,8 +1467,9 @@ function DashboardContent() {
               <button
                 type="button"
                 onClick={() => setActiveTab("street_agent")}
-                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-md bg-amber-500/15 border border-amber-500/30 hover:bg-amber-500/25 transition-colors"
+                className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg bg-amber-500/15 border border-amber-500/30 hover:bg-amber-500/25 transition-colors animate-pulse-ring"
                 title={liveActivity.map(r => `${r.street}, ${r.city} — ${r.message || r.phase}`).join("\n")}
+                style={{ animationDuration: "2s" }}
               >
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-pulse flex-shrink-0" />
                 <span className="text-[10px] font-semibold text-amber-300 leading-none">
@@ -1513,7 +1515,7 @@ function DashboardContent() {
         <main className="main-after-top scroll-slim">
         {/* Error Banner */}
         {error && (
-          <div className="mt-4 px-4 sm:px-6 max-w-6xl mx-auto p-3.5 bg-red-50 border border-red-200/40 rounded-xl flex items-center gap-3 text-sm animate-fade-in">
+          <div className="dashboard-container mt-4 p-3.5 bg-red-50 border border-red-200/40 rounded-xl flex items-center gap-3 text-sm animate-fade-in">
             <div className="w-8 h-8 rounded-lg bg-red-100 flex items-center justify-center flex-shrink-0">
               <svg className="w-4 h-4 text-red-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                 <path strokeLinecap="round" strokeLinejoin="round" d="M12 9v3.75m-9.303 3.376c-.866 1.5.217 3.374 1.948 3.374h14.71c1.73 0 2.813-1.874 1.948-3.374L13.949 3.378c-.866-1.5-3.032-1.5-3.898 0L2.697 16.126z" />
@@ -1539,7 +1541,7 @@ function DashboardContent() {
 
         {/* ─── Active Processes ─── */}
         {(discoveryRunning || scaffoldRunning || !!researchRunning || agentRunning || !!stagingResearch) && (
-          <div className="sticky top-0 z-30 mt-3 px-4 sm:px-6 max-w-6xl mx-auto">
+          <div className="dashboard-container sticky top-0 z-30 mt-3">
             <div className="flex items-center gap-3 px-4 py-2.5 bg-slate-900/95 backdrop-blur-sm rounded-xl border border-slate-700/40 shadow-xl">
               <div className="relative w-4 h-4 shrink-0">
                 <div className="absolute inset-0 rounded-full border-2 border-t-emerald-400 border-r-transparent border-b-transparent border-l-transparent animate-spin" />
@@ -1622,7 +1624,7 @@ function DashboardContent() {
           const subTab = navTab.children?.find(c => c.id === activeTab);
           const title = subTab ? subTab.label : navTab.label;
           return (
-            <div className="mt-5 mb-1 px-4 sm:px-6 max-w-6xl mx-auto">
+            <div className="dashboard-container mt-6 mb-2">
               <div className="flex items-center gap-3">
                 {/* Icon bubble */}
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0"
@@ -1661,7 +1663,7 @@ function DashboardContent() {
           );
         })()}
 
-        <div className="p-4 sm:p-6 w-full max-w-6xl mx-auto">
+        <div className="dashboard-container py-4 sm:py-6">
           {/* ═══ DASHBOARD / HOME ═══ */}
           {activeTab === "home" && (
             <HomeTab
@@ -1860,6 +1862,10 @@ function DashboardContent() {
             />
           )}
 
+          {activeTab === "tilbud" && (
+            <TilbudTab onToast={addToast} />
+          )}
+
           {activeTab === "lead_sourcing" && <LeadSourcingTab />}
           {activeTab === "settings" && <SettingsTab />}
         </div>
@@ -1894,14 +1900,16 @@ function DashboardContent() {
       )}
 
       {/* ─── Toast Notifications ─── */}
-      <div className="fixed bottom-6 right-6 z-50 space-y-2 pointer-events-none">
+      <div className="fixed bottom-6 right-6 z-50 space-y-2.5 pointer-events-none">
         {toasts.map((toast) => (
           <div key={toast.id}
-            className={`pointer-events-auto animate-slide-up flex items-start gap-3 px-4 py-3 rounded-xl shadow-lg border backdrop-blur-sm max-w-sm ${
-              toast.type === "success" ? "bg-green-50/95 border-green-200/80 text-green-800" :
-              toast.type === "error" ? "bg-red-50/95 border-red-200/80 text-red-800" :
-              "bg-white/95 border-slate-200/60 text-slate-800"
-            }`}>
+            className={`pointer-events-auto animate-slide-in-right flex items-start gap-3 pl-4 pr-3 py-3 rounded-xl shadow-lg border backdrop-blur-sm max-w-sm toast-accent ${
+              toast.type === "success" ? "bg-green-50/95 border-green-200/80 text-green-800 toast-success" :
+              toast.type === "error" ? "bg-red-50/95 border-red-200/80 text-red-800 toast-error" :
+              "bg-white/95 border-slate-200/60 text-slate-800 toast-info"
+            }`}
+            style={{ boxShadow: "0 8px 30px -4px rgba(0,0,0,0.12), 0 0 0 1px rgba(0,0,0,0.03)" }}
+          >
             <div className="flex-shrink-0 mt-0.5">
               {toast.type === "success" ? (
                 <svg className="w-4 h-4 text-green-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
@@ -1915,7 +1923,7 @@ function DashboardContent() {
               <p className="text-sm font-medium">{toast.message}</p>
               {toast.detail && <p className="text-xs opacity-75 mt-0.5 truncate">{toast.detail}</p>}
             </div>
-            <button onClick={() => removeToast(toast.id)} className="flex-shrink-0 opacity-50 hover:opacity-100 p-0.5 rounded">
+            <button onClick={() => removeToast(toast.id)} className="flex-shrink-0 opacity-40 hover:opacity-100 p-1 rounded-lg hover:bg-black/5">
               <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" d="M6 18L18 6M6 6l12 12" /></svg>
             </button>
           </div>

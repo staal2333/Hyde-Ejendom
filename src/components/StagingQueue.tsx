@@ -455,7 +455,7 @@ export default function StagingQueue() {
     } finally {
       setSavingContact(false);
     }
-  }, [editForm, addToast, fetchProperties]);
+  }, [editForm, addToast, fetchProperties, properties]);
 
   // ── Reject (with confirmation) ──
   const askReject = useCallback((ids?: string[]) => {
@@ -531,15 +531,15 @@ export default function StagingQueue() {
 
   return (
     <div className="space-y-5 relative">
-      {/* ── Toast overlay ── */}
-      <div className="fixed top-6 right-6 z-50 flex flex-col gap-2 pointer-events-none">
+      {/* Toast overlay */}
+      <div className="fixed bottom-6 right-6 z-50 flex flex-col gap-2.5 pointer-events-none">
         {toasts.map(t => (
           <div
             key={t.id}
-            className={`pointer-events-auto animate-slide-down rounded-xl border px-4 py-3 shadow-xl backdrop-blur-sm max-w-sm ${
-              t.type === "success" ? "bg-green-950/90 border-green-500/30 text-green-300"
-              : t.type === "error" ? "bg-red-950/90 border-red-500/30 text-red-300"
-              : "bg-slate-100 border-slate-200 text-slate-600"
+            className={`pointer-events-auto animate-slide-in-right rounded-xl border pl-4 pr-3 py-3 backdrop-blur-sm max-w-sm toast-accent ${
+              t.type === "success" ? "bg-green-50/95 border-green-200/80 text-green-800 toast-success shadow-lg"
+              : t.type === "error" ? "bg-red-50/95 border-red-200/80 text-red-800 toast-error shadow-lg"
+              : "bg-white/95 border-slate-200/60 text-slate-800 toast-info shadow-lg"
             }`}
           >
             <div className="flex items-center gap-2">
@@ -559,8 +559,8 @@ export default function StagingQueue() {
 
       {/* ── Confirmation dialog ── */}
       {confirmAction && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/30 backdrop-blur-[2px] animate-fade-in">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 max-w-sm w-full mx-4">
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 max-w-sm w-full mx-4 animate-scale-in">
             <div className="flex items-center gap-3 mb-4">
               <div className={`w-10 h-10 rounded-xl flex items-center justify-center ${confirmAction.type === "delete" ? "bg-red-100" : "bg-amber-100"}`}>
                 <Ic d={confirmAction.type === "delete"
@@ -597,27 +597,32 @@ export default function StagingQueue() {
       )}
 
       {/* ── Flow Steps Guide ── */}
-      <div className="bg-slate-50 border border-slate-200/60 rounded-xl px-4 py-3 flex items-center gap-1 overflow-x-auto">
+      <div className="card-premium px-4 py-3.5 flex items-center gap-0 overflow-x-auto">
         {[
-          { label: "1. Ny", sub: "Tilføjet", dot: "bg-amber-400", active: counts.new > 0, count: counts.new },
-          { label: "→ Research", sub: "Find ejer & info", dot: "bg-blue-400", active: counts.researching > 0, count: counts.researching },
-          { label: "→ Generer udkast", sub: "AI-mail + godkend", dot: "bg-indigo-500", active: counts.researched > 0, count: counts.researched },
-          { label: "→ Push til HubSpot", sub: "Godkendt + HubSpot", dot: "bg-emerald-500", active: counts.approved > 0, count: counts.approved },
-          { label: "→ Klar", sub: "Send mail", dot: "bg-emerald-600", active: counts.pushed > 0, count: counts.pushed },
-        ].map((step) => (
-          <div key={step.label} className="flex items-center gap-2 shrink-0">
-            <div className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg transition-all ${step.active ? "bg-white border border-slate-200 shadow-sm" : "opacity-40"}`}>
-              <span className={`w-2 h-2 rounded-full shrink-0 ${step.dot}`} />
+          { label: "Ny", sub: "Tilføjet", dot: "bg-amber-400", active: counts.new > 0, count: counts.new },
+          { label: "Research", sub: "Find ejer & info", dot: "bg-blue-400", active: counts.researching > 0, count: counts.researching },
+          { label: "Udkast", sub: "AI-mail + godkend", dot: "bg-indigo-500", active: counts.researched > 0, count: counts.researched },
+          { label: "HubSpot", sub: "Push & opret", dot: "bg-emerald-500", active: counts.approved > 0, count: counts.approved },
+          { label: "Klar", sub: "Send mail", dot: "bg-emerald-600", active: counts.pushed > 0, count: counts.pushed },
+        ].map((step, i, arr) => (
+          <div key={step.label} className="flex items-center shrink-0">
+            <div className={`flex items-center gap-1.5 px-3 py-2 rounded-xl transition-all ${step.active ? "bg-white border border-slate-200/80 shadow-sm" : "opacity-35"}`}>
+              <span className={`w-2.5 h-2.5 rounded-full shrink-0 ${step.dot} ${step.active ? "shadow-sm" : ""}`}
+                style={step.active ? { boxShadow: `0 0 8px currentColor` } : undefined}
+              />
               <div>
                 <p className={`text-[11px] font-bold whitespace-nowrap ${step.active ? "text-slate-800" : "text-slate-500"}`}>
                   {step.label}
                   {step.active && step.count > 0 && (
-                    <span className="ml-1 inline-flex items-center justify-center w-4 h-4 rounded-full bg-indigo-600 text-white text-[9px] font-bold">{step.count}</span>
+                    <span className="ml-1 inline-flex items-center justify-center min-w-[16px] h-4 px-1 rounded-full bg-indigo-600 text-white text-[9px] font-bold tabular-nums">{step.count}</span>
                   )}
                 </p>
                 <p className="text-[9px] text-slate-400 whitespace-nowrap">{step.sub}</p>
               </div>
             </div>
+            {i < arr.length - 1 && (
+              <div className={`pipeline-connector ${step.active ? "active" : ""}`} />
+            )}
           </div>
         ))}
       </div>
@@ -649,28 +654,32 @@ export default function StagingQueue() {
 
       {/* ── Action Banner ── */}
       {activeCount > 0 && (
-        <div className="rounded-xl border overflow-hidden">
-          <div className="flex items-center gap-3 bg-gradient-to-r from-amber-50 via-orange-50/60 to-transparent border-amber-200 px-4 py-3">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center flex-shrink-0">
-              <Ic d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" className="w-4.5 h-4.5 text-amber-600" />
+        <div className="rounded-2xl overflow-hidden" style={{
+          background: "linear-gradient(135deg, rgba(180,83,9,0.06) 0%, rgba(245,158,11,0.08) 50%, rgba(251,191,36,0.04) 100%)",
+          boxShadow: "0 1px 3px rgba(0,0,0,0.04), inset 0 1px 0 rgba(255,255,255,0.5), 0 0 0 1px rgba(217,119,6,0.1)",
+        }}>
+          <div className="flex items-center gap-3 px-5 py-3.5">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-100 to-orange-100 flex items-center justify-center flex-shrink-0 shadow-sm">
+              <Ic d="M12 9v3.75m9-.75a9 9 0 11-18 0 9 9 0 0118 0zm-9 3.75h.008v.008H12v-.008z" className="w-5 h-5 text-amber-600" />
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-semibold text-amber-800">
+              <p className="text-sm font-bold text-amber-800">
                 {activeCount} ejendom{activeCount !== 1 ? "me" : ""} afventer handling
               </p>
-              <p className="text-[11px] text-amber-600 mt-0.5">
+              <p className="text-[11px] text-amber-600/80 mt-0.5">
                 {counts.new > 0 && `${counts.new} nye`}
                 {counts.researching > 0 && ` · ${counts.researching} researcher`}
                 {counts.researched > 0 && ` · ${counts.researched} klar til godkendelse & mail-udkast`}
                 {counts.approved > 0 && ` · ${counts.approved} klar til push til HubSpot`}
               </p>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex items-center gap-2 flex-shrink-0 flex-wrap">
               {counts.new > 0 && (
                 <button
                   onClick={handleBatchResearch}
                   disabled={batchResearching}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-blue-100 text-blue-700 text-xs font-medium hover:bg-blue-200 transition-colors disabled:opacity-50"
+                  className="btn-primary"
+                  style={{ background: "linear-gradient(135deg, #2563eb 0%, #3b82f6 100%)" }}
                 >
                   <Ic d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5" className="w-3.5 h-3.5" />
                   {batchResearching ? "Researcher..." : `Research alle nye (${counts.new})`}
@@ -679,10 +688,11 @@ export default function StagingQueue() {
               {counts.researched > 0 && (
                 <button
                   onClick={() => setFilter("researched")}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-100 text-indigo-700 text-xs font-medium hover:bg-indigo-200 transition-colors"
+                  className="btn-primary"
+                  style={{ background: "linear-gradient(135deg, #4f46e5 0%, #6366f1 100%)" }}
                 >
                   <Ic d="M21.75 6.75v10.5a2.25 2.25 0 01-2.25 2.25h-15a2.25 2.25 0 01-2.25-2.25V6.75" className="w-3.5 h-3.5" />
-                  Trin 2: Generer mail-udkast ({counts.researched})
+                  Generer mail-udkast ({counts.researched})
                 </button>
               )}
               {counts.approved > 0 && (
@@ -692,10 +702,10 @@ export default function StagingQueue() {
                     handleApprove(approvedIds);
                   }}
                   disabled={approving}
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-100 text-emerald-700 text-xs font-medium hover:bg-emerald-200 transition-colors disabled:opacity-50"
+                  className="btn-success"
                 >
                   <Ic d="M4.5 12.75l6 6 9-13.5" className="w-3.5 h-3.5" />
-                  {approving ? "Pusher..." : `Trin 3: Push til HubSpot (${counts.approved})`}
+                  {approving ? "Pusher..." : `Push til HubSpot (${counts.approved})`}
                 </button>
               )}
               {(() => {
@@ -711,7 +721,7 @@ export default function StagingQueue() {
                       handleApproveSend(readyIds);
                     }}
                     disabled={approveSending}
-                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-xs font-semibold hover:bg-emerald-500 transition-colors disabled:opacity-50 shadow-sm"
+                    className="btn-success"
                   >
                     <Ic d="M6 12L3.269 3.126A59.768 59.768 0 0121.485 12 59.77 59.77 0 013.27 20.876L5.999 12zm0 0h7.5" className="w-3.5 h-3.5" />
                     {approveSending ? "Sender..." : `Send alle klar (${readyToSend})`}
@@ -733,7 +743,7 @@ export default function StagingQueue() {
             placeholder="Søg adresse, ejer, by..."
             value={search}
             onChange={e => setSearch(e.target.value)}
-            className="w-full pl-9 pr-8 py-2 rounded-lg bg-white border border-slate-200 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:border-brand-500/40 focus:ring-1 focus:ring-brand-500/20 transition-colors"
+            className="input-field pl-9 pr-8"
           />
           {search && (
             <button onClick={() => setSearch("")} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 transition-colors">

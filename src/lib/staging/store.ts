@@ -135,7 +135,10 @@ export async function listStagedProperties(opts?: {
   if (opts?.stage) query = query.eq("stage", opts.stage);
   if (opts?.source) query = query.eq("source", opts.source);
   if (opts?.city) query = query.ilike("city", `%${opts.city}%`);
-  if (opts?.search) query = query.or(`name.ilike.%${opts.search}%,address.ilike.%${opts.search}%`);
+  if (opts?.search) {
+    const sanitized = opts.search.replace(/[%_]/g, "");
+    if (sanitized) query = query.or(`name.ilike.%${sanitized}%,address.ilike.%${sanitized}%`);
+  }
 
   const { data, error } = await query.limit(500);
   if (error) { logger.error(`[staging] list error: ${error.message}`); return []; }

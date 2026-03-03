@@ -75,17 +75,17 @@ export default function ConfirmModal({
 
   return (
     <div
-      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/40 backdrop-blur-sm"
+      className="fixed inset-0 z-[10000] flex items-center justify-center bg-black/50 backdrop-blur-sm animate-fade-in"
       onClick={onCancel}
     >
       <div
-        className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm mx-4 overflow-hidden animate-in fade-in zoom-in-95 duration-200"
+        className="bg-white rounded-2xl w-full max-w-sm mx-4 overflow-hidden animate-scale-in"
+        style={{ boxShadow: "0 20px 60px -12px rgba(0,0,0,0.25), 0 0 0 1px rgba(0,0,0,0.05)" }}
         onClick={(e) => e.stopPropagation()}
       >
         <div className="p-6">
-          {/* Icon */}
-          <div className={`w-11 h-11 rounded-xl ${s.iconBg} flex items-center justify-center mb-4`}>
-            <svg className={`w-5 h-5 ${s.iconColor}`} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
+          <div className={`w-12 h-12 rounded-xl ${s.iconBg} flex items-center justify-center mb-4`}>
+            <svg className={`w-6 h-6 ${s.iconColor}`} fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor">
               <path strokeLinecap="round" strokeLinejoin="round" d={s.icon} />
             </svg>
           </div>
@@ -93,15 +93,15 @@ export default function ConfirmModal({
           <h3 className="text-base font-bold text-slate-900 mb-1">{title}</h3>
           <p className="text-sm text-slate-500 leading-relaxed">{message}</p>
           {detail && (
-            <p className="text-xs text-slate-400 mt-2 bg-slate-50 rounded-lg px-3 py-2">{detail}</p>
+            <p className="text-xs text-slate-400 mt-2 bg-slate-50 rounded-xl px-3 py-2">{detail}</p>
           )}
         </div>
 
-        <div className="px-6 pb-5 flex gap-2">
+        <div className="px-6 pb-5 flex gap-2.5">
           <button
             onClick={onCancel}
             disabled={loading}
-            className="flex-1 px-4 py-2.5 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors disabled:opacity-50"
+            className="btn-secondary flex-1 btn-md"
           >
             {cancelLabel}
           </button>
@@ -109,7 +109,8 @@ export default function ConfirmModal({
             ref={btnRef}
             onClick={onConfirm}
             disabled={loading}
-            className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white ${s.btnBg} rounded-xl transition-colors disabled:opacity-50 flex items-center justify-center gap-2`}
+            className={`flex-1 px-4 py-2.5 text-sm font-semibold text-white ${s.btnBg} rounded-xl transition-all disabled:opacity-50 flex items-center justify-center gap-2 active:scale-[0.97]`}
+            style={{ boxShadow: "0 2px 8px -2px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.12)" }}
           >
             {loading ? (
               <>

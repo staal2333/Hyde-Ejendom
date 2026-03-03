@@ -167,7 +167,9 @@ export async function lookupCvrScored(
       address: [data.address, data.zipcode, data.city].filter(Boolean).join(", "),
       status: data.status || "ukendt",
       type: data.companydesc || "",
-      owners: data.owners ? data.owners.map((o: { name: string }) => o.name) : [],
+      owners: data.owners
+        ? data.owners.map((o: unknown) => typeof o === "string" ? o : (o as Record<string, unknown>)?.name ? String((o as Record<string, unknown>).name) : "").filter(Boolean)
+        : [],
       roles: parseCvrRoles(data),
       industry: data.industrydesc || undefined,
       employees: data.employees ? `${data.employees} ansatte` : undefined,

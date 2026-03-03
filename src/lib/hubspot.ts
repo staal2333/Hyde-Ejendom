@@ -291,8 +291,9 @@ export async function ejendomExistsByAddress(address: string): Promise<boolean> 
     ) as { total: number };
 
     return (data.total || 0) > 0;
-  } catch {
-    return false;
+  } catch (err) {
+    logger.warn(`ejendomExistsByAddress failed for "${address}": ${err instanceof Error ? err.message : String(err)}`, { service: "hubspot" });
+    throw err;
   }
 }
 

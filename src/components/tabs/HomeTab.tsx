@@ -1,4 +1,4 @@
-﻿"use client";
+"use client";
 
 import { useState, useEffect } from "react";
 import { useDashboard } from "@/contexts/DashboardContext";
@@ -69,21 +69,24 @@ export function HomeTab({
   const oohAnalytics = dashboard?.analytics?.ooh;
 
   return (
-    <div className="animate-fade-in w-full max-w-full">
+    <div className="animate-fade-in w-full max-w-full space-y-6">
       {/* â”€â”€â”€ Hero Banner â”€â”€â”€ */}
-      <div className="relative mb-6 rounded-2xl overflow-hidden"
-        style={{ background: "linear-gradient(135deg, #0d1224 0%, #1e1458 50%, #130f3f 100%)" }}>
-        {/* Background glow blobs */}
+      <div className="relative rounded-2xl overflow-hidden"
+        style={{ background: "linear-gradient(135deg, #0a0e1f 0%, #1a1250 40%, #130f3f 70%, #0d1224 100%)" }}>
+        {/* Floating particles */}
         <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute -top-8 -left-8 w-48 h-48 rounded-full bg-indigo-500/20 blur-3xl" />
-          <div className="absolute -bottom-8 -right-8 w-48 h-48 rounded-full bg-violet-500/20 blur-3xl" />
-          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-64 h-32 rounded-full bg-blue-500/10 blur-3xl" />
+          <div className="absolute -top-8 -left-8 w-56 h-56 rounded-full bg-indigo-500/15 blur-3xl animate-float" />
+          <div className="absolute -bottom-8 -right-8 w-56 h-56 rounded-full bg-violet-500/15 blur-3xl animate-float" style={{ animationDelay: "-3s" }} />
+          <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-72 h-36 rounded-full bg-blue-500/8 blur-3xl animate-float" style={{ animationDelay: "-1.5s" }} />
+          <div className="absolute top-4 left-1/4 w-1 h-1 rounded-full bg-indigo-300/40 animate-float" style={{ animationDelay: "-1s" }} />
+          <div className="absolute top-8 right-1/3 w-1.5 h-1.5 rounded-full bg-violet-300/30 animate-float" style={{ animationDelay: "-2.5s" }} />
+          <div className="absolute bottom-6 left-1/3 w-1 h-1 rounded-full bg-cyan-300/30 animate-float" style={{ animationDelay: "-4s" }} />
         </div>
-        <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-4 px-6 py-5">
+        <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-4 px-7 py-6">
           <div>
-            <div className="flex items-center gap-2 mb-1">
-              <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse shadow-sm shadow-emerald-400" />
-              <span className="text-[10px] font-semibold text-emerald-400/80 uppercase tracking-widest">System klar</span>
+            <div className="flex items-center gap-2 mb-1.5">
+              <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-sm shadow-emerald-400/60" style={{ animation: "gentle-pulse 2s ease-in-out infinite" }} />
+              <span className="text-2xs font-semibold text-emerald-400/80 uppercase tracking-widest">System klar</span>
             </div>
             <h2 className="text-xl font-extrabold text-white tracking-tight leading-none">
               Ejendom AI Pipeline
@@ -109,7 +112,7 @@ export function HomeTab({
       </div>
 
       {/* KPI Cards â€” full vivid gradient */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 mb-6">
+      <div className="grid grid-cols-2 xl:grid-cols-5 gap-3">
         {[
           {
             label: "Ejendomme",
@@ -151,21 +154,23 @@ export function HomeTab({
           <button
             key={kpi.label}
             onClick={kpi.onClick}
-            className="relative rounded-2xl p-4 overflow-hidden text-left text-white card-hover"
+            className="relative rounded-2xl p-4 overflow-hidden text-left text-white card-hover group"
             style={{ ...kpi.style, animationDelay: `${ki * 60}ms` }}
           >
-            {/* Glow orb */}
-            <div className="absolute -bottom-3 -right-3 w-20 h-20 rounded-full bg-white/10 blur-xl" />
+            {/* Glow orb with glass overlay */}
+            <div className="absolute -bottom-4 -right-4 w-24 h-24 rounded-full bg-white/10 blur-2xl group-hover:bg-white/15 transition-all duration-500" />
+            <div className="absolute inset-0 bg-gradient-to-t from-black/5 to-white/5 pointer-events-none" />
+            <div className="absolute inset-[1px] rounded-[15px] pointer-events-none" style={{ boxShadow: "inset 0 1px 0 rgba(255,255,255,0.2)" }} />
             <div className="relative z-10">
               <div className="flex items-start justify-between mb-3">
-                <div className="w-8 h-8 rounded-lg bg-white/15 backdrop-blur-sm flex items-center justify-center">
+                <div className="w-9 h-9 rounded-xl bg-white/15 backdrop-blur-sm flex items-center justify-center border border-white/10">
                   <svg className="w-4 h-4 text-white" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                     <path strokeLinecap="round" strokeLinejoin="round" d={kpi.icon} />
                   </svg>
                 </div>
               </div>
-              <p className="text-3xl font-extrabold tabular-nums tracking-tight leading-none">{kpi.value}</p>
-              <p className="text-[10px] font-semibold text-white/70 uppercase tracking-wider mt-1.5">{kpi.label}</p>
+              <p className="text-3xl font-extrabold tabular-nums tracking-tight leading-none animate-count-up">{kpi.value}</p>
+              <p className="text-2xs font-semibold text-white/60 uppercase tracking-wider mt-1.5">{kpi.label}</p>
               {kpi.isStillads && !hasScaffoldData && (
                 <p className="text-[9px] text-white/50 mt-0.5">Scan ikke kÃ¸rt endnu</p>
               )}
@@ -210,7 +215,7 @@ export function HomeTab({
       {(dashboard?.staging?.awaitingAction || 0) > 0 && (
         <button
           onClick={() => setActiveTab("staging")}
-          className="w-full flex items-center gap-4 rounded-2xl px-5 py-4 mb-5 hover:opacity-95 transition-all group card-hover text-white"
+          className="w-full flex items-center gap-4 rounded-2xl px-5 py-4 hover:opacity-95 transition-all group card-hover text-white"
           style={{ background: "linear-gradient(135deg, #b45309 0%, #d97706 50%, #f59e0b 100%)", boxShadow: "0 8px 24px rgba(180,83,9,0.3)" }}
         >
           <div className="w-12 h-12 rounded-xl bg-white/20 backdrop-blur-sm flex items-center justify-center flex-shrink-0">
@@ -244,9 +249,9 @@ export function HomeTab({
         ];
         const maxVal = Math.max(...steps.map(s => s.value), 1);
         return (
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5 mb-6">
+          <div className="surface-card p-5">
             <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
-              <span className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
+              <span className="w-8 h-8 rounded-xl bg-gradient-to-br from-indigo-100 to-indigo-50 flex items-center justify-center shadow-sm">
                 <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" d="M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" />
                 </svg>
@@ -288,7 +293,7 @@ export function HomeTab({
         const trend = dashboard.analytics.trend as { snapshotDate: string; discovered: number; staged: number; sent: number }[];
         const maxV = Math.max(...trend.map(t => t.discovered), 1);
         return (
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5 mb-6">
+          <div className="surface-card p-5">
             <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-cyan-100 flex items-center justify-center">
                 <svg className="w-4 h-4 text-cyan-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -439,11 +444,17 @@ export function HomeTab({
 
         if (tasks.length === 0) {
           return (
-            <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-6 mb-6 text-center">
-              <div className="w-12 h-12 rounded-2xl bg-emerald-100 flex items-center justify-center mx-auto mb-3">
-                <svg className="w-6 h-6 text-emerald-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
-                  <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                </svg>
+            <div className="surface-card p-8 text-center">
+              <div className="relative w-16 h-16 mx-auto mb-4">
+                <div className="absolute inset-0 rounded-2xl bg-gradient-to-br from-emerald-100 to-emerald-50" />
+                <div className="absolute inset-0 rounded-2xl flex items-center justify-center animate-scale-in">
+                  <svg className="w-8 h-8 text-emerald-500" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                    <path strokeLinecap="round" strokeLinejoin="round" d="M9 12.75L11.25 15 15 9.75M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                  </svg>
+                </div>
+                <div className="absolute -top-1 -right-1 w-2 h-2 rounded-full bg-emerald-300 animate-float" style={{ animationDelay: "-1s" }} />
+                <div className="absolute -bottom-1 -left-1 w-1.5 h-1.5 rounded-full bg-emerald-200 animate-float" style={{ animationDelay: "-2s" }} />
+                <div className="absolute top-0 left-0 w-1 h-1 rounded-full bg-emerald-300/50 animate-float" style={{ animationDelay: "-3s" }} />
               </div>
               <p className="text-sm font-bold text-slate-800">Alt er opdateret</p>
               <p className="text-xs text-slate-400 mt-1">Ingen ventende opgaver i dag</p>
@@ -452,7 +463,7 @@ export function HomeTab({
         }
 
         return (
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5 mb-6">
+          <div className="surface-card p-5">
             <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-indigo-100 flex items-center justify-center">
                 <svg className="w-4 h-4 text-indigo-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -467,7 +478,7 @@ export function HomeTab({
                 <button
                   key={task.key}
                   onClick={task.action}
-                  className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-slate-200/70 text-left transition-all group ${task.bgHover} ${task.borderHover}`}
+                  className={`w-full flex items-center gap-3 px-4 py-3.5 rounded-xl border border-slate-200/70 text-left transition-all group card-hover ${task.bgHover} ${task.borderHover}`}
                 >
                   <span className="flex-shrink-0 w-6 h-6 rounded-full bg-slate-100 text-slate-500 text-[11px] font-bold flex items-center justify-center tabular-nums">
                     {i + 1}
@@ -498,7 +509,7 @@ export function HomeTab({
         if (totalLeads === 0 && ls.overdueFollowups === 0) return null;
         const urgentCount = ls.overdueFollowups + ls.todayFollowups;
         return (
-          <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5 mb-6">
+          <div className="surface-card p-5">
             <h2 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
               <span className="w-8 h-8 rounded-lg bg-violet-100 flex items-center justify-center">
                 <svg className="w-4 h-4 text-violet-600" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
@@ -651,7 +662,7 @@ export function HomeTab({
       )}
 
       {/* Visual Pipeline */}
-      <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-6 mb-6">
+      <div className="surface-card p-6">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-sm font-bold text-slate-900">Pipeline</h2>
           <span className="text-[10px] text-slate-400 bg-slate-50 px-2.5 py-1 rounded-full">
@@ -826,8 +837,8 @@ export function HomeTab({
       </div>
 
       {/* Status Breakdown + Quick Actions */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-6">
-        <div className="lg:col-span-3 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5">
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4">
+        <div className="lg:col-span-3 surface-card p-5">
           <h2 className="text-xs font-bold text-slate-900 mb-4 uppercase tracking-wide">HubSpot Status</h2>
           <div className="space-y-2.5">
             {(() => {
@@ -889,7 +900,7 @@ export function HomeTab({
             </div>
           )}
         </div>
-        <div className="lg:col-span-2 bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5">
+        <div className="lg:col-span-2 surface-card p-5">
           <h2 className="text-xs font-bold text-slate-900 mb-3 uppercase tracking-wide">Genveje</h2>
           <div className="grid grid-cols-2 gap-2">
             {[
@@ -973,7 +984,7 @@ export function HomeTab({
 
       {/* Analytics Overview â€“ kun nÃ¥r der er sendt mails */}
       {dashboard?.analytics && totalSent > 0 && (
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-5 mb-6">
+        <div className="surface-card p-5">
           <h2 className="text-xs font-bold text-slate-900 mb-4 uppercase tracking-wide">Analytics</h2>
           <div className="grid grid-cols-3 md:grid-cols-6 gap-2 mb-4">
             {[
@@ -1068,7 +1079,7 @@ export function HomeTab({
 
       {/* Recent Activity + System Health */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-6">
+        <div className="surface-card p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-slate-900">Seneste ejendomme</h2>
             <button
@@ -1121,7 +1132,7 @@ export function HomeTab({
             </div>
           )}
         </div>
-        <div className="bg-white/80 backdrop-blur-sm rounded-2xl border border-white/80 shadow-[var(--card-shadow)] p-6">
+        <div className="surface-card p-6">
           <div className="flex items-center justify-between mb-4">
             <h2 className="text-sm font-bold text-slate-900">System Status</h2>
             {systemHealth && (

@@ -16,8 +16,14 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const body = await req.json();
-    const { to, toName, subject, html, text, replyTo, leadId, propertyId } = body;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    let body: any;
+    try {
+      body = await req.json();
+    } catch {
+      return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+    }
+    const { to, toName, subject, html, text, replyTo, leadId } = body;
 
     if (!to || !subject || !html) {
       return NextResponse.json({ error: "Mangler: to, subject, html" }, { status: 400 });
@@ -46,7 +52,7 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    logger.info(`[email/send] Sent to ${to} (lead=${leadId || "none"}, property=${propertyId || "none"})`, { service: "email" });
+    logger.info(`[email/send] Sent to ${to} (lead=${leadId || "none"})`, { service: "email" });
 
     return NextResponse.json({
       success: true,

@@ -7,7 +7,11 @@ const COOKIE_NAME = "ejendom_session";
 const SESSION_TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 function getSecret(): string {
-  return process.env.AUTH_PIN || "change-me-in-production";
+  const pin = process.env.AUTH_PIN;
+  if (!pin && process.env.NODE_ENV === "production") {
+    throw new Error("AUTH_PIN environment variable is required in production");
+  }
+  return pin || "dev-only-default-secret";
 }
 
 async function hmacSign(message: string, secret: string): Promise<string> {

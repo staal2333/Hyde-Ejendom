@@ -11,13 +11,12 @@ import { ejendomExistsByAddress } from "@/lib/hubspot";
 import type { DawaAddress } from "@/types";
 
 export async function POST(req: NextRequest) {
-  const body = await req.json() as {
-    addresses: DawaAddress[];
-    street: string;
-    city: string;
-    minScore?: number;
-    trafficDaily?: number;
-  };
+  let body: { addresses: DawaAddress[]; street: string; city: string; minScore?: number; trafficDaily?: number };
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
   const { addresses, street, city, minScore = 6, trafficDaily } = body;
 

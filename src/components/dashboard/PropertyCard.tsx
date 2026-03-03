@@ -34,16 +34,17 @@ export function PropertyCard({
 
   return (
     <div
-      className={`bg-white rounded-2xl border overflow-hidden transition-all duration-200 group/card ${
+      className={`surface-card border overflow-hidden transition-all duration-200 group/card ${
         expanded
           ? "border-indigo-200/60 shadow-[var(--card-shadow-hover)]"
-          : "border-slate-200/50 shadow-[var(--card-shadow)] hover:shadow-[var(--card-shadow-hover)] hover:border-slate-200"
+          : "border-slate-200/50 shadow-[var(--card-shadow)] hover:shadow-[var(--card-shadow-hover)] hover:border-slate-200 hover:-translate-y-[1px]"
       }`}
+      style={{ boxShadow: expanded ? undefined : "var(--card-shadow), inset 0 1px 0 rgba(255,255,255,0.6)" }}
     >
       <div className="flex">
-        <div className={`w-1 flex-shrink-0 ${status.stripe}`} />
+        <div className={`w-1.5 flex-shrink-0 ${status.stripe}`} style={{ boxShadow: "inset -1px 0 2px rgba(0,0,0,0.08)" }} />
         <div className="flex-1 min-w-0">
-          <div className="px-4 py-3.5 flex items-center gap-3 cursor-pointer" onClick={onToggle}>
+          <div className="px-4 py-4 flex items-center gap-3 cursor-pointer" onClick={onToggle}>
             {p.outdoorScore != null && <ScoreRing score={p.outdoorScore} />}
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">

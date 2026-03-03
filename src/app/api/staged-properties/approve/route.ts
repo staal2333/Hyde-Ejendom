@@ -18,13 +18,26 @@ import type { Contact } from "@/types";
 import { logger } from "@/lib/logger";
 
 export async function POST(req: NextRequest) {
+  let body: { ids?: string[] };
   try {
-    const body = await req.json();
-    const ids: string[] = body.ids;
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
+
+  try {
+    const ids = body.ids;
 
     if (!ids || !Array.isArray(ids) || ids.length === 0) {
       return NextResponse.json(
         { error: "ids array is required" },
+        { status: 400 }
+      );
+    }
+
+    if (ids.length > 50) {
+      return NextResponse.json(
+        { error: "Max 50 ids per request" },
         { status: 400 }
       );
     }

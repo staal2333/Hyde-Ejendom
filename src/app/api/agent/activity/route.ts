@@ -54,9 +54,14 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ ok: true });
   }
 
+  let body: Partial<AgentActivityRow>;
   try {
-    const body = await req.json() as Partial<AgentActivityRow>;
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
+  }
 
+  try {
     if (!body.id || !body.street || !body.city) {
       return NextResponse.json({ error: "id, street, city required" }, { status: 400 });
     }
