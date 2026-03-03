@@ -1668,13 +1668,13 @@ function DashboardContent() {
         })()}
 
         <div className="dashboard-container py-4 sm:py-6">
-          <div className="mb-4">
-            <BriefingPanel />
-          </div>
-
           {/* ═══ DASHBOARD / HOME ═══ */}
           {activeTab === "home" && (
             <>
+              <div className="mb-4">
+                <BriefingPanel />
+              </div>
+
               <HomeTab
                 discoveryRunning={discoveryRunning}
                 scaffoldRunning={scaffoldRunning}
@@ -1686,11 +1686,14 @@ function DashboardContent() {
                 setExpandedProperty={setExpandedProperty}
                 scaffoldCity={scaffoldCity}
               />
-              <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-4">
-                <FollowUpPanel onToast={addToast} />
-                <TilbudAgentPanel onToast={addToast} />
-              </div>
-              <div className="mt-4">
+
+              {/* AI Agents */}
+              <div className="mt-6 space-y-4">
+                <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wide">AI Agenter</h2>
+                <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+                  <FollowUpPanel onToast={addToast} />
+                  <TilbudAgentPanel onToast={addToast} />
+                </div>
                 <LeadIntelPanel onToast={addToast} />
               </div>
             </>
