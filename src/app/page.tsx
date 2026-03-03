@@ -41,6 +41,9 @@ import { SettingsTab } from "../components/tabs/SettingsTab";
 import { LeadSourcingTab } from "../components/tabs/LeadSourcingTab";
 import { ProgressBar, LogPanel, ResultStat, PipelineStat, PropertyCard } from "@/components/dashboard";
 import { BriefingPanel } from "@/components/dashboard/BriefingPanel";
+import { FollowUpPanel } from "@/components/dashboard/FollowUpPanel";
+import { LeadIntelPanel } from "@/components/dashboard/LeadIntelPanel";
+import { TilbudAgentPanel } from "@/components/dashboard/TilbudAgentPanel";
 import FullCircleWizard from "../components/FullCircleWizard";
 import { CommandPalette } from "../components/CommandPalette";
 
@@ -1671,17 +1674,26 @@ function DashboardContent() {
 
           {/* ═══ DASHBOARD / HOME ═══ */}
           {activeTab === "home" && (
-            <HomeTab
-              discoveryRunning={discoveryRunning}
-              scaffoldRunning={scaffoldRunning}
-              researchRunning={!!researchRunning}
-              agentRunning={agentRunning}
-              fullCircleOpen={fullCircleOpen}
-              setFullCircleOpen={setFullCircleOpen}
-              setStatusFilter={setStatusFilter}
-              setExpandedProperty={setExpandedProperty}
-              scaffoldCity={scaffoldCity}
-            />
+            <>
+              <HomeTab
+                discoveryRunning={discoveryRunning}
+                scaffoldRunning={scaffoldRunning}
+                researchRunning={!!researchRunning}
+                agentRunning={agentRunning}
+                fullCircleOpen={fullCircleOpen}
+                setFullCircleOpen={setFullCircleOpen}
+                setStatusFilter={setStatusFilter}
+                setExpandedProperty={setExpandedProperty}
+                scaffoldCity={scaffoldCity}
+              />
+              <div className="mt-6 grid grid-cols-1 xl:grid-cols-2 gap-4">
+                <FollowUpPanel onToast={addToast} />
+                <TilbudAgentPanel onToast={addToast} />
+              </div>
+              <div className="mt-4">
+                <LeadIntelPanel onToast={addToast} />
+              </div>
+            </>
           )}
 
           {/* ═══ DISCOVER TAB ═══ */}
