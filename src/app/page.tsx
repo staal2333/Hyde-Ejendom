@@ -40,6 +40,7 @@ import { OutreachTab } from "../components/tabs/OutreachTab";
 import { SettingsTab } from "../components/tabs/SettingsTab";
 import { LeadSourcingTab } from "../components/tabs/LeadSourcingTab";
 import { ProgressBar, LogPanel, ResultStat, PipelineStat, PropertyCard } from "@/components/dashboard";
+import { BriefingPanel } from "@/components/dashboard/BriefingPanel";
 import FullCircleWizard from "../components/FullCircleWizard";
 import { CommandPalette } from "../components/CommandPalette";
 
@@ -1664,6 +1665,10 @@ function DashboardContent() {
         })()}
 
         <div className="dashboard-container py-4 sm:py-6">
+          <div className="mb-4">
+            <BriefingPanel />
+          </div>
+
           {/* ═══ DASHBOARD / HOME ═══ */}
           {activeTab === "home" && (
             <HomeTab
