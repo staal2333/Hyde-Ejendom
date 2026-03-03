@@ -56,6 +56,33 @@ export function calcLineTotals(line: TilbudLine): TilbudLineTotals {
   };
 }
 
+/**
+ * Back-calculate the discount % needed on the Medievisning line
+ * so that the total nettopris across all lines equals targetNetTotal.
+ */
+export function calcMediaDiscountPct(
+  lines: TilbudLine[],
+  targetNetTotal: number
+): number {
+  const mediaLine = lines.find(
+    (l) => l.name.trim().toLowerCase() === "medievisning"
+  );
+  if (!mediaLine) return 0;
+
+  const nonMediaTotal = lines
+    .filter((l) => l.name.trim().toLowerCase() !== "medievisning")
+    .reduce((sum, l) => sum + calcLineTotals(l).lineTotal, 0);
+
+  const mediaLineTotals = calcLineTotals({ ...mediaLine, discountPct: 0 });
+  const mediaListPrice = mediaLineTotals.mediaPrice;
+
+  if (mediaListPrice <= 0) return 0;
+
+  const requiredMediaNet = targetNetTotal - nonMediaTotal;
+  const discountPct = (1 - requiredMediaNet / mediaListPrice) * 100;
+  return Math.max(0, Math.min(100, round2(discountPct)));
+}
+
 export function calcTilbudTotals(tilbud: Tilbud): TilbudTotals {
   const linesSubtotal = round2(tilbud.lines.reduce((sum, line) => sum + calcLineTotals(line).lineTotal, 0));
   const fixedCostsTotal = round2(
