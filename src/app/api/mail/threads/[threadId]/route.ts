@@ -8,7 +8,7 @@ import { getPropertyIdForThread } from "@/lib/mail-threads";
 import { logger } from "@/lib/logger";
 
 export async function GET(
-  _request: NextRequest,
+  request: NextRequest,
   { params }: { params: Promise<{ threadId: string }> }
 ) {
   const { threadId } = await params;
@@ -16,7 +16,8 @@ export async function GET(
     return NextResponse.json({ error: "Manglende threadId" }, { status: 400 });
   }
   try {
-    const thread = await getThreadWithMessages(threadId);
+    const accountEmail = request.nextUrl.searchParams.get("account") || undefined;
+    const thread = await getThreadWithMessages(threadId, accountEmail);
     if (!thread) {
       return NextResponse.json({ error: "Tråd ikke fundet" }, { status: 404 });
     }

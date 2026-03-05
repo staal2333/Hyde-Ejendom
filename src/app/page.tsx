@@ -1360,7 +1360,7 @@ function DashboardContent() {
 
   // Single return path only (no early return) to avoid React #310
   return (
-    <div className="min-h-screen w-full flex flex-col relative" style={{ background: "var(--background)" }}>
+    <div className={`w-full flex flex-col relative ${activeTab === "indbakke" ? "h-screen overflow-hidden" : "min-h-screen"}`} style={{ background: "var(--background)" }}>
       {/* Loading overlay when context is still loading */}
       {loading && (
         <div className="absolute inset-0 z-[100] flex items-center justify-center bg-slate-50" style={{ background: "var(--background)" }}>
@@ -1518,7 +1518,7 @@ function DashboardContent() {
         </header>
 
         {/* ─── Main content ─── */}
-        <main className="main-after-top scroll-slim">
+        <main className={`main-after-top scroll-slim ${activeTab === "indbakke" ? "!overflow-hidden !pb-0" : ""}`}>
         {/* Error Banner */}
         {error && (
           <div className="dashboard-container mt-4 p-3.5 bg-red-50 border border-red-200/40 rounded-xl flex items-center gap-3 text-sm animate-fade-in">
@@ -1625,7 +1625,7 @@ function DashboardContent() {
         )}
 
         {/* ─── Page title + sub-tab bar ─── */}
-        {(() => {
+        {activeTab !== "indbakke" && (() => {
           const navTab = getNavTabForActive(activeTab);
           const subTab = navTab.children?.find(c => c.id === activeTab);
           const title = subTab ? subTab.label : navTab.label;
@@ -1669,7 +1669,7 @@ function DashboardContent() {
           );
         })()}
 
-        <div className="dashboard-container py-4 sm:py-6">
+        <div className={`dashboard-container py-4 sm:py-6 ${activeTab === "indbakke" ? "hidden" : ""}`}>
           {/* ═══ DASHBOARD / HOME ═══ */}
           {activeTab === "home" && (
             <>
@@ -1889,9 +1889,14 @@ function DashboardContent() {
           )}
 
           {activeTab === "lead_sourcing" && <LeadSourcingTab />}
-          {activeTab === "indbakke" && <IndbakkeTab />}
           {activeTab === "settings" && <SettingsTab />}
         </div>
+
+        {activeTab === "indbakke" && (
+          <div className="flex-1 min-h-0 overflow-hidden px-3 pb-1">
+            <IndbakkeTab />
+          </div>
+        )}
       </main>
 
       {/* ─── Full Circle Wizard ─── */}

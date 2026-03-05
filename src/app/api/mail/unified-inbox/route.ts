@@ -23,8 +23,13 @@ export interface EnrichedThread {
     name?: string;
     company?: string;
     email?: string;
+    phone?: string;
+    jobtitle?: string;
+    city?: string;
     hubspotUrl?: string;
+    lifecyclestage?: string;
   } | null;
+  lastIsFromUs: boolean;
   priority: "high" | "medium" | "low";
   priorityReason: string;
   propertyAddresses: string[];
@@ -53,7 +58,11 @@ function scorePriority(thread: {
   const snippetLower = (thread.snippet || "").toLowerCase();
   const combined = subjectLower + " " + snippetLower;
 
-  // High priority signals
+  // If WE sent the last message, it's never "svar nu" — we're waiting for them
+  if (thread.hasReply) {
+    return { priority: "low", reason: "Vi har allerede svaret" };
+  }
+
   const highKeywords = ["svar", "reply", "tilbud", "kontrakt", "møde", "meeting", "urgent", "haster", "vigtigt", "tak for", "bekræft", "accept"];
   const isHighKeyword = highKeywords.some(k => combined.includes(k));
   const isRecent = thread.ageHours < 24;
@@ -82,22 +91,23 @@ function scorePriority(thread: {
 
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const maxResults = parseInt(searchParams.get("limit") || "40", 10);
+  const maxResults = Math.min(parseInt(searchParams.get("limit") || "6000", 10), 6000);
+  const folder = (searchParams.get("folder") || "INBOX").toUpperCase() as "INBOX" | "SENT";
 
   try {
     // 1. Fetch raw threads from all accounts
-    const rawThreads = await listInboxThreads(maxResults);
+    const rawThreads = await listInboxThreads(maxResults, folder === "SENT" ? "SENT" : "INBOX");
 
     // 2. Collect unique sender emails to look up in HubSpot
     // We do a bulk fetch of HubSpot contacts and index by email
-    let hubspotByEmail: Map<string, { id: string; name: string; company?: string }> = new Map();
+    let hubspotByEmail: Map<string, { id: string; name: string; company?: string; jobtitle?: string; phone?: string; city?: string; lifecyclestage?: string }> = new Map();
     let propertiesByContactEmail: Map<string, string[]> = new Map();
 
     try {
       const { fetchAllEjendomme } = await import("@/lib/hubspot");
       const [contacts, properties] = await Promise.allSettled([
         // Fetch contacts via search – we'll do a simple full list (up to 100 recent)
-        fetch(`https://api.hubapi.com/crm/v3/objects/contacts?limit=100&properties=email,firstname,lastname,company`, {
+        fetch(`https://api.hubapi.com/crm/v3/objects/contacts?limit=100&properties=email,firstname,lastname,company,jobtitle,phone,city,lifecyclestage`, {
           headers: { Authorization: `Bearer ${config.hubspot.accessToken()}` },
         }).then(r => r.json()).then(d => d.results || []),
         fetchAllEjendomme(200),
@@ -111,6 +121,10 @@ export async function GET(request: Request) {
               id: c.id,
               name: [c.properties?.firstname, c.properties?.lastname].filter(Boolean).join(" ") || email,
               company: c.properties?.company,
+              jobtitle: c.properties?.jobtitle,
+              phone: c.properties?.phone,
+              city: c.properties?.city,
+              lifecyclestage: c.properties?.lifecyclestage,
             });
           }
         }
@@ -135,26 +149,24 @@ export async function GET(request: Request) {
       config.gmailAccounts.map(a => a.email.toLowerCase())
     );
 
-    // 4. Enrich each thread
+    // 4. Enrich each thread (rawThreads now have from, date, isUnread)
     const enriched: EnrichedThread[] = rawThreads.map((t) => {
-      // Parse from field (snippet doesn't have full from, so we use account as fallback)
-      const rawFrom = (t as { from?: string }).from || "";
-      const fromEmail = parseEmail(rawFrom) || "";
-      const fromName = parseName(rawFrom) || fromEmail;
+      const fromEmail = parseEmail(t.from) || "";
+      const fromName = parseName(t.from) || fromEmail;
 
-      // Look up HubSpot contact
       const hsContact = hubspotByEmail.get(fromEmail) || null;
       const propertyAddresses = propertiesByContactEmail.get(fromEmail) || [];
 
-      // Estimate age from snippet (we don't have date without fetching full thread)
-      const ageHours = 48; // conservative default
+      const ageHours = t.date ? Math.max(0, (Date.now() - new Date(t.date).getTime()) / 3600000) : 48;
+
+      const weReplied = t.lastIsFromUs ?? false;
 
       const { priority, reason } = scorePriority({
         subject: t.subject || "",
         snippet: t.snippet || "",
         from: fromEmail,
         isKnownContact: !!hsContact,
-        hasReply: false,
+        hasReply: weReplied,
         ageHours,
       });
 
@@ -165,14 +177,19 @@ export async function GET(request: Request) {
         account: t.account || config.gmailAccounts[0]?.email || "",
         from: fromName || fromEmail,
         fromEmail,
-        date: "",
-        isUnread: false,
+        date: t.date || "",
+        isUnread: t.isUnread ?? false,
+        lastIsFromUs: weReplied,
         contact: hsContact
           ? {
               id: hsContact.id,
               name: hsContact.name,
               company: hsContact.company,
               email: fromEmail,
+              phone: hsContact.phone,
+              jobtitle: hsContact.jobtitle,
+              city: hsContact.city,
+              lifecyclestage: hsContact.lifecyclestage,
               hubspotUrl: `https://app.hubspot.com/contacts/contact/${hsContact.id}`,
             }
           : null,
@@ -182,9 +199,7 @@ export async function GET(request: Request) {
       };
     });
 
-    // 5. Sort: high first, then medium, then low
-    const PRIORITY_ORDER = { high: 0, medium: 1, low: 2 };
-    enriched.sort((a, b) => PRIORITY_ORDER[a.priority] - PRIORITY_ORDER[b.priority]);
+    // 5. Already sorted by date (newest first) from listInboxThreads
 
     // 6. Compute summary stats
     const stats = {

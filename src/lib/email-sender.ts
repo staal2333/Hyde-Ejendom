@@ -335,6 +335,15 @@ async function _sendEmailOnce(opts: SendEmailOptions): Promise<SendEmailResult> 
 
 // ── Inbox & threads ─────────────────────────────────────────
 
+export interface MsgAttachment {
+  filename: string;
+  mimeType: string;
+  size: number;
+  attachmentId: string;
+  messageId: string;
+  contentId?: string;
+}
+
 export interface ThreadMessage {
   id: string;
   from: string;
@@ -342,10 +351,12 @@ export interface ThreadMessage {
   subject: string;
   date: string;
   bodyPlain: string;
+  bodyHtml: string;
   snippet: string;
-  messageId?: string; // RFC Message-ID header
+  messageId?: string;
   inReplyTo?: string;
   references?: string;
+  attachments: MsgAttachment[];
 }
 
 export interface MailThread {
@@ -354,40 +365,129 @@ export interface MailThread {
   messages: ThreadMessage[];
 }
 
-/** List inbox threads from all configured accounts. */
-export async function listInboxThreads(maxResults = 50): Promise<{ id: string; subject?: string; snippet?: string; account?: string }[]> {
+export interface InboxThread {
+  id: string;
+  subject: string;
+  snippet: string;
+  from: string;
+  date: string;
+  isUnread: boolean;
+  lastIsFromUs: boolean;
+  isOutboundOnly: boolean;
+  account: string;
+}
+
+async function _fetchThreadMeta(gmail: GmailApi, threadId: string, accountEmail: string): Promise<{
+  subject: string; snippet: string; from: string; date: string; isUnread: boolean; lastIsFromUs: boolean; isOutboundOnly: boolean;
+} | null> {
+  try {
+    const res = await gmail.users.threads.get({
+      userId: "me", id: threadId, format: "metadata",
+      metadataHeaders: ["From", "Subject", "Date"],
+    });
+    const thread = res.data;
+    if (!thread?.messages?.length) return null;
+
+    const lastMsg = thread.messages[thread.messages.length - 1];
+    const lastHeaders = (lastMsg.payload?.headers || []).reduce(
+      (acc: Record<string, string>, h) => { if (h.name && h.value) acc[h.name.toLowerCase()] = h.value; return acc; }, {}
+    );
+    const labels = lastMsg.labelIds || [];
+
+    // Find the "other party" — first message NOT sent by us
+    const acLocal = accountEmail.split("@")[0].toLowerCase();
+    let contactFrom = "";
+    for (const msg of thread.messages) {
+      const fromH = (msg.payload?.headers || []).find(h => h.name?.toLowerCase() === "from")?.value || "";
+      if (fromH && !fromH.toLowerCase().includes(acLocal)) {
+        contactFrom = fromH;
+        break;
+      }
+    }
+
+    const lastFrom = (lastHeaders.from || "").toLowerCase();
+    const lastIsFromUs = !!acLocal && lastFrom.includes(acLocal);
+
+    const isOutboundOnly = !contactFrom;
+
+    return {
+      subject: lastHeaders.subject || thread.messages[0].payload?.headers?.find(h => h.name?.toLowerCase() === "subject")?.value || "",
+      snippet: lastMsg.snippet || "",
+      from: contactFrom || lastHeaders.from || "",
+      date: lastHeaders.date || "",
+      isUnread: labels.includes("UNREAD"),
+      lastIsFromUs,
+      isOutboundOnly,
+    };
+  } catch { return null; }
+}
+
+/** List threads from all configured accounts with full metadata.
+ *  @param label – "INBOX" (default) or "SENT"
+ */
+export async function listInboxThreads(maxResults = 6000, label: "INBOX" | "SENT" = "INBOX"): Promise<InboxThread[]> {
   const accounts = getConfiguredAccounts();
+
+  async function fetchAccount(gmail: GmailApi, accountEmail: string, limit: number): Promise<InboxThread[]> {
+    const threadIds: string[] = [];
+    let pageToken: string | undefined;
+
+    while (threadIds.length < limit) {
+      const batch = Math.min(100, limit - threadIds.length);
+      const res = await gmail.users.threads.list({
+        userId: "me", labelIds: [label], maxResults: batch,
+        ...(pageToken ? { pageToken } : {}),
+      });
+      for (const t of res.data.threads || []) {
+        if (t.id) threadIds.push(t.id);
+      }
+      pageToken = res.data.nextPageToken ?? undefined;
+      if (!pageToken) break;
+    }
+
+    const results: InboxThread[] = [];
+    for (let start = 0; start < threadIds.length; start += 25) {
+      const chunk = threadIds.slice(start, start + 25);
+      const metas = await Promise.all(chunk.map(id => _fetchThreadMeta(gmail, id, accountEmail)));
+      for (let i = 0; i < chunk.length; i++) {
+        const m = metas[i];
+        if (m) results.push({ id: chunk[i], account: accountEmail, ...m });
+      }
+    }
+
+    if (label === "SENT") {
+      return results;
+    }
+
+    // For inbox: filter out outbound-only threads (no incoming messages)
+    return results.filter(t => !t.isOutboundOnly);
+  }
 
   if (accounts.length === 0) {
     const gmail = getGmailClient();
-    const res = await gmail.users.threads.list({ userId: "me", labelIds: ["INBOX"], maxResults });
-    return (res.data.threads || []).map((t) => ({
-      id: t.id!,
-      subject: (t as { snippet?: string }).snippet,
-      snippet: (t as { snippet?: string }).snippet,
-    }));
+    return fetchAccount(gmail, "", maxResults);
   }
 
   const perAccount = Math.max(10, Math.ceil(maxResults / accounts.length));
-  const all: { id: string; subject?: string; snippet?: string; account?: string }[] = [];
+  const all: InboxThread[] = [];
 
   await Promise.allSettled(
     accounts.map(async (acc) => {
       try {
-        const res = await acc.client.users.threads.list({ userId: "me", labelIds: ["INBOX"], maxResults: perAccount });
-        for (const t of res.data.threads || []) {
-          all.push({
-            id: t.id!,
-            subject: (t as { snippet?: string }).snippet,
-            snippet: (t as { snippet?: string }).snippet,
-            account: acc.email,
-          });
-        }
+        const threads = await fetchAccount(acc.client, acc.email, perAccount);
+        all.push(...threads);
       } catch (e) {
         logger.warn(`[gmail] Inbox fetch failed for ${acc.email}: ${e instanceof Error ? e.message : String(e)}`);
       }
     })
   );
+
+  // Sort newest first
+  all.sort((a, b) => {
+    const da = new Date(a.date).getTime() || 0;
+    const db = new Date(b.date).getTime() || 0;
+    return db - da;
+  });
 
   return all.slice(0, maxResults);
 }
@@ -445,6 +545,77 @@ export async function getThreadWithMessages(threadId: string, accountEmail?: str
   return _getThreadFromClient(gmail, threadId);
 }
 
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function _walkParts(parts: any[], msgId: string): { bodyPlain: string; bodyHtml: string; attachments: MsgAttachment[] } {
+  let bodyPlain = "";
+  let bodyHtml = "";
+  const attachments: MsgAttachment[] = [];
+
+  for (const part of parts) {
+    const mime: string = part.mimeType || "";
+    const contentId = (part.headers || []).find((h: { name: string }) => h.name?.toLowerCase() === "content-id")?.value?.replace(/[<>]/g, "");
+
+    if (mime === "text/plain" && part.body?.data && !bodyPlain) {
+      bodyPlain = Buffer.from(part.body.data, "base64").toString("utf-8");
+    } else if (mime === "text/html" && part.body?.data && !bodyHtml) {
+      bodyHtml = Buffer.from(part.body.data, "base64").toString("utf-8");
+    } else if (part.body?.attachmentId && part.filename) {
+      attachments.push({
+        filename: part.filename,
+        mimeType: mime,
+        size: part.body.size || 0,
+        attachmentId: part.body.attachmentId,
+        messageId: msgId,
+        contentId: contentId || undefined,
+      });
+    } else if (part.body?.attachmentId && contentId && mime.startsWith("image/")) {
+      attachments.push({
+        filename: part.filename || contentId,
+        mimeType: mime,
+        size: part.body.size || 0,
+        attachmentId: part.body.attachmentId,
+        messageId: msgId,
+        contentId,
+      });
+    }
+
+    if (part.parts?.length) {
+      const nested = _walkParts(part.parts, msgId);
+      if (!bodyPlain && nested.bodyPlain) bodyPlain = nested.bodyPlain;
+      if (!bodyHtml && nested.bodyHtml) bodyHtml = nested.bodyHtml;
+      attachments.push(...nested.attachments);
+    }
+  }
+  return { bodyPlain, bodyHtml, attachments };
+}
+
+async function _resolveInlineImages(gmail: GmailApi, messageId: string, html: string, attachments: MsgAttachment[]): Promise<string> {
+  const inlineParts = attachments.filter(a => a.contentId && a.mimeType.startsWith("image/"));
+  if (!inlineParts.length || !html) return html;
+
+  const resolved = await Promise.all(
+    inlineParts.map(async (att) => {
+      try {
+        const res = await gmail.users.messages.attachments.get({
+          userId: "me", messageId, id: att.attachmentId,
+        });
+        const b64 = (res.data.data || "").replace(/-/g, "+").replace(/_/g, "/");
+        return { cid: att.contentId!, dataUrl: `data:${att.mimeType};base64,${b64}` };
+      } catch {
+        return null;
+      }
+    })
+  );
+
+  let result = html;
+  for (const r of resolved) {
+    if (r) {
+      result = result.replace(new RegExp(`cid:${r.cid.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "gi"), r.dataUrl);
+    }
+  }
+  return result;
+}
+
 async function _getThreadFromClient(gmail: GmailApi, threadId: string): Promise<MailThread | null> {
   const res = await gmail.users.threads.get({
     userId: "me",
@@ -464,17 +635,28 @@ async function _getThreadFromClient(gmail: GmailApi, threadId: string): Promise<
       },
       {}
     );
+
     let bodyPlain = "";
+    let bodyHtml = "";
+    let attachments: MsgAttachment[] = [];
+
     if (payload.body?.data) {
       bodyPlain = Buffer.from(payload.body.data, "base64").toString("utf-8");
-    } else if (payload.parts?.length) {
-      const textPart = payload.parts.find(
-        (p) => p.mimeType === "text/plain" && p.body?.data
-      );
-      if (textPart?.body?.data) {
-        bodyPlain = Buffer.from(textPart.body.data, "base64").toString("utf-8");
-      }
     }
+
+    if (payload.parts?.length) {
+      const walked = _walkParts(payload.parts, msg.id!);
+      if (!bodyPlain && walked.bodyPlain) bodyPlain = walked.bodyPlain;
+      if (!bodyHtml && walked.bodyHtml) bodyHtml = walked.bodyHtml;
+      attachments = walked.attachments;
+    }
+
+    if (bodyHtml && attachments.some(a => a.contentId)) {
+      bodyHtml = await _resolveInlineImages(gmail, msg.id!, bodyHtml, attachments);
+    }
+
+    const visibleAttachments = attachments.filter(a => !a.contentId);
+
     messages.push({
       id: msg.id!,
       from: headers.from || "",
@@ -482,14 +664,36 @@ async function _getThreadFromClient(gmail: GmailApi, threadId: string): Promise<
       subject: headers.subject || "",
       date: headers.date || "",
       bodyPlain,
+      bodyHtml,
       snippet: msg.snippet || "",
       messageId: headers["message-id"],
       inReplyTo: headers["in-reply-to"],
       references: headers.references,
+      attachments: visibleAttachments,
     });
   }
   const firstSubject = messages[0]?.subject || "";
   return { id: threadId, subject: firstSubject, messages };
+}
+
+/** Fetch raw attachment data (returns base64 string). */
+export async function getAttachmentData(
+  messageId: string,
+  attachmentId: string,
+  accountEmail?: string
+): Promise<{ data: string; size: number } | null> {
+  const gmail = accountEmail ? getGmailClientForAccount(accountEmail) : getGmailClient();
+  try {
+    const res = await gmail.users.messages.attachments.get({
+      userId: "me",
+      messageId,
+      id: attachmentId,
+    });
+    const b64 = (res.data.data || "").replace(/-/g, "+").replace(/_/g, "/");
+    return { data: b64, size: res.data.size || 0 };
+  } catch {
+    return null;
+  }
 }
 
 /**
