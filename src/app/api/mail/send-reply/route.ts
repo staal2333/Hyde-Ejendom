@@ -7,10 +7,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { sendReply } from "@/lib/email-sender";
 import { logger } from "@/lib/logger";
 
+export const maxDuration = 30;
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();
-    const { threadId, to, subject, body: emailBody, propertyId, contactName } = body;
+    const { threadId, to, subject, body: emailBody, propertyId, contactName, fromAccount } = body;
 
     if (!threadId || !to || !subject || emailBody == null || !propertyId) {
       return NextResponse.json(
@@ -26,6 +28,7 @@ export async function POST(request: NextRequest) {
       body: String(emailBody),
       propertyId,
       contactName: contactName ? String(contactName) : undefined,
+      fromAccount: fromAccount ? String(fromAccount) : undefined,
     });
 
     if (!result.success) {
