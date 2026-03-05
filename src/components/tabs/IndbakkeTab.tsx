@@ -3,17 +3,25 @@
 import { useState, useEffect, useCallback } from "react";
 import type { EnrichedThread } from "@/app/api/mail/unified-inbox/route";
 
-const ACCOUNT_COLORS: Record<string, string> = {
-  "sebastian.staal@hydemedia.dk": "bg-blue-100 text-blue-700",
-  "ma@hydemedia.dk": "bg-purple-100 text-purple-700",
-  "louis.lerche@hydemedia.dk": "bg-emerald-100 text-emerald-700",
-};
+const PALETTE = [
+  "bg-blue-100 text-blue-700",
+  "bg-purple-100 text-purple-700",
+  "bg-emerald-100 text-emerald-700",
+  "bg-orange-100 text-orange-700",
+  "bg-pink-100 text-pink-700",
+];
 
-const ACCOUNT_INITIALS: Record<string, string> = {
-  "sebastian.staal@hydemedia.dk": "SS",
-  "ma@hydemedia.dk": "MA",
-  "louis.lerche@hydemedia.dk": "LL",
-};
+function getAccountColor(email: string, allEmails: string[]): string {
+  const idx = allEmails.indexOf(email);
+  return PALETTE[idx % PALETTE.length] || "bg-gray-100 text-gray-600";
+}
+
+function getInitials(nameOrEmail: string): string {
+  const clean = nameOrEmail.split("@")[0].replace(/[._-]/g, " ").trim();
+  const parts = clean.split(" ").filter(Boolean);
+  if (parts.length >= 2) return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+  return clean.slice(0, 2).toUpperCase();
+}
 
 function priorityBadge(p: "high" | "medium" | "low") {
   if (p === "high") return "bg-red-100 text-red-700 border border-red-200";
@@ -47,6 +55,8 @@ export function IndbakkeTab() {
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [accountFilter, setAccountFilter] = useState<AccountFilter>("all");
   const [searchQuery, setSearchQuery] = useState("");
+  // Dynamic list of account emails (from API response)
+  const allAccountEmails = stats?.accounts.map(a => a.email) ?? [];
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [replyText, setReplyText] = useState("");
   const [replying, setReplying] = useState(false);
@@ -168,8 +178,8 @@ export function IndbakkeTab() {
         <div className="flex gap-2 flex-wrap">
           {stats.accounts.map((acc) => (
             <div key={acc.email} className="flex items-center gap-2 px-3 py-1.5 bg-white border border-gray-100 rounded-lg text-sm">
-              <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center ${ACCOUNT_COLORS[acc.email] || "bg-gray-100 text-gray-600"}`}>
-                {ACCOUNT_INITIALS[acc.email] || acc.email[0].toUpperCase()}
+              <span className={`w-5 h-5 rounded-full text-[10px] font-bold flex items-center justify-center ${getAccountColor(acc.email, allAccountEmails)}`}>
+                {getInitials(acc.name || acc.email)}
               </span>
               <span className="text-gray-600">{acc.name || acc.email}</span>
               <span className="font-semibold text-gray-900">{acc.count}</span>
@@ -209,16 +219,18 @@ export function IndbakkeTab() {
           ))}
         </div>
 
-        {/* Account filter */}
+        {/* Account filter — dynamic from API */}
         <select
           value={accountFilter}
           onChange={e => setAccountFilter(e.target.value)}
           className="px-3 py-2 text-sm bg-white border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20"
         >
           <option value="all">Alle konti</option>
-          <option value="sebastian.staal@hydemedia.dk">Sebastian</option>
-          <option value="ma@hydemedia.dk">Ma</option>
-          <option value="louis.lerche@hydemedia.dk">Louis</option>
+          {(stats?.accounts ?? []).map((acc) => (
+            <option key={acc.email} value={acc.email}>
+              {acc.name ? acc.name.split("–")[0].trim() : acc.email.split("@")[0]}
+            </option>
+          ))}
         </select>
       </div>
 
@@ -247,8 +259,10 @@ export function IndbakkeTab() {
           )}
           {filtered.map((thread) => {
             const isExpanded = expandedId === thread.id;
-            const accentColor = ACCOUNT_COLORS[thread.account] || "bg-gray-100 text-gray-600";
-            const initials = ACCOUNT_INITIALS[thread.account] || "?";
+            const accentColor = getAccountColor(thread.account, allAccountEmails);
+            const initials = getInitials(
+              stats?.accounts.find(a => a.email === thread.account)?.name || thread.account
+            );
 
             return (
               <div
