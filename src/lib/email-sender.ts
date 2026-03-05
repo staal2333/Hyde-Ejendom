@@ -308,7 +308,7 @@ async function _sendEmailOnce(opts: SendEmailOptions): Promise<SendEmailResult> 
     messageParts.push("", `--${mixedBoundary}--`);
   }
 
-  const rawMessage = messageParts.filter(Boolean).join("\r\n");
+  const rawMessage = messageParts.join("\r\n");
 
   const encodedMessage = Buffer.from(rawMessage)
     .toString("base64")
@@ -782,7 +782,7 @@ export async function sendReply(opts: SendReplyOptions): Promise<SendEmailResult
     `--${altBoundary}--`,
   ];
 
-  const rawMessage = messageParts.filter(Boolean).join("\r\n");
+  const rawMessage = messageParts.join("\r\n");
   const encodedMessage = Buffer.from(rawMessage)
     .toString("base64")
     .replace(/\+/g, "-")
