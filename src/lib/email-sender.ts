@@ -395,18 +395,23 @@ async function _fetchThreadMeta(gmail: GmailApi, threadId: string, accountEmail:
     const labels = lastMsg.labelIds || [];
 
     // Find the "other party" — first message NOT sent by us
-    const acLocal = accountEmail.split("@")[0].toLowerCase();
+    const acEmail = accountEmail.toLowerCase().trim();
+    const isFromUs = (fromHeader: string) => {
+      const emailMatch = fromHeader.match(/<([^>]+)>/);
+      const email = (emailMatch ? emailMatch[1] : fromHeader).toLowerCase().trim();
+      return email === acEmail || email.endsWith(`<${acEmail}>`);
+    };
+
     let contactFrom = "";
     for (const msg of thread.messages) {
       const fromH = (msg.payload?.headers || []).find(h => h.name?.toLowerCase() === "from")?.value || "";
-      if (fromH && !fromH.toLowerCase().includes(acLocal)) {
+      if (fromH && !isFromUs(fromH)) {
         contactFrom = fromH;
         break;
       }
     }
 
-    const lastFrom = (lastHeaders.from || "").toLowerCase();
-    const lastIsFromUs = !!acLocal && lastFrom.includes(acLocal);
+    const lastIsFromUs = isFromUs(lastHeaders.from || "");
 
     const isOutboundOnly = !contactFrom;
 
