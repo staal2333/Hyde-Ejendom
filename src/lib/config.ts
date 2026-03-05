@@ -3,7 +3,7 @@
 // ============================================================
 
 function requireEnv(key: string): string {
-  const value = process.env[key];
+  const value = process.env[key]?.trim().replace(/\r?\n/g, "");
   if (!value) {
     throw new Error(`Missing required environment variable: ${key}`);
   }
@@ -11,7 +11,8 @@ function requireEnv(key: string): string {
 }
 
 function optionalEnv(key: string, fallback: string): string {
-  return process.env[key] || fallback;
+  const val = process.env[key]?.trim().replace(/\r?\n/g, "");
+  return val || fallback;
 }
 
 export const config = {
