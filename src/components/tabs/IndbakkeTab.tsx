@@ -124,7 +124,7 @@ export function IndbakkeTab() {
   const fetchInbox = useCallback(async () => {
     setLoading(true); setError(null);
     try {
-      const r = await fetch("/api/mail/unified-inbox?limit=6000");
+      const r = await fetch("/api/mail/unified-inbox?limit=300");
       if (!r.ok) throw new Error((await r.json()).error || "Fejl");
       const d = await r.json();
       setThreads(d.threads || []); setStats(d.stats || null);

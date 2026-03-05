@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getAttachmentData } from "@/lib/email-sender";
 
+export const maxDuration = 30;
+
 export async function GET(request: NextRequest) {
   const { searchParams } = request.nextUrl;
   const messageId = searchParams.get("messageId");

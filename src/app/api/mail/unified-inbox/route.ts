@@ -89,9 +89,11 @@ function scorePriority(thread: {
   return { priority: "low", reason: "Ingen umiddelbare prioriteringssignaler" };
 }
 
+export const maxDuration = 60;
+
 export async function GET(request: Request) {
   const { searchParams } = new URL(request.url);
-  const maxResults = Math.min(parseInt(searchParams.get("limit") || "6000", 10), 6000);
+  const maxResults = Math.min(parseInt(searchParams.get("limit") || "300", 10), 6000);
   const folder = (searchParams.get("folder") || "INBOX").toUpperCase() as "INBOX" | "SENT";
 
   try {

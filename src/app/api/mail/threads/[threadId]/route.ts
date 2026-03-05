@@ -7,6 +7,8 @@ import { getThreadWithMessages } from "@/lib/email-sender";
 import { getPropertyIdForThread } from "@/lib/mail-threads";
 import { logger } from "@/lib/logger";
 
+export const maxDuration = 30;
+
 export async function GET(
   request: NextRequest,
   { params }: { params: Promise<{ threadId: string }> }

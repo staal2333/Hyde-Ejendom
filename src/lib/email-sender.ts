@@ -425,7 +425,7 @@ async function _fetchThreadMeta(gmail: GmailApi, threadId: string, accountEmail:
 /** List threads from all configured accounts with full metadata.
  *  @param label – "INBOX" (default) or "SENT"
  */
-export async function listInboxThreads(maxResults = 6000, label: "INBOX" | "SENT" = "INBOX"): Promise<InboxThread[]> {
+export async function listInboxThreads(maxResults = 300, label: "INBOX" | "SENT" = "INBOX"): Promise<InboxThread[]> {
   const accounts = getConfiguredAccounts();
 
   async function fetchAccount(gmail: GmailApi, accountEmail: string, limit: number): Promise<InboxThread[]> {
