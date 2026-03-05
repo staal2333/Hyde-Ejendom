@@ -470,6 +470,7 @@ export async function listInboxThreads(maxResults = 300, label: "INBOX" | "SENT"
 
   const perAccount = Math.max(10, Math.ceil(maxResults / accounts.length));
   const all: InboxThread[] = [];
+  const errors: string[] = [];
 
   await Promise.allSettled(
     accounts.map(async (acc) => {
@@ -477,10 +478,16 @@ export async function listInboxThreads(maxResults = 300, label: "INBOX" | "SENT"
         const threads = await fetchAccount(acc.client, acc.email, perAccount);
         all.push(...threads);
       } catch (e) {
-        logger.warn(`[gmail] Inbox fetch failed for ${acc.email}: ${e instanceof Error ? e.message : String(e)}`);
+        const msg = `${acc.email}: ${e instanceof Error ? e.message : String(e)}`;
+        logger.warn(`[gmail] Inbox fetch failed — ${msg}`);
+        errors.push(msg);
       }
     })
   );
+
+  if (all.length === 0 && errors.length > 0) {
+    throw new Error(`Gmail fetch failed for all accounts: ${errors.join("; ")}`);
+  }
 
   // Sort newest first
   all.sort((a, b) => {

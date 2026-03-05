@@ -217,11 +217,23 @@ export async function GET(request: Request) {
       })),
     };
 
-    return NextResponse.json({ threads: enriched, stats });
+    const debug = {
+      configuredAccounts: config.gmailAccounts.map(a => a.email).filter(Boolean).length,
+      hasClientId: !!config.gmail.clientId(),
+      hasClientSecret: !!config.gmail.clientSecret(),
+      rawThreadCount: rawThreads.length,
+    };
+    return NextResponse.json({ threads: enriched, stats, debug });
   } catch (error) {
-    logger.error(`[unified-inbox] Failed: ${error instanceof Error ? error.message : String(error)}`);
+    const msg = error instanceof Error ? error.message : String(error);
+    logger.error(`[unified-inbox] Failed: ${msg}`);
+    const debug = {
+      configuredAccounts: config.gmailAccounts.map(a => a.email).filter(Boolean).length,
+      hasClientId: !!config.gmail.clientId(),
+      hasClientSecret: !!config.gmail.clientSecret(),
+    };
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Kunne ikke hente indbakke" },
+      { error: msg, debug },
       { status: 500 }
     );
   }
