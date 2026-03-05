@@ -58,14 +58,36 @@ Korte sætninger, konkret værdi, ingen buzzwords.`
   // Research safe mode: when true, research runs but does NOT update HubSpot.
   researchSafeMode: optionalEnv("RESEARCH_SAFE_MODE", "false") === "true",
 
-  // Gmail API (OAuth2) – for sending outreach emails (property flow)
+  // Gmail API (OAuth2) – shared OAuth app, per-account refresh tokens
   gmail: {
     clientId: () => optionalEnv("GMAIL_CLIENT_ID", ""),
     clientSecret: () => optionalEnv("GMAIL_CLIENT_SECRET", ""),
     refreshToken: () => optionalEnv("GMAIL_REFRESH_TOKEN", ""),
-    fromEmail: optionalEnv("GMAIL_FROM_EMAIL", "mads.ejendomme@hydemedia.dk"),
-    fromName: optionalEnv("GMAIL_FROM_NAME", "Mads – Hyde Media"),
+    fromEmail: optionalEnv("GMAIL_FROM_EMAIL", "sebastian.staal@hydemedia.dk"),
+    fromName: optionalEnv("GMAIL_FROM_NAME", "Sebastian – Hyde Media"),
   },
+
+  // Multi-account Gmail (all share GMAIL_CLIENT_ID + GMAIL_CLIENT_SECRET)
+  gmailAccounts: (() => {
+    const accounts: { email: string; name: string; refreshToken: () => string }[] = [];
+
+    const e1 = optionalEnv("GMAIL_1_EMAIL", optionalEnv("GMAIL_FROM_EMAIL", ""));
+    const n1 = optionalEnv("GMAIL_1_NAME", optionalEnv("GMAIL_FROM_NAME", ""));
+    const r1 = () => optionalEnv("GMAIL_1_REFRESH_TOKEN", optionalEnv("GMAIL_REFRESH_TOKEN", ""));
+    if (e1) accounts.push({ email: e1, name: n1, refreshToken: r1 });
+
+    const e2 = optionalEnv("GMAIL_2_EMAIL", "");
+    const n2 = optionalEnv("GMAIL_2_NAME", "");
+    const r2 = () => optionalEnv("GMAIL_2_REFRESH_TOKEN", "");
+    if (e2) accounts.push({ email: e2, name: n2, refreshToken: r2 });
+
+    const e3 = optionalEnv("GMAIL_3_EMAIL", "");
+    const n3 = optionalEnv("GMAIL_3_NAME", "");
+    const r3 = () => optionalEnv("GMAIL_3_REFRESH_TOKEN", "");
+    if (e3) accounts.push({ email: e3, name: n3, refreshToken: r3 });
+
+    return accounts;
+  })(),
 
   // Gmail SMTP (App Password) – simpler setup for lead outreach
   smtp: {

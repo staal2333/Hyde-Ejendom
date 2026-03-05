@@ -1,6 +1,6 @@
 // ============================================================
-// Email Sender – Gmail API with OAuth2
-// Sends outreach emails from mads.ejendomme@hydemedia.dk
+// Email Sender – Gmail API with OAuth2 (multi-account)
+// Supports multiple Gmail accounts via shared OAuth app
 // Includes: click tracking link wrapping, rate limiting, retries
 // ============================================================
 
@@ -15,13 +15,12 @@ let _rateBucketLastReset = Date.now();
 function checkRateLimit(): boolean {
   const now = Date.now();
   const hourMs = 60 * 60 * 1000;
-  // Reset bucket every hour
   if (now - _rateBucketLastReset > hourMs) {
     _rateBucketTokens = 0;
     _rateBucketLastReset = now;
   }
   if (_rateBucketTokens >= config.emailRateLimitPerHour) {
-    return false; // Rate limit exceeded
+    return false;
   }
   _rateBucketTokens++;
   return true;
@@ -56,35 +55,73 @@ export function wrapLinksWithTracking(
   );
 }
 
-// Lazy singleton for Gmail client
-let _gmail: ReturnType<typeof google.gmail> | null = null;
+// ── Multi-account Gmail client pool ─────────────────────────
+type GmailApi = ReturnType<typeof google.gmail>;
 
-function getGmailClient() {
-  if (!_gmail) {
-    const clientId = config.gmail.clientId();
-    const clientSecret = config.gmail.clientSecret();
-    const refreshToken = config.gmail.refreshToken();
+export interface GmailAccount {
+  email: string;
+  name: string;
+  client: GmailApi;
+}
 
-    if (!clientId || !clientSecret || !refreshToken) {
-      throw new Error(
-        "Gmail API not configured. Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and GMAIL_REFRESH_TOKEN."
-      );
-    }
+const _gmailClients = new Map<string, GmailApi>();
 
-    const oauth2Client = new google.auth.OAuth2(
-      clientId,
-      clientSecret,
-      "https://developers.google.com/oauthplayground" // redirect URI
+function buildGmailClient(refreshToken: string): GmailApi {
+  const clientId = config.gmail.clientId();
+  const clientSecret = config.gmail.clientSecret();
+
+  if (!clientId || !clientSecret || !refreshToken) {
+    throw new Error(
+      "Gmail API not configured. Set GMAIL_CLIENT_ID, GMAIL_CLIENT_SECRET, and refresh tokens."
     );
-
-    oauth2Client.setCredentials({
-      refresh_token: refreshToken,
-    });
-
-    _gmail = google.gmail({ version: "v1", auth: oauth2Client });
   }
 
-  return _gmail;
+  const oauth2Client = new google.auth.OAuth2(
+    clientId,
+    clientSecret,
+    "https://developers.google.com/oauthplayground"
+  );
+  oauth2Client.setCredentials({ refresh_token: refreshToken });
+  return google.gmail({ version: "v1", auth: oauth2Client });
+}
+
+/** Get the primary (first configured) Gmail client — backward compatible. */
+function getGmailClient(): GmailApi {
+  const key = "__primary__";
+  if (!_gmailClients.has(key)) {
+    const refreshToken = config.gmail.refreshToken();
+    _gmailClients.set(key, buildGmailClient(refreshToken));
+  }
+  return _gmailClients.get(key)!;
+}
+
+/** Get a Gmail client for a specific account email. */
+function getGmailClientForAccount(accountEmail: string): GmailApi {
+  if (_gmailClients.has(accountEmail)) return _gmailClients.get(accountEmail)!;
+
+  const account = config.gmailAccounts.find(
+    (a) => a.email.toLowerCase() === accountEmail.toLowerCase()
+  );
+  if (!account) {
+    throw new Error(`No Gmail account configured for ${accountEmail}`);
+  }
+  const token = account.refreshToken();
+  if (!token) throw new Error(`No refresh token for ${accountEmail}`);
+
+  const client = buildGmailClient(token);
+  _gmailClients.set(accountEmail, client);
+  return client;
+}
+
+/** Get all configured Gmail accounts with their clients. */
+export function getConfiguredAccounts(): GmailAccount[] {
+  return config.gmailAccounts
+    .filter((a) => a.email && a.refreshToken())
+    .map((a) => ({
+      email: a.email,
+      name: a.name,
+      client: getGmailClientForAccount(a.email),
+    }));
 }
 
 export interface EmailAttachment {
@@ -97,17 +134,16 @@ export interface EmailAttachment {
 export interface SendEmailOptions {
   to: string;
   subject: string;
-  body: string; // Plain text body (will also be sent as simple HTML)
+  body: string;
   replyTo?: string;
   propertyId: string;
   contactName?: string;
   attachments?: EmailAttachment[];
-  /** Optional tracking pixel URL (appended to HTML body) */
   trackingPixelUrl?: string;
-  /** Send ID for click tracking – wraps all links in the HTML body */
   sendId?: string;
-  /** Base URL for tracking endpoints (e.g. https://ejendom-ai.vercel.app) */
   trackingBaseUrl?: string;
+  /** Send from a specific account (email address). Uses primary if omitted. */
+  fromAccount?: string;
 }
 
 export interface SendEmailResult {
@@ -171,10 +207,16 @@ export async function sendEmail(opts: SendEmailOptions): Promise<SendEmailResult
 
 /** Internal: single attempt to send an email */
 async function _sendEmailOnce(opts: SendEmailOptions): Promise<SendEmailResult> {
-  const gmail = getGmailClient();
+  const gmail = opts.fromAccount
+    ? getGmailClientForAccount(opts.fromAccount)
+    : getGmailClient();
 
-  const fromName = config.gmail.fromName;
-  const fromEmail = config.gmail.fromEmail;
+  const account = opts.fromAccount
+    ? config.gmailAccounts.find((a) => a.email.toLowerCase() === opts.fromAccount!.toLowerCase())
+    : null;
+
+  const fromName = account?.name || config.gmail.fromName;
+  const fromEmail = account?.email || config.gmail.fromEmail;
 
   // Ensure body is always a string (plain text and HTML both need it)
   const bodyText = typeof opts.body === "string" && opts.body.trim() ? opts.body : opts.body || "";
@@ -312,25 +354,77 @@ export interface MailThread {
   messages: ThreadMessage[];
 }
 
-/** List inbox threads (e.g. for reply workflow). */
-export async function listInboxThreads(maxResults = 50): Promise<{ id: string; subject?: string; snippet?: string }[]> {
-  const gmail = getGmailClient();
-  const res = await gmail.users.threads.list({
-    userId: "me",
-    labelIds: ["INBOX"],
-    maxResults,
-  });
-  const threads = res.data.threads || [];
-  return threads.map((t) => ({
-    id: t.id!,
-    subject: (t as { snippet?: string }).snippet,
-    snippet: (t as { snippet?: string }).snippet,
-  }));
+/** List inbox threads from all configured accounts. */
+export async function listInboxThreads(maxResults = 50): Promise<{ id: string; subject?: string; snippet?: string; account?: string }[]> {
+  const accounts = getConfiguredAccounts();
+
+  if (accounts.length === 0) {
+    const gmail = getGmailClient();
+    const res = await gmail.users.threads.list({ userId: "me", labelIds: ["INBOX"], maxResults });
+    return (res.data.threads || []).map((t) => ({
+      id: t.id!,
+      subject: (t as { snippet?: string }).snippet,
+      snippet: (t as { snippet?: string }).snippet,
+    }));
+  }
+
+  const perAccount = Math.max(10, Math.ceil(maxResults / accounts.length));
+  const all: { id: string; subject?: string; snippet?: string; account?: string }[] = [];
+
+  await Promise.allSettled(
+    accounts.map(async (acc) => {
+      try {
+        const res = await acc.client.users.threads.list({ userId: "me", labelIds: ["INBOX"], maxResults: perAccount });
+        for (const t of res.data.threads || []) {
+          all.push({
+            id: t.id!,
+            subject: (t as { snippet?: string }).snippet,
+            snippet: (t as { snippet?: string }).snippet,
+            account: acc.email,
+          });
+        }
+      } catch (e) {
+        logger.warn(`[gmail] Inbox fetch failed for ${acc.email}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    })
+  );
+
+  return all.slice(0, maxResults);
 }
 
-/** Search Gmail threads by email address (to/from). */
+/** Search Gmail threads by email address across all configured accounts. */
 export async function searchThreadsByEmail(email: string, maxResults = 15): Promise<MailThread[]> {
-  const gmail = getGmailClient();
+  const accounts = getConfiguredAccounts();
+
+  if (accounts.length === 0) {
+    return _searchThreadsSingleAccount(getGmailClient(), email, maxResults);
+  }
+
+  const perAccount = Math.max(5, Math.ceil(maxResults / accounts.length));
+  const all: MailThread[] = [];
+  const seenSubjects = new Set<string>();
+
+  await Promise.allSettled(
+    accounts.map(async (acc) => {
+      try {
+        const threads = await _searchThreadsSingleAccount(acc.client, email, perAccount);
+        for (const t of threads) {
+          const key = `${t.subject}__${t.messages[0]?.date || ""}`;
+          if (!seenSubjects.has(key)) {
+            seenSubjects.add(key);
+            all.push({ ...t, account: acc.email } as MailThread & { account: string });
+          }
+        }
+      } catch (e) {
+        logger.warn(`[gmail] Thread search failed for ${acc.email}: ${e instanceof Error ? e.message : String(e)}`);
+      }
+    })
+  );
+
+  return all.slice(0, maxResults);
+}
+
+async function _searchThreadsSingleAccount(gmail: GmailApi, email: string, maxResults: number): Promise<MailThread[]> {
   const res = await gmail.users.threads.list({
     userId: "me",
     q: `to:${email} OR from:${email}`,
@@ -339,15 +433,19 @@ export async function searchThreadsByEmail(email: string, maxResults = 15): Prom
   const threadIds = (res.data.threads || []).map((t) => t.id!).filter(Boolean);
   const results: MailThread[] = [];
   for (const tid of threadIds.slice(0, maxResults)) {
-    const thread = await getThreadWithMessages(tid);
+    const thread = await _getThreadFromClient(gmail, tid);
     if (thread) results.push(thread);
   }
   return results;
 }
 
 /** Get full thread with decoded messages (for reply draft and In-Reply-To). */
-export async function getThreadWithMessages(threadId: string): Promise<MailThread | null> {
-  const gmail = getGmailClient();
+export async function getThreadWithMessages(threadId: string, accountEmail?: string): Promise<MailThread | null> {
+  const gmail = accountEmail ? getGmailClientForAccount(accountEmail) : getGmailClient();
+  return _getThreadFromClient(gmail, threadId);
+}
+
+async function _getThreadFromClient(gmail: GmailApi, threadId: string): Promise<MailThread | null> {
   const res = await gmail.users.threads.get({
     userId: "me",
     id: threadId,
@@ -404,6 +502,8 @@ export interface SendReplyOptions {
   body: string;
   propertyId: string;
   contactName?: string;
+  /** Reply from a specific account (email address). Uses primary if omitted. */
+  fromAccount?: string;
 }
 
 export async function sendReply(opts: SendReplyOptions): Promise<SendEmailResult> {
@@ -413,8 +513,10 @@ export async function sendReply(opts: SendReplyOptions): Promise<SendEmailResult
     return { success: false, error: msg };
   }
 
-  const gmail = getGmailClient();
-  const thread = await getThreadWithMessages(opts.threadId);
+  const gmail = opts.fromAccount
+    ? getGmailClientForAccount(opts.fromAccount)
+    : getGmailClient();
+  const thread = await getThreadWithMessages(opts.threadId, opts.fromAccount);
   if (!thread || thread.messages.length === 0) {
     return { success: false, error: "Tråd ikke fundet eller tom" };
   }
@@ -423,8 +525,11 @@ export async function sendReply(opts: SendReplyOptions): Promise<SendEmailResult
   const inReplyTo = lastMessage.messageId || "";
   const references = [lastMessage.references, lastMessage.messageId].filter(Boolean).join(" ").trim() || inReplyTo;
 
-  const fromName = config.gmail.fromName;
-  const fromEmail = config.gmail.fromEmail;
+  const account = opts.fromAccount
+    ? config.gmailAccounts.find((a) => a.email.toLowerCase() === opts.fromAccount!.toLowerCase())
+    : null;
+  const fromName = account?.name || config.gmail.fromName;
+  const fromEmail = account?.email || config.gmail.fromEmail;
 
   let htmlBody = opts.body
     .replace(/&/g, "&amp;")
@@ -487,33 +592,52 @@ export async function sendReply(opts: SendReplyOptions): Promise<SendEmailResult
 }
 
 /**
- * Check if Gmail API is configured and working.
+ * Check if Gmail API is configured and working (all accounts).
  */
 export async function checkGmailHealth(): Promise<{
   configured: boolean;
   working: boolean;
   email?: string;
+  accounts?: { email: string; name: string; working: boolean; error?: string }[];
   error?: string;
 }> {
-  try {
-    const clientId = config.gmail.clientId();
-    if (!clientId) {
-      return { configured: false, working: false, error: "GMAIL_CLIENT_ID not set" };
-    }
-
-    const gmail = getGmailClient();
-    const profile = await gmail.users.getProfile({ userId: "me" });
-
-    return {
-      configured: true,
-      working: true,
-      email: profile.data.emailAddress || config.gmail.fromEmail,
-    };
-  } catch (error) {
-    return {
-      configured: true,
-      working: false,
-      error: error instanceof Error ? error.message : String(error),
-    };
+  const clientId = config.gmail.clientId();
+  if (!clientId) {
+    return { configured: false, working: false, error: "GMAIL_CLIENT_ID not set" };
   }
+
+  const accounts = config.gmailAccounts.filter((a) => a.email && a.refreshToken());
+
+  if (accounts.length === 0) {
+    try {
+      const gmail = getGmailClient();
+      const profile = await gmail.users.getProfile({ userId: "me" });
+      return {
+        configured: true,
+        working: true,
+        email: profile.data.emailAddress || config.gmail.fromEmail,
+      };
+    } catch (error) {
+      return { configured: true, working: false, error: error instanceof Error ? error.message : String(error) };
+    }
+  }
+
+  const results: { email: string; name: string; working: boolean; error?: string }[] = [];
+  for (const acc of accounts) {
+    try {
+      const client = getGmailClientForAccount(acc.email);
+      const profile = await client.users.getProfile({ userId: "me" });
+      results.push({ email: profile.data.emailAddress || acc.email, name: acc.name, working: true });
+    } catch (error) {
+      results.push({ email: acc.email, name: acc.name, working: false, error: error instanceof Error ? error.message : String(error) });
+    }
+  }
+
+  const anyWorking = results.some((r) => r.working);
+  return {
+    configured: true,
+    working: anyWorking,
+    email: results.find((r) => r.working)?.email,
+    accounts: results,
+  };
 }

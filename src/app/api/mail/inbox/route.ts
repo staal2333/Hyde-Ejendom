@@ -1,5 +1,6 @@
 // ============================================================
 // GET /api/mail/inbox – List inbox threads with property mapping
+// Aggregates across all configured Gmail accounts
 // ============================================================
 
 import { NextResponse } from "next/server";
