@@ -156,6 +156,10 @@ export function IndbakkeTab() {
     return true;
   }), [activeThreads, folder, prioFilter, accFilter, search]);
 
+  const effectiveHighCount = useMemo(() => {
+    return threads.filter(t => t.priority === "high" && !t.lastIsFromUs && !dismissed.has(t.id)).length;
+  }, [threads, dismissed]);
+
   // ── Selection ──
   const openThread = useCallback(async (t: EnrichedThread, idx: number) => {
     setSel(t); setSelIdx(idx); setFull(null); setReply(""); setSentId(null); setLoadingThread(true);
@@ -252,7 +256,7 @@ export function IndbakkeTab() {
         {foldersOpen ? (
           <nav className="flex-1 px-3 pt-3 space-y-1">
             <Folder label="Indbakke" count={stats?.total ?? 0} active={folder === "inbox" && prioFilter === "all" && accFilter === "all"} onClick={() => { setFolder("inbox"); setPrioFilter("all"); setAccFilter("all"); setSel(null); }} icon="inbox" />
-            {(stats?.high ?? 0) > 0 && <Folder label="Svar nu" count={stats!.high} accent active={folder === "inbox" && prioFilter === "high"} onClick={() => { setFolder("inbox"); setPrioFilter(prioFilter === "high" ? "all" : "high"); setSel(null); }} icon="urgent" />}
+            {effectiveHighCount > 0 && <Folder label="Svar nu" count={effectiveHighCount} accent active={folder === "inbox" && prioFilter === "high"} onClick={() => { setFolder("inbox"); setPrioFilter(prioFilter === "high" ? "all" : "high"); setSel(null); }} icon="urgent" />}
             <Folder label="Sendt" count={sentStats?.total ?? sentThreads.length} active={folder === "sent"} onClick={() => { if (folder !== "sent") { setFolder("sent"); setPrioFilter("all"); setAccFilter("all"); setSel(null); if (sentThreads.length === 0) fetchSent(); } }} icon="sent" />
             <div className="pt-4 pb-1 px-1 text-[10px] font-semibold text-gray-400 uppercase tracking-wider">Konti</div>
             {(stats?.accounts ?? []).map((a, ai) => (
@@ -266,7 +270,7 @@ export function IndbakkeTab() {
         ) : (
           <nav className="flex-1 flex flex-col items-center pt-3 gap-2">
             <IconBtn active={folder === "inbox" && prioFilter === "all"} onClick={() => { setFolder("inbox"); setPrioFilter("all"); setAccFilter("all"); setSel(null); }} icon="inbox" />
-            {(stats?.high ?? 0) > 0 && <IconBtn active={folder === "inbox" && prioFilter === "high"} onClick={() => { setFolder("inbox"); setPrioFilter(prioFilter === "high" ? "all" : "high"); setSel(null); }} icon="urgent" accent />}
+            {effectiveHighCount > 0 && <IconBtn active={folder === "inbox" && prioFilter === "high"} onClick={() => { setFolder("inbox"); setPrioFilter(prioFilter === "high" ? "all" : "high"); setSel(null); }} icon="urgent" accent />}
             <IconBtn active={folder === "sent"} onClick={() => { if (folder !== "sent") { setFolder("sent"); setPrioFilter("all"); setAccFilter("all"); setSel(null); if (sentThreads.length === 0) fetchSent(); } }} icon="sent" />
           </nav>
         )}
