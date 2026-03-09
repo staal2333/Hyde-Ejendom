@@ -105,6 +105,8 @@ export function HomeTab({
         if (st && st.researched > 0) tasks.push({ label: "Klar til mail-udkast", count: st.researched, color: "text-indigo-600", dot: "bg-indigo-500", action: () => setActiveTab("staging") });
         if (dashboard?.readyToSend && dashboard.readyToSend > 0) tasks.push({ label: "Klar til udsendelse", count: dashboard.readyToSend, color: "text-emerald-600", dot: "bg-emerald-500", action: () => { setActiveTab("outreach"); setStatusFilter("ready"); } });
         if (st && st.new > 0) tasks.push({ label: "Nye til research", count: st.new, color: "text-blue-600", dot: "bg-blue-400", action: () => setActiveTab("staging") });
+        const ts = dashboard?.tilbudSummary;
+        if (ts && ts.draft > 0) tasks.push({ label: "Tilbud i udkast", count: ts.draft, color: "text-violet-600", dot: "bg-violet-400", action: () => setActiveTab("tilbud" as TabId) });
 
         if (tasks.length === 0) return null;
 
@@ -250,6 +252,32 @@ export function HomeTab({
           </div>
         </button>
       )}
+
+      {/* ── Tilbud pipeline ── */}
+      {dashboard?.tilbudSummary && dashboard.tilbudSummary.total > 0 && (() => {
+        const t = dashboard.tilbudSummary!;
+        const fmtDKK = (v: number) => v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` : v >= 1_000 ? `${Math.round(v / 1_000)}K` : String(v);
+        return (
+          <button onClick={() => setActiveTab("tilbud")} className="w-full surface-card p-4 text-left hover:shadow-md transition-shadow">
+            <div className="flex items-center justify-between mb-3">
+              <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wide">Tilbud Pipeline</h2>
+              <span className="text-[10px] text-indigo-500 font-medium">Se tilbud &rarr;</span>
+            </div>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { label: "Udkast", value: t.draft, color: "text-amber-600" },
+                { label: "Godkendt", value: t.final, color: "text-emerald-600" },
+                { label: "Samlet værdi", value: `${fmtDKK(t.totalValue)} kr`, color: "text-slate-700" },
+              ].map((m) => (
+                <div key={m.label} className="text-center">
+                  <p className={`text-lg font-bold tabular-nums ${m.color}`}>{m.value}</p>
+                  <p className="text-[9px] text-slate-400 uppercase mt-0.5">{m.label}</p>
+                </div>
+              ))}
+            </div>
+          </button>
+        );
+      })()}
 
       {/* ── OOH mockups ── */}
       {oohProposals.length > 0 && (

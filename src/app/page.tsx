@@ -1,6 +1,9 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
+import { useDiscovery } from "@/hooks/useDiscovery";
+import { useStreetAgent } from "@/hooks/useStreetAgent";
+import { useScaffolding } from "@/hooks/useScaffolding";
 
 // ─── Keyboard shortcuts (1–9, 0 = settings) ─────────────────
 function useTabShortcuts(setActiveTab: (id: TabId) => void) {
@@ -485,42 +488,6 @@ function DashboardContent() {
 
   useTabShortcuts(setActiveTab);
 
-  // Discovery
-  const [discoverStreet, setDiscoverStreet] = useState("");
-  const [discoverCity, setDiscoverCity] = useState("København");
-  const [discoverPostcodes, setDiscoverPostcodes] = useState("");
-  const [discoverMinScore, setDiscoverMinScore] = useState(6);
-  const [discoverMinTraffic, setDiscoverMinTraffic] = useState(10000);
-  const [discoverMaxCandidates, setDiscoverMaxCandidates] = useState(50);
-  const [discoveryRunning, setDiscoveryRunning] = useState(false);
-  const [discoveryResult, setDiscoveryResult] = useState<DiscoveryResultData | null>(null);
-  const [progressEvents, setProgressEvents] = useState<ProgressEvent[]>([]);
-  const [progressPct, setProgressPct] = useState(0);
-  const [currentPhase, setCurrentPhase] = useState("");
-  const progressLogRef = useRef<HTMLDivElement>(null);
-
-  // Scaffolding
-  const [scaffoldCity, setScaffoldCity] = useState("København");
-  const [scaffoldRunning, setScaffoldRunning] = useState(false);
-  const [scaffoldEvents, setScaffoldEvents] = useState<ProgressEvent[]>([]);
-  const [scaffoldPct, setScaffoldPct] = useState(0);
-  const [scaffoldReport, setScaffoldReport] = useState<{
-    total: number; qualified: number; skipped: number;
-    sources: { name: string; count: number }[];
-    byType: Record<string, number>;
-    topPermits: {
-      address: string; score: number; scoreReason: string; traffic: string; trafficNum: number;
-      type: string; category: string; startDate: string; endDate: string; createdDate: string;
-      applicant: string; contractor: string; lat: number; lng: number; durationWeeks: number;
-      description: string; facadeArea: string; sagsnr: string; contactPerson: string; contactEmail: string;
-    }[];
-    reportText: string;
-  } | null>(null);
-  const [scaffoldFilter, setScaffoldFilter] = useState<Set<string>>(new Set(["Stilladsreklamer", "Stilladser"]));
-  const [scaffoldSort, setScaffoldSort] = useState<{ col: string; dir: "asc" | "desc" }>({ col: "score", dir: "desc" });
-  const [scaffoldView, setScaffoldView] = useState<"table" | "map" | "split">("split");
-  const [scaffoldSelectedIdx, setScaffoldSelectedIdx] = useState<number | null>(null);
-  const scaffoldLogRef = useRef<HTMLDivElement>(null);
   const [fullCircleOpen, setFullCircleOpen] = useState(false);
   const [fullCircleRunningInBackground, setFullCircleRunningInBackground] = useState(false);
 
@@ -531,26 +498,56 @@ function DashboardContent() {
   const [researchPct, setResearchPct] = useState(0);
   const researchLogRef = useRef<HTMLDivElement>(null);
 
-  // Street Agent
-  const [agentStreet, setAgentStreet] = useState("");
-  const [agentCity, setAgentCity] = useState("København");
-  const [agentRunning, setAgentRunning] = useState(false);
-  const [agentEvents, setAgentEvents] = useState<ProgressEvent[]>([]);
-  const [agentPct, setAgentPct] = useState(0);
-  const [agentPhaseLabel, setAgentPhaseLabel] = useState("");
-  const [agentStats, setAgentStats] = useState<Record<string, number> | null>(null);
-  const agentLogRef = useRef<HTMLDivElement>(null);
-  const agentRunIdRef = useRef<string | null>(null);
+  // ── Hooks: Discovery / Scaffolding / Street Agent ────────
+  const discovery = useDiscovery({ setError, fetchData, addToast });
+  const {
+    discoverStreet, setDiscoverStreet,
+    discoverCity, setDiscoverCity,
+    discoverPostcodes, setDiscoverPostcodes,
+    discoverMinScore, setDiscoverMinScore,
+    discoverMinTraffic, setDiscoverMinTraffic,
+    discoverMaxCandidates, setDiscoverMaxCandidates,
+    discoveryRunning,
+    discoveryResult, setDiscoveryResult,
+    progressEvents, setProgressEvents,
+    progressPct,
+    currentPhase,
+    progressLogRef,
+    triggerDiscovery,
+    triggerAreaDiscovery,
+    stopDiscovery,
+  } = discovery;
 
-  // Live activity (shared across all users via Supabase)
-  interface AgentActivityRun {
-    id: string; street: string; city: string;
-    phase: string; progress: number; message?: string | null;
-    buildings_found?: number | null; created_count?: number | null;
-    research_completed?: number | null; research_total?: number | null;
-    started_at: string; updated_at: string; completed_at?: string | null;
-  }
-  const [liveActivity, setLiveActivity] = useState<AgentActivityRun[]>([]);
+  const scaffolding = useScaffolding({ setError, fetchData, addToast, discoverMinTraffic });
+  const {
+    scaffoldCity, setScaffoldCity,
+    scaffoldRunning,
+    scaffoldEvents, setScaffoldEvents,
+    scaffoldPct,
+    scaffoldReport, setScaffoldReport,
+    scaffoldFilter, setScaffoldFilter,
+    scaffoldSort, setScaffoldSort,
+    scaffoldView, setScaffoldView,
+    scaffoldSelectedIdx, setScaffoldSelectedIdx,
+    scaffoldLogRef,
+    triggerScaffolding,
+    stopScaffolding,
+  } = scaffolding;
+
+  const streetAgent = useStreetAgent({ setError, fetchData, addToast });
+  const {
+    agentStreet, setAgentStreet,
+    agentCity, setAgentCity,
+    agentRunning,
+    agentEvents, setAgentEvents,
+    agentPct,
+    agentPhaseLabel,
+    agentStats,
+    liveActivity, setLiveActivity,
+    agentLogRef,
+    triggerStreetAgent,
+    stopStreetAgent,
+  } = streetAgent;
 
   // Outreach / Email Queue
   const [outreachData, setOutreachData] = useState<{
@@ -562,11 +559,8 @@ function DashboardContent() {
   const [readyToSend, setReadyToSend] = useState<PropertyItem[]>([]);
   const [selectedForSend, setSelectedForSend] = useState<Set<string>>(new Set());
 
-  // Abort controllers
-  const discoveryAbortRef = useRef<AbortController | null>(null);
-  const scaffoldAbortRef = useRef<AbortController | null>(null);
+  // Abort controller (research only – discovery/scaffold/agent are managed by hooks)
   const researchAbortRef = useRef<AbortController | null>(null);
-  const agentAbortRef = useRef<AbortController | null>(null);
 
   // Command palette (Cmd+K / Ctrl+K)
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -618,7 +612,7 @@ function DashboardContent() {
       try {
         const res = await fetch("/api/agent/activity");
         if (res.ok) {
-          const data = await res.json() as { runs: AgentActivityRun[] };
+          const data = await res.json() as { runs: { id: string; street: string; city: string; phase: string; progress: number; message?: string | null; started_at: string; updated_at: string; completed_at?: string | null }[] };
           setLiveActivity((data.runs || []).filter(r =>
             r.phase !== "done" && r.phase !== "stopped"
           ));
@@ -628,30 +622,13 @@ function DashboardContent() {
     poll();
     const interval = setInterval(poll, 12000);
     return () => clearInterval(interval);
-  }, []);
+  }, [setLiveActivity]);
 
-  // ── Helper: post agent activity update ──
-  const postActivity = async (update: Partial<AgentActivityRun & { id: string; street: string; city: string }>) => {
-    try {
-      await fetch("/api/agent/activity", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(update),
-      });
-    } catch { /* non-critical */ }
-  };
-
-  // Cleanup: abort in-flight SSE on unmount so processes don't stay "running"
+  // Cleanup: abort in-flight SSE on unmount
   useEffect(() => {
     return () => {
-      discoveryAbortRef.current?.abort();
-      discoveryAbortRef.current = null;
-      scaffoldAbortRef.current?.abort();
-      scaffoldAbortRef.current = null;
       researchAbortRef.current?.abort();
       researchAbortRef.current = null;
-      agentAbortRef.current?.abort();
-      agentAbortRef.current = null;
     };
   }, []);
 
@@ -676,8 +653,8 @@ function DashboardContent() {
     }
   }, [addToast, fetchData]);
 
-  // ── SSE Helper ──
-  const consumeSSE = async (
+  // ── Research Trigger (kept inline – depends on properties + setActiveTab) ──
+  const researchConsumeSSE = useCallback(async (
     url: string,
     method: "GET" | "POST",
     body: unknown,
@@ -695,17 +672,10 @@ function DashboardContent() {
         body: method === "POST" ? JSON.stringify(body) : undefined,
         signal,
       });
-
-      if (!res.ok) {
-        const errData = await res.json().catch(() => ({ error: "Fejl" }));
-        setError(errData.error || "Fejl");
-        return;
-      }
-
+      if (!res.ok) { const errData = await res.json().catch(() => ({ error: "Fejl" })) as { error?: string }; setError(errData.error || "Fejl"); return; }
       const reader = res.body?.getReader();
       const decoder = new TextDecoder();
       if (!reader) return;
-
       let buffer = "";
       while (true) {
         const { done, value } = await reader.read();
@@ -713,196 +683,28 @@ function DashboardContent() {
         buffer += decoder.decode(value, { stream: true });
         const lines = buffer.split("\n");
         buffer = lines.pop() || "";
-
         for (const line of lines) {
           if (!line.startsWith("data: ")) continue;
           try {
-            const event = JSON.parse(line.slice(6));
-            const pe: ProgressEvent = { ...event, timestamp: Date.now() };
+            const event = JSON.parse(line.slice(6)) as Partial<ProgressEvent>;
+            const pe: ProgressEvent = { ...event, timestamp: Date.now() } as ProgressEvent;
             setEvents((prev) => [...prev, pe]);
             if (event.progress !== undefined) setPct(event.progress);
             if (event.phase) setPhase(event.phase);
             if (onResult) onResult(pe);
-            if (event.phase === "complete" || event.phase === "done") {
-              setTimeout(fetchData, 1500);
-            }
+            if (event.phase === "complete" || event.phase === "done") setTimeout(fetchData, 1500);
           } catch { /* skip */ }
         }
       }
     } catch (e) {
       if (e instanceof DOMException && e.name === "AbortError") {
-        setEvents((prev) => [...prev, {
-          phase: "stopped",
-          message: "Stoppet af bruger",
-          timestamp: Date.now(),
-        } as ProgressEvent]);
-        setPct(100);
-        setTimeout(fetchData, 1000);
-      } else {
-        setError(e instanceof Error ? e.message : "Stream fejlede");
-      }
-    } finally {
-      if (onDone) onDone();
-    }
-  };
+        setEvents((prev) => [...prev, { phase: "stopped", message: "Stoppet af bruger", timestamp: Date.now() } as ProgressEvent]);
+        setPct(100); setTimeout(fetchData, 1000);
+      } else { setError(e instanceof Error ? e.message : "Stream fejlede"); }
+    } finally { if (onDone) onDone(); }
+  }, [setError, fetchData]);
 
-  // ── Trigger functions ──
-  const triggerDiscovery = async () => {
-    if (!discoverStreet.trim()) return;
-    const controller = new AbortController();
-    discoveryAbortRef.current = controller;
-    setDiscoveryRunning(true);
-    setDiscoveryResult(null);
-    setProgressEvents([]);
-    setProgressPct(0);
-    setCurrentPhase("");
-
-    addToast(`Scanner ${discoverStreet.trim()}...`, "info");
-
-    await consumeSSE(
-      "/api/discover", "POST",
-      {
-        street: discoverStreet.trim(),
-        city: discoverCity.trim(),
-        minScore: discoverMinScore,
-        minTraffic: discoverMinTraffic,
-        maxCandidates: discoverMaxCandidates > 0 ? discoverMaxCandidates : undefined,
-      },
-      setProgressEvents, setProgressPct, setCurrentPhase,
-      (pe) => {
-        if (pe.candidates) setDiscoveryResult((prev) => ({ ...(prev || emptyDiscovery()), candidates: pe.candidates! }));
-        if (pe.result) {
-          setDiscoveryResult({ success: !pe.result.error, ...pe.result } as DiscoveryResultData);
-          addToast(`Discovery faerdig: ${pe.result.created} ejendomme oprettet`, "success");
-        }
-      },
-      () => { setDiscoveryRunning(false); discoveryAbortRef.current = null; },
-      controller.signal
-    );
-  };
-
-  const stopDiscovery = () => {
-    discoveryAbortRef.current?.abort();
-    discoveryAbortRef.current = null;
-    addToast("Discovery stoppet", "info");
-  };
-
-  const triggerAreaDiscovery = async () => {
-    const postcodes = discoverPostcodes.split(/[\s,;]+/).map((p) => p.trim()).filter(Boolean);
-    if (postcodes.length === 0) return;
-    const controller = new AbortController();
-    discoveryAbortRef.current = controller;
-    setDiscoveryRunning(true);
-    setDiscoveryResult(null);
-    setProgressEvents([]);
-    setProgressPct(0);
-    setCurrentPhase("");
-
-    addToast(`Scanner område ${postcodes.join(", ")}...`, "info");
-
-    const emptyAreaDiscovery = (): DiscoveryResultData => ({
-      street: `Område: ${postcodes.join(", ")}`,
-      city: discoverCity.trim(),
-      totalAddresses: 0,
-      afterPreFilter: 0,
-      afterTrafficFilter: 0,
-      afterScoring: 0,
-      created: 0,
-      skipped: 0,
-      alreadyExists: 0,
-      candidates: [],
-    });
-
-    await consumeSSE(
-      "/api/discover-area",
-      "POST",
-      {
-        postcodes,
-        city: discoverCity.trim(),
-        minScore: discoverMinScore,
-        maxAddresses: 500,
-        maxCandidates: discoverMaxCandidates > 0 ? discoverMaxCandidates : undefined,
-      },
-      setProgressEvents,
-      setProgressPct,
-      setCurrentPhase,
-      (pe) => {
-        if (pe.candidates) setDiscoveryResult((prev) => ({ ...(prev || emptyAreaDiscovery()), candidates: pe.candidates! }));
-        if (pe.result) {
-          setDiscoveryResult({ success: !pe.result.error, ...pe.result } as DiscoveryResultData);
-          addToast(`Område-scan færdig: ${pe.result.created} ejendomme oprettet`, "success");
-        }
-      },
-      () => { setDiscoveryRunning(false); discoveryAbortRef.current = null; },
-      controller.signal
-    );
-  };
-
-  const triggerScaffolding = async () => {
-    const controller = new AbortController();
-    scaffoldAbortRef.current = controller;
-    setScaffoldRunning(true);
-    setScaffoldEvents([]);
-    setScaffoldPct(0);
-    setScaffoldReport(null);
-    setScaffoldFilter(new Set(["Stilladsreklamer", "Stilladser"]));
-    setScaffoldSort({ col: "score", dir: "desc" });
-    setScaffoldSelectedIdx(null);
-
-    addToast(`Henter tilladelsesdata fra kommunale GIS-systemer for ${scaffoldCity}...`, "info");
-
-    await consumeSSE(
-      "/api/discover-scaffolding", "POST",
-      { city: scaffoldCity.trim(), minTraffic: discoverMinTraffic, minScore: 5 },
-      setScaffoldEvents, setScaffoldPct, () => {},
-      (ev) => {
-        // Extract report data from SSE events
-        const raw = ev as unknown as Record<string, unknown>;
-        if (raw.result) {
-          const r = raw.result as Record<string, unknown>;
-          const permits = (raw.permits || r.permits || []) as Record<string, unknown>[];
-          setScaffoldReport({
-            total: (r.totalPermits as number) || 0,
-            qualified: (r.afterFilter as number) || 0,
-            skipped: (r.skipped as number) || 0,
-            sources: (r.sources as { name: string; count: number }[]) || [],
-            byType: (r.byType as Record<string, number>) || {},
-            topPermits: permits.slice(0, 200).map((p: Record<string, unknown>) => ({
-              address: String(p.address || ""),
-              score: Number(p.outdoorScore || 0),
-              scoreReason: String(p.scoreReason || ""),
-              traffic: String(p.estimatedDailyTraffic ? `${Math.round(Number(p.estimatedDailyTraffic) / 1000)}K` : "?"),
-              trafficNum: Number(p.estimatedDailyTraffic || 0),
-              type: String(p.permitType || ""),
-              category: String(p.category || ""),
-              startDate: String(p.startDate || "").substring(0, 10),
-              endDate: String(p.endDate || "").substring(0, 10),
-              createdDate: String(p.createdDate || p.startDate || "").substring(0, 10),
-              applicant: String(p.applicant || ""),
-              contractor: String(p.contractor || ""),
-              lat: Number(p.lat || 0),
-              lng: Number(p.lng || 0),
-              durationWeeks: Number(p.durationWeeks || 0),
-              description: String(p.description || ""),
-              facadeArea: String(p.facadeArea || ""),
-              sagsnr: String(p.sagsnr || ""),
-              contactPerson: String(p.contactPerson || ""),
-              contactEmail: String(p.contactEmail || ""),
-            })),
-            reportText: (raw.detail as string) || "",
-          });
-        }
-      },
-      () => { setScaffoldRunning(false); scaffoldAbortRef.current = null; addToast("Stillads-scanning afsluttet!", "success"); },
-      controller.signal
-    );
-  };
-
-  const stopScaffolding = () => {
-    scaffoldAbortRef.current?.abort();
-    scaffoldAbortRef.current = null;
-    addToast("Stillads-scanning stoppet", "info");
-  };
+  // Discovery, Scaffolding, StreetAgent are now managed by hooks above.
 
   const triggerResearch = async (propertyId?: string, opts?: { staged?: boolean }) => {
     const id = propertyId || "all";
@@ -923,7 +725,7 @@ function DashboardContent() {
       ? (opts?.staged ? { stagedPropertyId: propertyId } : { propertyId })
       : undefined;
 
-    await consumeSSE(
+    await researchConsumeSSE(
       "/api/run-research",
       propertyId ? "POST" : "GET",
       postBody,
@@ -992,267 +794,6 @@ function DashboardContent() {
     a.click();
     URL.revokeObjectURL(url);
     addToast(`${list.length} ejendomme eksporteret`, "success");
-  };
-
-  // ── Street Agent ──
-  // Three-phase client-orchestrated approach to avoid Vercel timeout:
-  // Phase 1: Fetch address list from DAWA (1 fast request, <2s)
-  // Phase 2: Score addresses in batches of 15 (each batch = separate <10s request)
-  // Phase 3: Research each staged property individually (separate <60s requests)
-  const triggerStreetAgent = async () => {
-    if (!agentStreet.trim()) return;
-    const controller = new AbortController();
-    agentAbortRef.current = controller;
-    setAgentRunning(true);
-    setAgentEvents([]);
-    setAgentPct(0);
-    setAgentPhaseLabel("discovery");
-    setAgentStats(null);
-
-    const street = agentStreet.trim();
-    const city = agentCity.trim();
-
-    // Create a unique run ID for this session
-    const runId = `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-    agentRunIdRef.current = runId;
-
-    const addEvent = (ev: { phase: string; message: string; detail?: string; progress?: number }) => {
-      setAgentEvents(prev => [...prev, { ...ev, timestamp: Date.now() }]);
-    };
-
-    addToast(`Gade-agent starter: ${street}, ${city}...`, "info");
-
-    // Broadcast start to all users
-    await postActivity({ id: runId, street, city, phase: "discovery", progress: 0, message: "Henter adresser...", started_at: new Date().toISOString() });
-
-    // ── Phase 1: Get address list ──
-    addEvent({ phase: "scan", message: `Henter adresser på ${street}...`, progress: 2 });
-
-    let addresses: unknown[] = [];
-    let trafficDaily = 0;
-    let trafficFormatted = "";
-
-    try {
-      const addrRes = await fetch(
-        `/api/agent/street/addresses?street=${encodeURIComponent(street)}&city=${encodeURIComponent(city)}`,
-        { signal: controller.signal }
-      );
-      if (!addrRes.ok) throw new Error(`Adresse-opslag fejlede (${addrRes.status})`);
-      const addrData = await addrRes.json() as {
-        addresses: unknown[];
-        total: number;
-        trafficEstimate: { daily: number; formatted: string; source: string; confidence: number };
-      };
-      addresses = addrData.addresses;
-      trafficDaily = addrData.trafficEstimate.daily;
-      trafficFormatted = addrData.trafficEstimate.formatted;
-
-      addEvent({
-        phase: "scan_done",
-        message: `${addresses.length} adresser fundet på ${street} · Trafik: ${trafficFormatted}/dag`,
-        progress: 5,
-      });
-    } catch (e) {
-      if (controller.signal.aborted) { setAgentRunning(false); return; }
-      addEvent({ phase: "error", message: `Fejl ved adresse-opslag: ${e instanceof Error ? e.message : e}`, progress: 100 });
-      setAgentRunning(false);
-      return;
-    }
-
-    if (addresses.length === 0) {
-      addEvent({ phase: "done", message: "Ingen adresser fundet på denne gade", progress: 100 });
-      await postActivity({ id: runId, street, city, phase: "done", progress: 100, message: "Ingen adresser fundet", completed_at: new Date().toISOString() });
-      setAgentRunning(false);
-      return;
-    }
-
-    // Broadcast address count
-    await postActivity({ id: runId, street, city, phase: "scoring", progress: 8, message: `Scorer ${addresses.length} bygninger...`, buildings_found: addresses.length });
-
-    // ── Phase 2: Score in batches of 15 ──
-    const BATCH_SIZE = 15;
-    const batches: unknown[][] = [];
-    for (let i = 0; i < addresses.length; i += BATCH_SIZE) {
-      batches.push(addresses.slice(i, i + BATCH_SIZE));
-    }
-
-    addEvent({
-      phase: "scoring",
-      message: `AI vurderer ${addresses.length} bygninger i ${batches.length} batches...`,
-      progress: 8,
-    });
-
-    const stagedPropertyIds: string[] = [];
-    let totalCreated = 0;
-    let totalAlreadyExists = 0;
-    let totalSkipped = 0;
-
-    for (let i = 0; i < batches.length; i++) {
-      if (controller.signal.aborted) break;
-
-      const pct = 8 + Math.round(((i) / batches.length) * 55);
-      addEvent({
-        phase: "scoring_batch",
-        message: `AI scorer batch ${i + 1}/${batches.length} (${batches[i].length} bygninger)`,
-        progress: pct,
-      });
-      setAgentPct(pct);
-
-      try {
-        const batchRes = await fetch("/api/agent/street/score-batch", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ addresses: batches[i], street, city, trafficDaily }),
-          signal: controller.signal,
-        });
-
-        if (batchRes.ok) {
-          const batchData = await batchRes.json() as {
-            scored: { address: string; score: number; reason: string }[];
-            staged: { id: string; address: string }[];
-            created: number;
-            alreadyExists: number;
-            skipped: number;
-            error?: string;
-          };
-
-          totalCreated += batchData.created || 0;
-          totalAlreadyExists += batchData.alreadyExists || 0;
-          totalSkipped += batchData.skipped || 0;
-
-          if (batchData.staged?.length) {
-            for (const s of batchData.staged) stagedPropertyIds.push(s.id);
-            const top = batchData.scored.sort((a, b) => b.score - a.score)[0];
-            addEvent({
-              phase: "staging_created",
-              message: `Batch ${i + 1}: ${batchData.created} ny ejendom staged${top ? ` — Top: ${top.address} (${top.score}/10)` : ""}`,
-              progress: pct,
-            });
-          }
-        }
-      } catch (e) {
-        if (controller.signal.aborted) break;
-        addEvent({ phase: "scoring_batch_error", message: `Batch ${i + 1} fejlede: ${e instanceof Error ? e.message : e}`, progress: pct });
-      }
-    }
-
-    if (controller.signal.aborted) {
-      setAgentRunning(false);
-      return;
-    }
-
-    const scoringPct = 63;
-    setAgentPct(scoringPct);
-    addEvent({
-      phase: "scoring_done",
-      message: `Discovery færdig: ${totalCreated} nye ejendomme staged, ${totalAlreadyExists} eksisterede allerede`,
-      progress: scoringPct,
-    });
-
-    if (totalCreated === 0) {
-      setAgentStats({ totalBuildings: addresses.length, created: 0, alreadyExists: totalAlreadyExists, researchCompleted: 0, researchFailed: 0, emailDraftsGenerated: 0 });
-      setAgentPhaseLabel("done");
-      setAgentPct(100);
-      addEvent({ phase: "agent_done", message: "Ingen nye ejendomme at researche — alle eksisterer allerede eller scorede for lavt", progress: 100 });
-      await postActivity({ id: runId, street, city, phase: "done", progress: 100, message: "Ingen nye ejendomme fundet", created_count: 0, completed_at: new Date().toISOString() });
-      setAgentRunning(false);
-      agentAbortRef.current = null;
-      return;
-    }
-
-    // Broadcast research start
-    await postActivity({ id: runId, street, city, phase: "research", progress: scoringPct, message: `Researcher ${stagedPropertyIds.length} ejendomme...`, created_count: totalCreated, research_total: stagedPropertyIds.length, research_completed: 0 });
-
-    // ── Phase 3: Research each staged property ──
-    setAgentPhaseLabel("research");
-    addEvent({
-      phase: "research_start",
-      message: `Fase 3: Researcher ${stagedPropertyIds.length} ejendomme individuelt...`,
-      progress: scoringPct,
-    });
-
-    let researchCompleted = 0;
-    let researchFailed = 0;
-    let emailDraftsGenerated = 0;
-
-    for (let i = 0; i < stagedPropertyIds.length; i++) {
-      if (controller.signal.aborted) break;
-      const propId = stagedPropertyIds[i];
-      const pct = scoringPct + Math.round((i / stagedPropertyIds.length) * (95 - scoringPct));
-
-      addEvent({
-        phase: "research_property",
-        message: `[${i + 1}/${stagedPropertyIds.length}] Researcher ejendom...`,
-        progress: pct,
-      });
-      setAgentPct(pct);
-
-      let propDone = false;
-      let propFailed = false;
-      await consumeSSE(
-        "/api/run-research", "POST",
-        { stagedPropertyId: propId },
-        setAgentEvents,
-        setAgentPct,
-        setAgentPhaseLabel,
-        (pe) => {
-          if (pe.phase === "complete" || pe.phase === "done") propDone = true;
-          if (pe.phase === "error") propFailed = true;
-          const raw = pe as unknown as Record<string, unknown>;
-          if (raw.stepId === "generate_email_draft" && raw.status === "completed") emailDraftsGenerated++;
-        },
-        () => { if (!propDone && !propFailed) propFailed = true; },
-        controller.signal
-      );
-
-      if (propFailed) {
-        researchFailed++;
-        addEvent({ phase: "research_property_failed", message: `[${i + 1}/${stagedPropertyIds.length}] Fejlet – springer over`, progress: undefined });
-      } else {
-        researchCompleted++;
-        addEvent({ phase: "research_property_done", message: `[${i + 1}/${stagedPropertyIds.length}] Research OK ✓`, progress: undefined });
-      }
-      const newPct = scoringPct + Math.round(((i + 1) / stagedPropertyIds.length) * (95 - scoringPct));
-      setAgentPct(newPct);
-      // Broadcast progress every 3 properties
-      if ((i + 1) % 3 === 0 || i + 1 === stagedPropertyIds.length) {
-        await postActivity({ id: runId, street, city, phase: "research", progress: newPct, message: `Researcher ${i + 1}/${stagedPropertyIds.length}...`, research_completed: researchCompleted, research_total: stagedPropertyIds.length });
-      }
-    }
-
-    const finalStats = {
-      totalBuildings: addresses.length,
-      created: totalCreated,
-      alreadyExists: totalAlreadyExists,
-      researchCompleted,
-      researchFailed,
-      emailDraftsGenerated,
-    };
-    setAgentStats(finalStats);
-    setAgentPhaseLabel("done");
-    setAgentPct(100);
-    addEvent({
-      phase: "agent_done",
-      message: `Færdig! ${researchCompleted} researched, ${emailDraftsGenerated} email-udkast — gå til Staging`,
-      progress: 100,
-    });
-    addToast(`Agent færdig: ${researchCompleted} ejendomme researched`, "success");
-    await postActivity({ id: runId, street, city, phase: "done", progress: 100, message: `Færdig: ${researchCompleted} researched`, research_completed: researchCompleted, research_total: stagedPropertyIds.length, completed_at: new Date().toISOString() });
-    agentRunIdRef.current = null;
-    setAgentRunning(false);
-    agentAbortRef.current = null;
-  };
-
-  const stopStreetAgent = () => {
-    agentAbortRef.current?.abort();
-    agentAbortRef.current = null;
-    setAgentRunning(false);
-    addToast("Gade-agent stoppet", "info");
-    // Broadcast stop to all users
-    if (agentRunIdRef.current) {
-      fetch(`/api/agent/activity?id=${agentRunIdRef.current}`, { method: "DELETE" }).catch(() => {});
-      agentRunIdRef.current = null;
-    }
   };
 
   // ── Outreach / Email Queue ──
@@ -1345,11 +886,6 @@ function DashboardContent() {
       setQuickAddLoading(false);
     }
   };
-
-  const emptyDiscovery = (): DiscoveryResultData => ({
-    street: discoverStreet, city: discoverCity, totalAddresses: 0, afterPreFilter: 0,
-    afterTrafficFilter: 0, afterScoring: 0, created: 0, skipped: 0, alreadyExists: 0, candidates: [],
-  });
 
   // Filtreret data i egen hook for stabil hook-rækkefølge (undgår React #310)
   const { availableCities, filteredProperties, currentResearchProperty, researchSummary } = useFilteredDashboardData(

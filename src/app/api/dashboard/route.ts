@@ -12,6 +12,7 @@ import { getSends } from "@/lib/ooh/store";
 import { getScaffoldStats } from "@/lib/scaffold-stats";
 import { getAnalyticsTrend, saveAnalyticsSnapshot } from "@/lib/analytics-store";
 import { getLeadSummary } from "@/lib/lead-sourcing/lead-store";
+import { getTilbudSummary } from "@/lib/tilbud/store";
 
 export async function GET() {
   try {
@@ -110,6 +111,9 @@ export async function GET() {
         todayFollowups: 0,
         topNewLeads: [],
       })),
+      tilbudSummary: (() => {
+        try { return getTilbudSummary(); } catch { return { total: 0, draft: 0, final: 0, totalValue: 0 }; }
+      })(),
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";

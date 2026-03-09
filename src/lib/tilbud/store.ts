@@ -86,6 +86,32 @@ export function listTilbud(opts?: {
   return { items: items.slice(offset, offset + limit), total };
 }
 
+export function getTilbudSummary(): {
+  total: number;
+  draft: number;
+  final: number;
+  totalValue: number;
+} {
+  loadFromDisk();
+  const all = [...tilbudStore.values()];
+  const totalValue = all.reduce((sum, t) => {
+    const lines = t.lines ?? [];
+    const lineTotal = lines.reduce((s: number, l: { quantity?: number; listPrice?: number; discountPct?: number }) => {
+      const price = l.listPrice ?? 0;
+      const disc = l.discountPct ?? 0;
+      return s + (l.quantity ?? 1) * price * (1 - disc / 100);
+    }, 0);
+    const fixed = (t.fixedCosts ?? []).reduce((s: number, f: { amount?: number; enabled?: boolean }) => f.enabled !== false ? s + (f.amount ?? 0) : s, 0);
+    return sum + lineTotal + fixed;
+  }, 0);
+  return {
+    total: all.length,
+    draft: all.filter((t) => t.status === "draft").length,
+    final: all.filter((t) => t.status === "final").length,
+    totalValue,
+  };
+}
+
 export function getTilbud(id: string): Tilbud | undefined {
   loadFromDisk();
   const item = tilbudStore.get(id);

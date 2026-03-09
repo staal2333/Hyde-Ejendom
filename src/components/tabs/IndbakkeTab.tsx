@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import type { EnrichedThread } from "@/app/api/mail/unified-inbox/route";
+import { useDashboard } from "@/contexts/DashboardContext";
 
 const ACC_COLORS = [
   { border: "#6366f1", bg: "#eef2ff", text: "#4338ca" }, // indigo
@@ -74,6 +75,7 @@ function SkeletonRow() {
 
 // ── Main ─────────────────────────────────────────────────────
 export function IndbakkeTab() {
+  const { setActiveTab, setOohInitialClient } = useDashboard();
   const [threads, setThreads] = useState<EnrichedThread[]>([]);
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
@@ -384,7 +386,7 @@ export function IndbakkeTab() {
                   </div>
                   <div className="text-xs text-gray-400 mt-0.5">{sel.fromEmail}</div>
                   {sel.contact?.jobtitle && <div className="text-xs text-gray-500 mt-0.5">{sel.contact.jobtitle}</div>}
-                  <div className="flex items-center gap-2 mt-1.5">
+                  <div className="flex items-center gap-2 mt-1.5 flex-wrap">
                     {sel.contact ? (
                       <span className="text-[10px] px-2 py-0.5 bg-orange-100 text-orange-700 rounded-md font-semibold flex items-center gap-1">
                         <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M5 13l4 4L19 7" /></svg>
@@ -399,6 +401,30 @@ export function IndbakkeTab() {
                     {sel.contact?.lifecyclestage && (
                       <span className="text-[10px] px-2 py-0.5 bg-indigo-50 text-indigo-600 rounded-md font-medium">{STAGE[sel.contact.lifecyclestage] || sel.contact.lifecyclestage}</span>
                     )}
+                    {/* Quick actions */}
+                    <button
+                      onClick={() => {
+                        setOohInitialClient({
+                          company: sel.contact?.company || senderName(sel.from),
+                          contactName: senderName(sel.from),
+                          email: sel.fromEmail,
+                        });
+                        setActiveTab("ooh");
+                      }}
+                      className="text-[10px] px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded-md font-semibold hover:bg-indigo-100 flex items-center gap-1 transition-colors"
+                      title="Opret OOH-forslag til denne afsender"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                      OOH-forslag
+                    </button>
+                    <button
+                      onClick={() => setActiveTab("tilbud")}
+                      className="text-[10px] px-2.5 py-1 bg-emerald-50 text-emerald-700 rounded-md font-semibold hover:bg-emerald-100 flex items-center gap-1 transition-colors"
+                      title="Opret tilbud til denne afsender"
+                    >
+                      <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}><path strokeLinecap="round" strokeLinejoin="round" d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>
+                      Opret tilbud
+                    </button>
                   </div>
                 </div>
               </div>

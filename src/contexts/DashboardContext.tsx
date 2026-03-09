@@ -90,6 +90,12 @@ export interface DashboardData {
     todayFollowups: number;
     topNewLeads: { id: string; name: string; ooh_score: number; contact_email: string | null; source_platform: string; discovered_at: string }[];
   };
+  tilbudSummary?: {
+    total: number;
+    draft: number;
+    final: number;
+    totalValue: number;
+  };
 }
 
 export interface WorkflowRun {

@@ -476,6 +476,27 @@ export async function getContactEngagements(contactId: string, limit = 20): Prom
   }
 }
 
+// ─── Log note on contact ─────────────────────────────────────
+
+/**
+ * Creates a NOTE engagement on a HubSpot contact.
+ * Silently ignores errors so callers don't need try/catch.
+ */
+export async function logNoteToContact(
+  contactId: string,
+  noteBody: string
+): Promise<void> {
+  try {
+    await hubspotPost("/engagements/v1/engagements", {
+      engagement: { active: true, type: "NOTE", timestamp: Date.now() },
+      associations: { contactIds: [parseInt(contactId, 10)] },
+      metadata: { body: noteBody },
+    });
+  } catch {
+    // Non-critical — silently skip
+  }
+}
+
 // ─── Associate contact to ejendom ───────────────────────────
 
 /**

@@ -3,6 +3,7 @@ import { getTilbud, upsertTilbud } from "@/lib/tilbud/store";
 import { generateTilbudPdf } from "@/lib/tilbud/pdf-generator";
 import { tilbudUpsertInputSchema } from "@/lib/tilbud/types";
 import { logger } from "@/lib/logger";
+import { findContactByEmail, logNoteToContact } from "@/lib/hubspot";
 
 export const runtime = "nodejs";
 
@@ -33,6 +34,20 @@ export async function POST(req: NextRequest) {
     const safeClient = sanitizeFilePart(tilbud.clientName || "kunde");
     const safeNo = sanitizeFilePart(tilbud.offerNumber || "tilbud");
     const filename = `Tilbud-${safeClient}-${safeNo}.pdf`;
+
+    // Log note on HubSpot contact (fire-and-forget, searches by clientName as fallback)
+    // Tilbud stores client name, not email – use yourReference as potential email if set
+    const maybeEmail = (tilbud.yourReference || "").includes("@") ? tilbud.yourReference : null;
+    if (maybeEmail) {
+      findContactByEmail(maybeEmail).then((contact) => {
+        if (contact?.id) {
+          logNoteToContact(
+            contact.id,
+            `Tilbud "${tilbud.offerNumber}" (${tilbud.campaignName || tilbud.clientName}) genereret som PDF.`
+          );
+        }
+      }).catch(() => {});
+    }
 
     return new NextResponse(new Uint8Array(pdf), {
       headers: {

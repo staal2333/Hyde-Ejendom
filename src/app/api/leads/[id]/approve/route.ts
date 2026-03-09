@@ -5,7 +5,7 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { getCandidateById, updateCandidate } from "@/lib/leads/candidate-store";
-import { createLeadContact, createLeadCompany, associateContactToCompany } from "@/lib/hubspot";
+import { createLeadContact, createLeadCompany, associateContactToCompany, findContactByEmail } from "@/lib/hubspot";
 import { logger } from "@/lib/logger";
 
 export const maxDuration = 30;
@@ -33,6 +33,15 @@ export async function POST(
       let hubspotCompanyId: string | null = candidate.hubspot_company_id;
       const companyName = body.companyName ?? candidate.company_name;
 
+      // Check for existing HubSpot contact before creating a duplicate
+      let existingContact: { id: string } | null = null;
+      if (candidate.email) {
+        existingContact = await findContactByEmail(candidate.email).catch(() => null);
+        if (existingContact) {
+          logger.info(`[leads/approve] Contact already exists in HubSpot: ${existingContact.id}`);
+        }
+      }
+
       if (!hubspotCompanyId && companyName) {
         try {
           hubspotCompanyId = await createLeadCompany({
@@ -44,7 +53,7 @@ export async function POST(
         }
       }
 
-      const hubspotContactId = await createLeadContact({
+      const createdContactId = existingContact?.id ?? await createLeadContact({
         email: candidate.email,
         firstname: candidate.first_name ?? undefined,
         lastname: candidate.last_name ?? undefined,
@@ -52,6 +61,7 @@ export async function POST(
         jobtitle: body.jobTitle ?? candidate.job_title ?? undefined,
         companyId: hubspotCompanyId ?? undefined,
       });
+      const hubspotContactId = createdContactId;
 
       if (hubspotContactId && hubspotCompanyId) {
         await associateContactToCompany(hubspotContactId, hubspotCompanyId).catch(() => {});
@@ -72,6 +82,7 @@ export async function POST(
         candidate: updated,
         hubspotContactId,
         hubspotCompanyId,
+        existedInHubSpot: !!existingContact,
         hubspotUrl: `https://app.hubspot.com/contacts/${hubspotContactId}`,
       });
     } catch (e) {
