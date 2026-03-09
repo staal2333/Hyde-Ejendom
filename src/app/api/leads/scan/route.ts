@@ -19,7 +19,7 @@ import type { LeadCandidate } from "@/lib/leads/candidate-store";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
 
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 // Normalize company name for fuzzy matching
 function normalize(name: string): string {
@@ -41,16 +41,24 @@ function delay(ms: number) {
 export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({})) as {
     maxThreads?: number;
+    months?: number;
     accounts?: string[];
   };
 
-  const maxThreads = Math.min(body.maxThreads ?? 300, 500);
+  const months = Math.min(body.months ?? 12, 24);
+  const maxThreads = Math.min(body.maxThreads ?? 2000, 5000);
   const scanRunId = `scan-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 
-  logger.info(`[leads/scan] Starting scan run ${scanRunId}, maxThreads=${maxThreads}`);
+  // Build Gmail date filter: after:YYYY/MM/DD
+  const afterDate = new Date();
+  afterDate.setMonth(afterDate.getMonth() - months);
+  const afterStr = `${afterDate.getFullYear()}/${String(afterDate.getMonth() + 1).padStart(2, "0")}/${String(afterDate.getDate()).padStart(2, "0")}`;
+  const gmailQuery = `after:${afterStr}`;
 
-  // 1. Fetch all threads
-  const rawThreads = await listInboxThreads(maxThreads, "INBOX");
+  logger.info(`[leads/scan] Starting scan run ${scanRunId}, maxThreads=${maxThreads}, query="${gmailQuery}"`);
+
+  // 1. Fetch all threads from the last N months
+  const rawThreads = await listInboxThreads(maxThreads, "INBOX", gmailQuery);
   logger.info(`[leads/scan] Fetched ${rawThreads.length} threads`);
 
   // 2. Build internal domain set
@@ -167,5 +175,7 @@ export async function POST(req: NextRequest) {
     highPriority: leadCandidates.filter((c) => c.lead_score >= 60).length,
     mediumPriority: leadCandidates.filter((c) => c.lead_score >= 30 && c.lead_score < 60).length,
     lowPriority: leadCandidates.filter((c) => c.lead_score < 30).length,
+    scannedFrom: afterStr,
+    scannedMonths: months,
   });
 }
