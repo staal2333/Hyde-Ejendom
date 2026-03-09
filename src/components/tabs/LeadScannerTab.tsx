@@ -155,6 +155,41 @@ export function LeadScannerTab() {
     }
   }, [mainTab, hsContacts.length, fetchHsContacts]);
 
+  // ─── Export HubSpot contacts as CSV ──────────────────────────
+
+  const exportHsContactsCSV = () => {
+    const rows = hsFiltered;
+    if (rows.length === 0) return;
+
+    const headers = ["Navn", "Email", "Virksomhed", "Titel", "Telefon", "By", "Lifecycle", "Oprettet"];
+    const escape = (v: string | null) => {
+      const s = v ?? "";
+      return s.includes(",") || s.includes('"') || s.includes("\n")
+        ? `"${s.replace(/"/g, '""')}"`
+        : s;
+    };
+
+    const csvRows = rows.map((c) => [
+      c.fullName,
+      c.email,
+      c.company,
+      c.jobtitle,
+      c.phone,
+      c.city,
+      c.lifecyclestage,
+      c.createdate ? new Date(c.createdate).toLocaleDateString("da-DK") : "",
+    ].map(escape).join(","));
+
+    const csv = [headers.join(","), ...csvRows].join("\n");
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `hubspot-kontakter-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   // ─── Scan ────────────────────────────────────────────────────
 
   const triggerScan = async () => {
@@ -339,6 +374,20 @@ export function LeadScannerTab() {
               className="px-3 py-2 text-sm font-semibold text-slate-600 bg-slate-100 hover:bg-slate-200 rounded-lg transition-colors"
             >
               Opdater
+            </button>
+            <button
+              onClick={exportHsContactsCSV}
+              disabled={hsFiltered.length === 0}
+              title={`Eksporter ${hsFiltered.length} kontakter som CSV`}
+              className="flex items-center gap-2 px-3 py-2 text-sm font-semibold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 rounded-lg transition-colors disabled:opacity-40"
+            >
+              <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" strokeWidth={2} stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M16.5 12 12 16.5m0 0L7.5 12m4.5 4.5V3" />
+              </svg>
+              Eksporter CSV
+              {hsFiltered.length > 0 && (
+                <span className="text-[11px] text-emerald-500 font-normal">({hsFiltered.length})</span>
+              )}
             </button>
           </div>
         )}
