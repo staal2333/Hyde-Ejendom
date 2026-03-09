@@ -5,9 +5,10 @@
 
 import { NextRequest, NextResponse } from "next/server";
 import { listInboxThreads } from "@/lib/email-sender";
-import { findContactByEmail, listHubSpotCompanies } from "@/lib/hubspot";
+import { listHubSpotCompanies } from "@/lib/hubspot";
 import { getBlocklist, isBlocked } from "@/lib/lead-sourcing/dedupe";
 import { saveCandidates } from "@/lib/leads/candidate-store";
+import type { LeadCandidate } from "@/lib/leads/candidate-store";
 import {
   isNoise,
   scoreLead,
@@ -15,7 +16,6 @@ import {
   extractEmail,
   extractDomain,
 } from "@/lib/leads/scanner";
-import type { LeadCandidate } from "@/lib/leads/candidate-store";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
 
@@ -34,11 +34,36 @@ function domainAsCompanyNorm(domain: string): string {
   return normalize(domain.replace(/\.[a-z]{2,}$/, "").replace(/-/g, " "));
 }
 
-function delay(ms: number) {
-  return new Promise((r) => setTimeout(r, ms));
+// Fetch ALL HubSpot contact emails in one paginated call (much faster than N individual lookups)
+async function fetchAllHubSpotContactEmails(): Promise<Set<string>> {
+  const emails = new Set<string>();
+  let after: string | undefined;
+  const BASE = "https://api.hubapi.com";
+  const headers = {
+    Authorization: `Bearer ${config.hubspot.accessToken()}`,
+    "Content-Type": "application/json",
+  };
+
+  do {
+    const url = `${BASE}/crm/v3/objects/contacts?limit=100${after ? `&after=${after}` : ""}&properties=email`;
+    const res = await fetch(url, { headers });
+    if (!res.ok) break;
+    const json = await res.json() as {
+      results?: { properties?: { email?: string | null } }[];
+      paging?: { next?: { after: string } };
+    };
+    for (const c of json.results ?? []) {
+      const email = c.properties?.email?.toLowerCase().trim();
+      if (email) emails.add(email);
+    }
+    after = json.paging?.next?.after;
+  } while (after);
+
+  return emails;
 }
 
 export async function POST(req: NextRequest) {
+  try {
   const body = await req.json().catch(() => ({})) as {
     maxThreads?: number;
     months?: number;
@@ -86,75 +111,66 @@ export async function POST(req: NextRequest) {
 
   logger.info(`[leads/scan] After noise filter: ${candidates.length}`);
 
-  // 5. Fetch blocklist + HubSpot companies (once)
-  const [blocklist, hubspotCompanies] = await Promise.all([
+  // 5. Pre-fetch ALL HubSpot data once (single bulk call — avoids N per-candidate API calls)
+  const [blocklist, hubspotCompanies, hubspotContactEmails] = await Promise.all([
     getBlocklist().catch(() => ({ domains: new Set<string>(), companyIds: new Set<string>(), companyNames: new Set<string>() })),
     listHubSpotCompanies().catch(() => [] as { id: string; name: string; domain: string | null }[]),
+    fetchAllHubSpotContactEmails(),
   ]);
 
-  // Build domain → company map for quick lookups
+  // Build domain → company map for quick in-memory lookups
   const domainToCompany = new Map<string, string>();
-  const companyNormMap = new Map<string, string>(); // normalized name → display name
+  const companyNormMap = new Map<string, string>();
   for (const hc of hubspotCompanies) {
     if (hc.domain) domainToCompany.set(hc.domain.toLowerCase().replace(/^www\./, ""), hc.name);
     if (hc.name) companyNormMap.set(normalize(hc.name), hc.name);
   }
 
-  // 6. Check HubSpot for each candidate (in batches of 10 with delay to avoid rate limit)
+  logger.info(`[leads/scan] HubSpot: ${hubspotContactEmails.size} contacts, ${hubspotCompanies.length} companies loaded`);
+
+  // 6. In-memory matching — no per-candidate API calls
   const leadCandidates: LeadCandidate[] = [];
   let matched = 0;
   let filtered = 0;
 
-  const BATCH = 10;
-  for (let i = 0; i < candidates.length; i += BATCH) {
-    const batch = candidates.slice(i, i + BATCH);
+  for (const thread of candidates) {
+    const email = extractEmail(thread.from);
+    const domain = extractDomain(email);
 
-    await Promise.all(
-      batch.map(async (thread) => {
-        const email = extractEmail(thread.from);
-        const domain = extractDomain(email);
-
-        // Blocklist check
-        if (isBlocked(blocklist, domain)) {
-          filtered++;
-          return;
-        }
-
-        // Exact HubSpot contact match
-        const hsContact = await findContactByEmail(email).catch(() => null);
-        if (hsContact) {
-          matched++;
-          return;
-        }
-
-        // Domain match against HubSpot companies
-        const domainMatchCompany = domainToCompany.get(domain) ?? null;
-        const hubspotCompanyFound = !!domainMatchCompany;
-
-        // Fuzzy company name match
-        const domainNorm = domainAsCompanyNorm(domain);
-        const fuzzyMatch = domainNorm.length > 2 && companyNormMap.has(domainNorm);
-
-        // Score the lead
-        const score = scoreLead(thread, email, domain, {
-          domainInHubSpot: hubspotCompanyFound,
-          companyNameFuzzyMatch: fuzzyMatch,
-        });
-
-        const candidate = buildCandidate(thread, scanRunId, score, {
-          hubspotContactFound: false,
-          hubspotCompanyFound,
-          matchType: hubspotCompanyFound ? "domain" : fuzzyMatch ? "company_fuzzy" : "none",
-          companyName: domainMatchCompany ?? (fuzzyMatch ? companyNormMap.get(domainNorm) ?? null : null),
-        });
-
-        leadCandidates.push(candidate);
-      })
-    );
-
-    if (i + BATCH < candidates.length) {
-      await delay(100);
+    // Blocklist check
+    if (isBlocked(blocklist, domain)) {
+      filtered++;
+      continue;
     }
+
+    // Exact HubSpot contact match (in-memory)
+    if (hubspotContactEmails.has(email)) {
+      matched++;
+      continue;
+    }
+
+    // Domain match against HubSpot companies
+    const domainMatchCompany = domainToCompany.get(domain) ?? null;
+    const hubspotCompanyFound = !!domainMatchCompany;
+
+    // Fuzzy company name match
+    const domainNorm = domainAsCompanyNorm(domain);
+    const fuzzyMatch = domainNorm.length > 2 && companyNormMap.has(domainNorm);
+
+    // Score the lead
+    const score = scoreLead(thread, email, domain, {
+      domainInHubSpot: hubspotCompanyFound,
+      companyNameFuzzyMatch: fuzzyMatch,
+    });
+
+    const candidate = buildCandidate(thread, scanRunId, score, {
+      hubspotContactFound: false,
+      hubspotCompanyFound,
+      matchType: hubspotCompanyFound ? "domain" : fuzzyMatch ? "company_fuzzy" : "none",
+      companyName: domainMatchCompany ?? (fuzzyMatch ? companyNormMap.get(domainNorm) ?? null : null),
+    });
+
+    leadCandidates.push(candidate);
   }
 
   // 7. Save candidates
@@ -178,4 +194,9 @@ export async function POST(req: NextRequest) {
     scannedFrom: afterStr,
     scannedMonths: months,
   });
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    logger.error(`[leads/scan] Fatal error: ${msg}`);
+    return NextResponse.json({ error: msg }, { status: 500 });
+  }
 }

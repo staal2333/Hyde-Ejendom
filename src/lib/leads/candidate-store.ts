@@ -2,7 +2,7 @@
 // Lead Candidates – persistent store via Vercel Blob
 // ============================================================
 
-import { put, head, del } from "@vercel/blob";
+import { put, list, del } from "@vercel/blob";
 
 export type CandidateStatus = "needs_review" | "approved" | "rejected" | "synced";
 export type MatchType = "none" | "domain" | "company_fuzzy" | "exact";
@@ -36,13 +36,23 @@ export interface LeadCandidate {
   scan_run_id: string;
 }
 
-const BLOB_KEY = "lead-candidates/candidates.json";
+const BLOB_PATHNAME = "lead-candidates/candidates.json";
+
+async function getBlobUrl(): Promise<string | null> {
+  try {
+    const { blobs } = await list({ prefix: "lead-candidates/" });
+    return blobs.find((b) => b.pathname === BLOB_PATHNAME)?.url ?? null;
+  } catch {
+    return null;
+  }
+}
 
 async function readAll(): Promise<LeadCandidate[]> {
   try {
-    const info = await head(BLOB_KEY).catch(() => null);
-    if (!info) return [];
-    const res = await fetch(info.url);
+    const url = await getBlobUrl();
+    if (!url) return [];
+    // Cache-bust to avoid stale CDN responses
+    const res = await fetch(`${url}?t=${Date.now()}`);
     if (!res.ok) return [];
     return (await res.json()) as LeadCandidate[];
   } catch {
@@ -51,7 +61,7 @@ async function readAll(): Promise<LeadCandidate[]> {
 }
 
 async function writeAll(candidates: LeadCandidate[]): Promise<void> {
-  await put(BLOB_KEY, JSON.stringify(candidates), {
+  await put(BLOB_PATHNAME, JSON.stringify(candidates), {
     access: "public",
     contentType: "application/json",
     addRandomSuffix: false,
@@ -107,5 +117,6 @@ export async function updateCandidate(
 }
 
 export async function clearAllCandidates(): Promise<void> {
-  await del(BLOB_KEY).catch(() => {});
+  const url = await getBlobUrl();
+  if (url) await del(url).catch(() => {});
 }
