@@ -146,7 +146,9 @@ export function IndbakkeTab() {
   const activeThreads = folder === "sent" ? sentThreads : threads;
   const activeLoading = folder === "sent" ? loadingSent : loading;
   const filtered = useMemo(() => activeThreads.filter(t => {
-    if (folder === "inbox" && prioFilter === "high" && t.priority !== "high") return false;
+    if (folder === "inbox" && prioFilter === "high") {
+      if (t.priority !== "high" || t.lastIsFromUs || dismissed.has(t.id)) return false;
+    }
     if (accFilter !== "all" && t.account !== accFilter) return false;
     if (search) {
       const q = search.toLowerCase();
@@ -154,7 +156,7 @@ export function IndbakkeTab() {
       if (!hay.includes(q)) return false;
     }
     return true;
-  }), [activeThreads, folder, prioFilter, accFilter, search]);
+  }), [activeThreads, folder, prioFilter, accFilter, search, dismissed]);
 
   const effectiveHighCount = useMemo(() => {
     return threads.filter(t => t.priority === "high" && !t.lastIsFromUs && !dismissed.has(t.id)).length;
