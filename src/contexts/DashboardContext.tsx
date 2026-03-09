@@ -20,6 +20,7 @@ export type TabId =
   | "properties"
   | "research"
   | "lead_sourcing"
+  | "lead_scanner"
   | "ooh"
   | "tilbud"
   | "outreach"

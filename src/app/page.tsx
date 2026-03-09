@@ -40,6 +40,7 @@ import { StreetAgentTab } from "../components/tabs/StreetAgentTab";
 import { OutreachTab } from "../components/tabs/OutreachTab";
 import { SettingsTab } from "../components/tabs/SettingsTab";
 import { LeadSourcingTab } from "../components/tabs/LeadSourcingTab";
+import { LeadScannerTab } from "../components/tabs/LeadScannerTab";
 import { ProgressBar, LogPanel, ResultStat, PipelineStat, PropertyCard } from "@/components/dashboard";
 import { BriefingPanel } from "@/components/dashboard/BriefingPanel";
 import { FollowUpPanel } from "@/components/dashboard/FollowUpPanel";
@@ -273,7 +274,11 @@ const NAV_TABS: NavTab[] = [
       { id: "properties", label: "Pipeline" },
       { id: "research", label: "Research" },
     ] },
-  { id: "lead_sourcing", label: "Leads", desc: "Lead funnel", icon: "M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z" },
+  { id: "lead_sourcing", label: "Leads", desc: "Lead funnel", icon: "M18 18.72a9.094 9.094 0 003.741-.479 3 3 0 00-4.682-2.72m.94 3.198l.001.031c0 .225-.012.447-.037.666A11.944 11.944 0 0112 21c-2.17 0-4.207-.576-5.963-1.584A6.062 6.062 0 016 18.719m12 0a5.971 5.971 0 00-.941-3.197m0 0A5.995 5.995 0 0012 12.75a5.995 5.995 0 00-5.058 2.772m0 0a3 3 0 00-4.681 2.72 8.986 8.986 0 003.74.477m.94-3.197a5.971 5.971 0 00-.94 3.197M15 6.75a3 3 0 11-6 0 3 3 0 016 0zm6 3a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0zm-13.5 0a2.25 2.25 0 11-4.5 0 2.25 2.25 0 014.5 0z",
+    children: [
+      { id: "lead_sourcing", label: "Lead Funnel" },
+      { id: "lead_scanner", label: "Lead Scanner" },
+    ] },
   { id: "ooh", label: "Outreach", desc: "OOH & emails", icon: "M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5a1.5 1.5 0 001.5-1.5V4.5A1.5 1.5 0 0020.25 3H3.75A1.5 1.5 0 002.25 4.5v15A1.5 1.5 0 003.75 21z",
     children: [
       { id: "ooh", label: "OOH Proposals" },
@@ -1889,6 +1894,7 @@ function DashboardContent() {
           )}
 
           {activeTab === "lead_sourcing" && <LeadSourcingTab />}
+          {activeTab === "lead_scanner" && <LeadScannerTab />}
           {activeTab === "settings" && <SettingsTab />}
         </div>
 
