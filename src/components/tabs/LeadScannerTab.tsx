@@ -136,7 +136,7 @@ export function LeadScannerTab() {
   const fetchHsContacts = useCallback(async (search = "") => {
     setHsLoading(true);
     try {
-      const q = search ? `?search=${encodeURIComponent(search)}&limit=200` : "?limit=200";
+      const q = search ? `?search=${encodeURIComponent(search)}` : "";
       const res = await fetch(`/api/leads/hubspot-contacts${q}`);
       if (!res.ok) throw new Error("Fetch failed");
       const data = await res.json() as { contacts: HubSpotContact[]; total: number };

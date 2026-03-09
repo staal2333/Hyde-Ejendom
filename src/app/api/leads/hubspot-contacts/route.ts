@@ -7,7 +7,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { config } from "@/lib/config";
 import { logger } from "@/lib/logger";
 
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 export interface HubSpotContact {
   id: string;
@@ -36,7 +36,6 @@ function authHeaders() {
 
 export async function GET(req: NextRequest) {
   const { searchParams } = req.nextUrl;
-  const limit = Math.min(parseInt(searchParams.get("limit") || "200", 10), 500);
   const search = searchParams.get("search") || "";
 
   try {
@@ -48,19 +47,18 @@ export async function GET(req: NextRequest) {
       "jobtitle", "phone", "city", "lifecyclestage",
       "createdate", "lastmodifieddate",
     ];
+    const propQuery = properties.map(p => `properties=${p}`).join("&");
 
+    // Paginate through ALL contacts with no artificial cap
     do {
-      const url = `${BASE_URL}/crm/v3/objects/contacts?limit=100${after ? `&after=${after}` : ""}&${properties.map(p => `properties=${p}`).join("&")}&sort=-createdate`;
+      const url = `${BASE_URL}/crm/v3/objects/contacts?limit=100${after ? `&after=${after}` : ""}&${propQuery}&sort=-createdate`;
       const res = await fetch(url, { headers: authHeaders() });
       if (!res.ok) {
         logger.warn(`[hubspot-contacts] Fetch failed: ${res.status}`);
         break;
       }
       const json = await res.json() as {
-        results?: {
-          id: string;
-          properties?: Record<string, string | null>;
-        }[];
+        results?: { id: string; properties?: Record<string, string | null> }[];
         paging?: { next?: { after: string } };
       };
 
@@ -85,10 +83,9 @@ export async function GET(req: NextRequest) {
       }
 
       after = json.paging?.next?.after;
-      if (contacts.length >= limit) break;
     } while (after);
 
-    // Client-side search filter
+    // Apply search filter
     const filtered = search
       ? contacts.filter((c) => {
           const q = search.toLowerCase();
@@ -101,7 +98,7 @@ export async function GET(req: NextRequest) {
       : contacts;
 
     return NextResponse.json({
-      contacts: filtered.slice(0, limit),
+      contacts: filtered,
       total: filtered.length,
     });
   } catch (e) {
