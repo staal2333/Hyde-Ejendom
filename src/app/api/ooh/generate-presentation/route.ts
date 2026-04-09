@@ -27,8 +27,9 @@ export async function POST(req: NextRequest) {
       templateId: string;
       slotAssignments: Record<
         string,
-        | { frameId: string; creativeId: string; creativeAssignments?: Record<number, string>; mockupDataUrl?: undefined }
-        | { mockupDataUrl: string; frameId?: undefined; creativeId?: undefined; creativeAssignments?: undefined }
+        | { frameId: string; creativeId: string; creativeAssignments?: Record<number, string>; mockupDataUrl?: undefined; originalOnly?: undefined }
+        | { mockupDataUrl: string; frameId?: undefined; creativeId?: undefined; creativeAssignments?: undefined; originalOnly?: undefined }
+        | { frameId: string; originalOnly: true; creativeId?: undefined; creativeAssignments?: undefined; mockupDataUrl?: undefined }
       >;
       /** Text placeholder values, e.g. { "{{CLIENT_NAME}}": "Carlsberg", "{{DATE}}": "Feb 2026" } */
       textValues?: Record<string, string>;
@@ -59,6 +60,11 @@ export async function POST(req: NextRequest) {
         if (assignment.mockupDataUrl) {
           const b64 = assignment.mockupDataUrl.replace(/^data:image\/\w+;base64,/, "");
           mockupBuffer = Buffer.from(b64, "base64");
+        } else if (assignment.frameId && assignment.originalOnly) {
+          // Use the raw frame image without any creative composite
+          const frame = await getFrame(assignment.frameId);
+          if (!frame) continue;
+          mockupBuffer = await loadImageBuffer(frame.frameImageUrl);
         } else if (assignment.frameId && assignment.creativeId) {
           const frame = await getFrame(assignment.frameId);
           if (!frame) continue;

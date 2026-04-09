@@ -709,6 +709,7 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
   const presSaveTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const presSavePendingRef = useRef<{ id: string; pages: PresentationTemplate["pages"] } | null>(null);
   const [presGenerating, setPresGenerating] = useState(false);
+  const [presGeneratingOriginal, setPresGeneratingOriginal] = useState(false);
   const [presCreativeId, setPresCreativeId] = useState<string | null>(null);
   // Per-placement creative overrides for Oplæg: frameId -> { placementIdx -> creativeId }
   // Using frameId as key so all slots linked to the same frame share the same assignments
@@ -3124,8 +3125,76 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
                   );
                 })()}
 
-                <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-end gap-3 shrink-0">
+                <div className="px-6 py-4 border-t border-slate-100 flex items-center justify-between gap-3 shrink-0">
                   <button onClick={() => setActivePresTemplate(null)} className="px-4 py-2 text-sm text-slate-500 hover:bg-slate-100 rounded-xl">Annuller</button>
+                  <div className="flex items-center gap-2">
+                  <button
+                    disabled={presGeneratingOriginal || presGenerating}
+                    onClick={async () => {
+                      if (!activePresTemplate) return;
+                      setPresGeneratingOriginal(true);
+                      try {
+                        // Build slot assignments using the linked frame image (no creative composite)
+                        const slotAssignments: Record<string, { frameId: string; originalOnly: true }> = {};
+                        for (const page of activePresTemplate.pages) {
+                          for (const slot of page.imageSlots) {
+                            if (slot.linkedFrameId) {
+                              slotAssignments[slot.id] = { frameId: slot.linkedFrameId, originalOnly: true };
+                            }
+                          }
+                        }
+
+                        const res = await fetch("/api/ooh/generate-presentation", {
+                          method: "POST",
+                          headers: { "Content-Type": "application/json" },
+                          body: JSON.stringify({
+                            templateId: activePresTemplate.id,
+                            slotAssignments,
+                            textValues: Object.keys(presTextValues).length > 0 ? presTextValues : undefined,
+                          }),
+                        });
+
+                        const contentType = res.headers.get("content-type") || "";
+                        if (!res.ok || contentType.includes("application/json")) {
+                          const err = await res.json().catch(() => ({ error: "Generation failed" }));
+                          throw new Error(err.error || "Generation failed");
+                        }
+
+                        const blob = await res.blob();
+                        const downloadUrl = window.URL.createObjectURL(blob);
+                        const a = document.createElement("a");
+                        a.style.display = "none";
+                        a.href = downloadUrl;
+                        a.download = `Oplaeg-${activePresTemplate.name.replace(/\s+/g, "-")}-original.pdf`;
+                        document.body.appendChild(a);
+                        a.click();
+                        setTimeout(() => {
+                          window.URL.revokeObjectURL(downloadUrl);
+                          document.body.removeChild(a);
+                        }, 200);
+
+                        toast("Oplæg med originale billeder downloadet!", "success");
+                        setActivePresTemplate(null);
+                      } catch (err) {
+                        toast(err instanceof Error ? err.message : "Fejl ved generering", "error");
+                      } finally {
+                        setPresGeneratingOriginal(false);
+                      }
+                    }}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 disabled:bg-slate-100 disabled:text-slate-400 text-slate-700 text-sm font-semibold rounded-xl flex items-center gap-2"
+                  >
+                    {presGeneratingOriginal ? (
+                      <>
+                        <div className="animate-spin rounded-full h-4 w-4 border-2 border-slate-300 border-t-slate-600" />
+                        Genererer...
+                      </>
+                    ) : (
+                      <>
+                        <Ic d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5a2.25 2.25 0 002.25-2.25V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" className="w-4 h-4" />
+                        Med originale billeder
+                      </>
+                    )}
+                  </button>
                   <button
                     disabled={(!presCreativeId && Object.keys(presFrameCreatives).length === 0) || presGenerating}
                     onClick={async () => {
@@ -3209,6 +3278,7 @@ export default function OOHPanel({ initialFrame, initialClient, onToast, setActi
                       </>
                     )}
                   </button>
+                  </div>
                 </div>
               </div>
             </div>
