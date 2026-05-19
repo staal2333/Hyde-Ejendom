@@ -1,8 +1,9 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import TabBar from "../ui/TabBar";
 import Ic from "../ui/Icon";
+import type { InvoiceLineType, InvoiceScanResult } from "@/lib/case/invoice-scan";
 import {
   CASE_STATUSES,
   CASE_STATUS_COLOR,
@@ -311,6 +312,103 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
   const setHydeShare = (pct: number) => {
     const clamped = Math.max(0, Math.min(100, pct));
     setForm((p) => ({ ...p, hydeSharePct: clamped, bygherreSharePct: 100 - clamped }));
+  };
+
+  // ─── Invoice scan ────────────────────────────────────────
+
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [scanLoading, setScanLoading] = useState(false);
+  const [scanResult, setScanResult] = useState<InvoiceScanResult | null>(null);
+  const [scanLineTypes, setScanLineTypes] = useState<Record<number, InvoiceLineType>>({});
+  const [scanLineEnabled, setScanLineEnabled] = useState<Record<number, boolean>>({});
+
+  const openScanPicker = () => fileInputRef.current?.click();
+
+  const handleInvoiceFile = useCallback(
+    async (file: File) => {
+      setScanLoading(true);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const r = await fetch("/api/case/invoice-scan", { method: "POST", body: fd });
+        const d = (await r.json()) as { result?: InvoiceScanResult; error?: string };
+        if (!r.ok || !d.result) {
+          onToast(d.error || "Scan fejlede", "error");
+          return;
+        }
+        setScanResult(d.result);
+        const typeMap: Record<number, InvoiceLineType> = {};
+        const enabledMap: Record<number, boolean> = {};
+        d.result.lines.forEach((l, i) => {
+          typeMap[i] = l.type;
+          enabledMap[i] = true;
+        });
+        setScanLineTypes(typeMap);
+        setScanLineEnabled(enabledMap);
+        onToast(`Faktura scannet — ${d.result.lines.length} linjer fundet`, "success");
+      } catch (err) {
+        onToast(err instanceof Error ? err.message : "Fejl ved upload", "error");
+      } finally {
+        setScanLoading(false);
+      }
+    },
+    [onToast]
+  );
+
+  const closeScanModal = () => {
+    setScanResult(null);
+    setScanLineTypes({});
+    setScanLineEnabled({});
+  };
+
+  const applyScannedInvoice = () => {
+    if (!scanResult) return;
+    let produktion = 0;
+    let montering = 0;
+    let kommunale = 0;
+    let overhead = 0;
+    scanResult.lines.forEach((line, i) => {
+      if (!scanLineEnabled[i]) return;
+      const t = scanLineTypes[i] || "andet";
+      const amt = Math.max(0, line.amount || 0);
+      switch (t) {
+        case "produktion":
+          produktion += amt;
+          break;
+        case "montering":
+          montering += amt;
+          break;
+        case "kommunale":
+          kommunale += amt;
+          break;
+        case "overhead":
+        case "andet":
+          overhead += amt;
+          break;
+      }
+    });
+    setForm((p) => ({
+      ...p,
+      costs: {
+        ...p.costs,
+        produktionKost: (p.costs.produktionKost || 0) + produktion,
+        monteringKost: (p.costs.monteringKost || 0) + montering,
+        kommunaleGebyr: (p.costs.kommunaleGebyr || 0) + kommunale,
+        internalOverhead: (p.costs.internalOverhead || 0) + overhead,
+      },
+    }));
+    onToast(
+      `Anvendt på case: ${[
+        produktion > 0 && `${fmtDKK(produktion)} produktion`,
+        montering > 0 && `${fmtDKK(montering)} montering`,
+        kommunale > 0 && `${fmtDKK(kommunale)} kommunale`,
+        overhead > 0 && `${fmtDKK(overhead)} overhead`,
+      ]
+        .filter(Boolean)
+        .join(", ")}`,
+      "success"
+    );
+    closeScanModal();
   };
 
   // ─── Settings mutations ──────────────────────────────────
@@ -802,14 +900,48 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
             <div>
               <div className="flex items-center justify-between mb-1">
                 <div className={LABEL}>Omkostninger — salgspris vs. kostpris</div>
-                {settings && (
+                <div className="flex items-center gap-3">
                   <button
-                    onClick={applyCostDefaults}
-                    className="text-[10px] text-violet-600 hover:underline"
+                    onClick={openScanPicker}
+                    disabled={scanLoading}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-violet-600 hover:underline disabled:opacity-50"
+                    title="Upload en leverandørfaktura — AI udtrækker beløb og kategorier"
                   >
-                    Brug standard kostpriser
+                    {scanLoading ? (
+                      <>
+                        <span className="inline-block w-2.5 h-2.5 border-2 border-violet-300 border-t-violet-600 rounded-full animate-spin" />
+                        Scanner...
+                      </>
+                    ) : (
+                      <>
+                        <Ic
+                          d="M9 8.25H7.5a2.25 2.25 0 00-2.25 2.25v9a2.25 2.25 0 002.25 2.25h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25H15M9 12l3 3m0 0l3-3m-3 3V2.25"
+                          className="w-3 h-3"
+                        />
+                        Scan faktura
+                      </>
+                    )}
                   </button>
-                )}
+                  <input
+                    ref={fileInputRef}
+                    type="file"
+                    accept="application/pdf,image/jpeg,image/png,image/webp"
+                    className="hidden"
+                    onChange={(e) => {
+                      const f = e.target.files?.[0];
+                      if (f) handleInvoiceFile(f);
+                      e.target.value = "";
+                    }}
+                  />
+                  {settings && (
+                    <button
+                      onClick={applyCostDefaults}
+                      className="text-[10px] text-violet-600 hover:underline"
+                    >
+                      Brug standard kostpriser
+                    </button>
+                  )}
+                </div>
               </div>
               <div className="rounded-md border border-slate-200 overflow-hidden">
                 <table className="w-full text-[11px]">
@@ -1179,6 +1311,205 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                 <span className="tabular-nums text-slate-900">{fmtDKK(monthlyOpEx)}</span>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ═══ INVOICE SCAN MODAL ═══ */}
+      {scanResult && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-sm p-4"
+          onClick={closeScanModal}
+        >
+          <div
+            className="bg-white rounded-xl shadow-2xl w-full max-w-3xl max-h-[90vh] overflow-hidden flex flex-col"
+            onClick={(ev) => ev.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="px-5 py-3 border-b border-slate-200 flex items-start justify-between">
+              <div>
+                <div className="text-base font-bold text-slate-900">Faktura scannet</div>
+                <div className="text-[11px] text-slate-500 mt-0.5">
+                  {scanResult.vendor || "Ukendt leverandør"}
+                  {scanResult.invoiceNumber && ` • Fakturanr. ${scanResult.invoiceNumber}`}
+                  {scanResult.invoiceDate && ` • ${scanResult.invoiceDate}`}
+                </div>
+              </div>
+              <button
+                onClick={closeScanModal}
+                className="text-slate-400 hover:text-slate-600"
+              >
+                <Ic d="M6 18L18 6M6 6l12 12" className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Body */}
+            <div className="flex-1 overflow-y-auto px-5 py-3 space-y-3">
+              <div className="grid grid-cols-3 gap-2 text-[11px]">
+                <div className="rounded border border-slate-200 p-2">
+                  <div className={LABEL}>Netto</div>
+                  <div className="font-bold text-slate-900 tabular-nums">
+                    {fmtDKK(scanResult.totalNet)}
+                  </div>
+                </div>
+                <div className="rounded border border-slate-200 p-2">
+                  <div className={LABEL}>Moms</div>
+                  <div className="font-bold text-slate-900 tabular-nums">
+                    {fmtDKK(scanResult.totalVat)}
+                  </div>
+                </div>
+                <div className="rounded border border-slate-200 p-2">
+                  <div className={LABEL}>Brutto</div>
+                  <div className="font-bold text-slate-900 tabular-nums">
+                    {fmtDKK(scanResult.totalGross)}
+                  </div>
+                </div>
+              </div>
+
+              {scanResult.notes && (
+                <div className="text-[10px] text-amber-700 bg-amber-50 border border-amber-200 rounded p-2">
+                  ⚠ {scanResult.notes}
+                </div>
+              )}
+
+              <div>
+                <div className="text-[11px] font-semibold text-slate-700 mb-1">
+                  Linjer ({scanResult.lines.length})
+                </div>
+                <div className="rounded-md border border-slate-200 overflow-hidden">
+                  <table className="w-full text-[11px]">
+                    <thead className="bg-slate-50">
+                      <tr className="text-left text-[10px] text-slate-500">
+                        <th className="px-2 py-1.5 w-8"></th>
+                        <th className="px-2 py-1.5 font-semibold">Beskrivelse</th>
+                        <th className="px-2 py-1.5 font-semibold">Kategori</th>
+                        <th className="px-2 py-1.5 font-semibold text-right">Beløb</th>
+                        <th className="px-2 py-1.5 font-semibold text-right">Konf.</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {scanResult.lines.map((line, i) => (
+                        <tr key={i} className="border-t border-slate-100">
+                          <td className="px-2 py-1">
+                            <input
+                              type="checkbox"
+                              checked={scanLineEnabled[i] ?? true}
+                              onChange={(ev) =>
+                                setScanLineEnabled((p) => ({ ...p, [i]: ev.target.checked }))
+                              }
+                            />
+                          </td>
+                          <td className="px-2 py-1.5">
+                            <div className="text-slate-800">{line.description}</div>
+                            {line.quantity != null && line.unitPrice != null && (
+                              <div className="text-[9px] text-slate-400">
+                                {line.quantity} × {fmtDKK(line.unitPrice)}
+                              </div>
+                            )}
+                          </td>
+                          <td className="px-2 py-1">
+                            <select
+                              className="h-6 w-full rounded border border-slate-200 bg-white px-1 text-[10px]"
+                              value={scanLineTypes[i] || "andet"}
+                              onChange={(ev) =>
+                                setScanLineTypes((p) => ({
+                                  ...p,
+                                  [i]: ev.target.value as InvoiceLineType,
+                                }))
+                              }
+                              disabled={!(scanLineEnabled[i] ?? true)}
+                            >
+                              <option value="produktion">Produktion</option>
+                              <option value="montering">Montering</option>
+                              <option value="kommunale">Kommunale</option>
+                              <option value="overhead">Overhead</option>
+                              <option value="andet">Andet</option>
+                            </select>
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums font-semibold">
+                            {fmtDKK(line.amount)}
+                          </td>
+                          <td
+                            className={`px-2 py-1.5 text-right tabular-nums ${
+                              line.confidence >= 0.8
+                                ? "text-emerald-700"
+                                : line.confidence >= 0.5
+                                ? "text-amber-700"
+                                : "text-rose-700"
+                            }`}
+                          >
+                            {Math.round(line.confidence * 100)}%
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Preview rollup */}
+              <div className="rounded-md border border-violet-200 bg-violet-50 p-3">
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-700 mb-1">
+                  Bliver lagt til case'ens kostpriser
+                </div>
+                {(() => {
+                  let produktion = 0;
+                  let montering = 0;
+                  let kommunale = 0;
+                  let overhead = 0;
+                  scanResult.lines.forEach((line, i) => {
+                    if (!scanLineEnabled[i]) return;
+                    const t = scanLineTypes[i] || "andet";
+                    const amt = Math.max(0, line.amount || 0);
+                    if (t === "produktion") produktion += amt;
+                    else if (t === "montering") montering += amt;
+                    else if (t === "kommunale") kommunale += amt;
+                    else overhead += amt;
+                  });
+                  return (
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+                      <div>
+                        <span className="text-slate-500">Produktion: </span>
+                        <span className="font-semibold tabular-nums">{fmtDKK(produktion)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Montering: </span>
+                        <span className="font-semibold tabular-nums">{fmtDKK(montering)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Kommunale: </span>
+                        <span className="font-semibold tabular-nums">{fmtDKK(kommunale)}</span>
+                      </div>
+                      <div>
+                        <span className="text-slate-500">Overhead: </span>
+                        <span className="font-semibold tabular-nums">{fmtDKK(overhead)}</span>
+                      </div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+
+            {/* Footer */}
+            <div className="px-5 py-3 border-t border-slate-200 flex items-center justify-between">
+              <div className="text-[10px] text-slate-500">
+                Tip: Beløb lægges <em>oveni</em> de eksisterende kostpriser på case'en.
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={closeScanModal}
+                  className="h-8 px-3 rounded-md text-[11px] font-semibold text-slate-600 hover:bg-slate-100"
+                >
+                  Annullér
+                </button>
+                <button
+                  onClick={applyScannedInvoice}
+                  className="h-8 px-3 rounded-md bg-violet-600 text-[11px] font-semibold text-white hover:bg-violet-700"
+                >
+                  Anvend på case
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
