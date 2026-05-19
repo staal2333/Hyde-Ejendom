@@ -972,7 +972,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                     onClick={openScanPicker}
                     disabled={scanLoading}
                     className="flex items-center gap-1 text-[10px] font-semibold text-violet-600 hover:underline disabled:opacity-50"
-                    title="Upload en leverandørfaktura — AI udtrækker beløb og kategorier"
+                    title="Upload en leverandør-faktura (banner-print, montering, kommune) — IKKE jeres egne udgående fakturaer. AI udtrækker kostpriser."
                   >
                     {scanLoading ? (
                       <>
@@ -985,7 +985,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                           d="M9 8.25H7.5a2.25 2.25 0 00-2.25 2.25v9a2.25 2.25 0 002.25 2.25h9a2.25 2.25 0 002.25-2.25v-9a2.25 2.25 0 00-2.25-2.25H15M9 12l3 3m0 0l3-3m-3 3V2.25"
                           className="w-3 h-3"
                         />
-                        Scan faktura
+                        Scan leverandør-faktura
                       </>
                     )}
                   </button>
@@ -1573,11 +1573,14 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
             {/* Header */}
             <div className="px-5 py-3 border-b border-slate-200 flex items-start justify-between">
               <div>
-                <div className="text-base font-bold text-slate-900">Faktura scannet</div>
+                <div className="text-base font-bold text-slate-900">Leverandør-faktura scannet</div>
                 <div className="text-[11px] text-slate-500 mt-0.5">
                   {scanResult.vendor || "Ukendt leverandør"}
                   {scanResult.invoiceNumber && ` • Fakturanr. ${scanResult.invoiceNumber}`}
                   {scanResult.invoiceDate && ` • ${scanResult.invoiceDate}`}
+                </div>
+                <div className="text-[10px] text-amber-700 mt-1">
+                  ⓘ Kun beløb categorized som produktion/montering/kommune/overhead lægges til case'ens <strong>kostpriser</strong>. Medie-linjer ignoreres (medievisning er ikke en omkostning).
                 </div>
               </div>
               <button
@@ -1664,6 +1667,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                               }
                               disabled={!(scanLineEnabled[i] ?? true)}
                             >
+                              <option value="medie">Medie (ignoreres)</option>
                               <option value="produktion">Produktion</option>
                               <option value="montering">Montering</option>
                               <option value="kommunale">Kommunale</option>
@@ -1702,33 +1706,42 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                   let montering = 0;
                   let kommunale = 0;
                   let overhead = 0;
+                  let medieIgnored = 0;
                   scanResult.lines.forEach((line, i) => {
                     if (!scanLineEnabled[i]) return;
                     const t = scanLineTypes[i] || "andet";
                     const amt = Math.max(0, line.amount || 0);
-                    if (t === "produktion") produktion += amt;
+                    if (t === "medie") medieIgnored += amt;
+                    else if (t === "produktion") produktion += amt;
                     else if (t === "montering") montering += amt;
                     else if (t === "kommunale") kommunale += amt;
-                    else overhead += amt;
+                    else if (t === "overhead" || t === "andet") overhead += amt;
                   });
                   return (
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
-                      <div>
-                        <span className="text-slate-500">Produktion: </span>
-                        <span className="font-semibold tabular-nums">{fmtDKK(produktion)}</span>
+                    <div className="space-y-1.5">
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-[11px]">
+                        <div>
+                          <span className="text-slate-500">Produktion: </span>
+                          <span className="font-semibold tabular-nums">{fmtDKK(produktion)}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Montering: </span>
+                          <span className="font-semibold tabular-nums">{fmtDKK(montering)}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Kommunale: </span>
+                          <span className="font-semibold tabular-nums">{fmtDKK(kommunale)}</span>
+                        </div>
+                        <div>
+                          <span className="text-slate-500">Overhead: </span>
+                          <span className="font-semibold tabular-nums">{fmtDKK(overhead)}</span>
+                        </div>
                       </div>
-                      <div>
-                        <span className="text-slate-500">Montering: </span>
-                        <span className="font-semibold tabular-nums">{fmtDKK(montering)}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Kommunale: </span>
-                        <span className="font-semibold tabular-nums">{fmtDKK(kommunale)}</span>
-                      </div>
-                      <div>
-                        <span className="text-slate-500">Overhead: </span>
-                        <span className="font-semibold tabular-nums">{fmtDKK(overhead)}</span>
-                      </div>
+                      {medieIgnored > 0 && (
+                        <div className="text-[10px] text-slate-400">
+                          ⓘ Medie-linjer ({fmtDKK(medieIgnored)}) ignoreres — medievisning er ikke en omkostning. Opret et salg manuelt hvis det skal med.
+                        </div>
+                      )}
                     </div>
                   );
                 })()}

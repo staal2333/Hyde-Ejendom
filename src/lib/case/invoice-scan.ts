@@ -29,6 +29,7 @@ export type InvoiceLineType =
   | "montering"
   | "kommunale"
   | "overhead"
+  | "medie"      // Medievisning — IKKE en kost, ignoreres i rollup
   | "andet";
 
 export interface InvoiceLine {
@@ -56,13 +57,16 @@ export interface InvoiceScanResult {
 const SYSTEM_PROMPT = `Du er en præcis dansk faktura-scanner. Du modtager teksten eller billedet af en LEVERANDØRFAKTURA og udtrækker strukturerede data.
 
 Hver linje på fakturaen skal kategoriseres som ÉN af:
+- "medie"       → medievisning, banner-display, kampagne-eksponering, ad-impressions
+                  (DETTE ER IKKE EN OMKOSTNING — det er en omsætning/sale. Ignoreres i kostpris-rollup.)
 - "produktion"  → tryk/produktion af banner, print, vinyl, mesh (alt der involverer at lave selve mediet)
 - "montering"   → opsætning, montering, nedtagning, ophæng, kran/lift
-- "kommunale"   → kommunale gebyrer, vejmyndighed, ansøgninger til myndigheder
+- "kommunale"   → kommunale gebyrer, vejmyndighed, ansøgninger til myndigheder, "kommune afgift"
 - "overhead"    → administration, transport, kørsel, planlægning
 - "andet"       → alt andet (forsikring, materialer, etc.)
 
 Vær KONSERVATIV med kategorisering — hvis du ikke er sikker, vælg "andet" med lav confidence.
+ALDRIG putte medievisning, "medie", "kampagne", eller "exposure" i "andet" — det skal være "medie".
 Beløb er ALTID i DKK ekskl. moms (netto). Hvis fakturaen viser brutto, beregn netto.
 Hvis m² er angivet (fx "100 m² x 150,00"), udfyld quantity og unitPrice.
 
@@ -78,7 +82,7 @@ Svar i JSON:
   "lines": [
     {
       "description": "Linjebeskrivelse fra fakturaen",
-      "type": "produktion | montering | kommunale | overhead | andet",
+      "type": "medie | produktion | montering | kommunale | overhead | andet",
       "amount": <netto beløb for linjen>,
       "quantity": <m² eller stk, hvis angivet>,
       "unit_price": <pris pr. enhed, hvis beregnelig>,
@@ -130,12 +134,16 @@ function parseResponse(raw: string, textSample: string): InvoiceScanResult {
   const linesRaw = Array.isArray(parsed.lines) ? parsed.lines : [];
   const lines: InvoiceLine[] = linesRaw.map((l) => {
     const line = l as Record<string, unknown>;
-    const typeRaw = String(line.type || "andet");
-    const type: InvoiceLineType = (
-      ["produktion", "montering", "kommunale", "overhead", "andet"].includes(typeRaw)
-        ? typeRaw
-        : "andet"
-    ) as InvoiceLineType;
+    const typeRaw = String(line.type || "andet").toLowerCase();
+    const validTypes = ["medie", "produktion", "montering", "kommunale", "overhead", "andet"];
+    let type: InvoiceLineType = (validTypes.includes(typeRaw) ? typeRaw : "andet") as InvoiceLineType;
+
+    // Safety net: hvis AI alligevel kategoriserer som "andet" men description ligner medie,
+    // promovér til "medie" så det IKKE ryger i overhead-rollup.
+    const desc = String(line.description || "").toLowerCase();
+    if (type === "andet" && /medievisning|medie\b|kampagne.eksponering|impression/.test(desc)) {
+      type = "medie";
+    }
     return {
       description: String(line.description || ""),
       type,
@@ -269,6 +277,9 @@ export function rollupForCase(result: InvoiceScanResult): {
       case "overhead":
       case "andet":
         overhead += amt;
+        break;
+      case "medie":
+        // Medievisning er ikke en omkostning — skal ikke med i cost-rollup.
         break;
     }
   }
