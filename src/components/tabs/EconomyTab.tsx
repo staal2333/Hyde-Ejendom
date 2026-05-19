@@ -9,9 +9,11 @@ import {
   CASE_STATUS_COLOR,
   CASE_STATUS_LABEL,
   OPERATING_EXPENSE_LABEL,
+  caseDays,
   createDefaultCase,
   createDefaultCaseSale,
   lookupKommuneRate,
+  netMedieForSale,
   type Case,
   type CaseSale,
   type CaseStatus,
@@ -295,30 +297,42 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
     setForm((p) => ({ ...p, sales: (p.sales || []).filter((s) => s.id !== id) }));
   };
 
+  // Fastpriser brugt i tilbud (salgspris til bygherre)
+  const PRODUKTION_SALG_PER_SQM = 150;
+  const MONTERING_SALG_PER_SQM = 125;
+
+  const days = caseDays(form);
+
   const applyCostDefaults = useCallback(() => {
     if (!settings) return;
     const area = form.areaSqm || 0;
     const months = Math.max(1, form.varighedMaaneder || 1);
+    const d = caseDays(form);
     const kommuneRate = lookupKommuneRate(settings.kommunaleRates || [], form.kommune);
-    const kommunale = area * kommuneRate;
+    const kommunaleSalg = area * kommuneRate * d;
     setForm((p) => ({
       ...p,
       costs: {
         ...p.costs,
+        // Salgspriser (faktureres bygherre)
+        produktionSalg: area * PRODUKTION_SALG_PER_SQM,
+        monteringSalg: area * MONTERING_SALG_PER_SQM,
+        kommunaleSalg: kommuneRate > 0 ? kommunaleSalg : p.costs.kommunaleSalg,
+        // Kostpriser (Hyde's faktiske udgift)
         produktionKost: area * settings.produktionKostPerSqm,
         monteringKost: area * settings.monteringKostPerSqm,
-        kommunaleGebyr: kommuneRate > 0 ? kommunale : p.costs.kommunaleGebyr,
+        kommunaleKost: kommuneRate > 0 ? kommunaleSalg : p.costs.kommunaleKost, // passthrough
         internalOverhead: months * settings.defaultOverheadPerMonth,
       },
     }));
     const kommuneNote =
       form.kommune && kommuneRate > 0
-        ? ` — kommunale gebyr beregnet for ${form.kommune}`
+        ? ` — kommunalt beregnet for ${form.kommune} (${kommuneRate} kr/m²/døgn × ${area} m² × ${d} døgn)`
         : form.kommune && kommuneRate === 0
-        ? ` — ingen rate sat for ${form.kommune}, kommunale gebyr ikke ændret`
+        ? ` — ingen rate sat for ${form.kommune}`
         : "";
-    onToast(`Kostpriser opdateret${kommuneNote}`, "info");
-  }, [settings, form.areaSqm, form.varighedMaaneder, form.kommune, onToast]);
+    onToast(`Priser opdateret${kommuneNote}`, "info");
+  }, [settings, form, onToast]);
 
   const setHydeShare = (pct: number) => {
     const clamped = Math.max(0, Math.min(100, pct));
@@ -404,7 +418,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
         ...p.costs,
         produktionKost: (p.costs.produktionKost || 0) + produktion,
         monteringKost: (p.costs.monteringKost || 0) + montering,
-        kommunaleGebyr: (p.costs.kommunaleGebyr || 0) + kommunale,
+        kommunaleKost: (p.costs.kommunaleKost || p.costs.kommunaleGebyr || 0) + kommunale,
         internalOverhead: (p.costs.internalOverhead || 0) + overhead,
       },
     }));
@@ -720,7 +734,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                   Kommune
                   {form.kommune && settings && (
                     <span className="ml-1 font-normal text-slate-400 normal-case">
-                      ({lookupKommuneRate(settings.kommunaleRates || [], form.kommune)} kr/m²)
+                      ({lookupKommuneRate(settings.kommunaleRates || [], form.kommune)} kr/m²/døgn)
                     </span>
                   )}
                 </div>
@@ -734,7 +748,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                 <datalist id="kommune-options">
                   {(settings?.kommunaleRates || []).map((r) => (
                     <option key={r.kommune} value={r.kommune}>
-                      {r.perSqm} kr/m²
+                      {r.perSqmPerDag} kr/m²/døgn
                     </option>
                   ))}
                 </datalist>
@@ -803,17 +817,14 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
               </div>
             </div>
 
-            {/* Revenue split visual — efter omkostninger */}
+            {/* Medie-split visualization (på net medievisning) */}
             <div className="space-y-1">
               <div className="flex items-center justify-between text-[10px] text-slate-600">
                 <span>
-                  Til deling (efter omk.): <strong>{fmtDKK(econ.netTilDeling)}</strong>
-                  <span className="text-slate-400">
-                    {" "}({fmtDKK(econ.medieSalg)} − {fmtDKK(econ.totalKost)})
-                  </span>
+                  Medievisning (efter rabat): <strong>{fmtDKK(econ.netMedieRevenue)}</strong>
                 </span>
                 <span>
-                  Hyde {fmtDKK(econ.hydeGebyr)} • Bygherre {fmtDKK(econ.bygherreAndel)}
+                  Hyde {fmtDKK(econ.hydeMediaShare)} • Bygherre {fmtDKK(econ.bygherreMediaShare)}
                 </span>
               </div>
               <div className="h-3 rounded-full bg-slate-100 overflow-hidden flex">
@@ -848,75 +859,101 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                       <th className="px-2 py-1.5 font-semibold">Annoncør</th>
                       <th className="px-2 py-1.5 font-semibold">Fra</th>
                       <th className="px-2 py-1.5 font-semibold">Til</th>
-                      <th className="px-2 py-1.5 font-semibold text-right">Salgspris</th>
+                      <th className="px-2 py-1.5 font-semibold text-right">Listepris</th>
+                      <th className="px-2 py-1.5 font-semibold text-right">Rabat %</th>
+                      <th className="px-2 py-1.5 font-semibold text-right">Net medie</th>
                       <th className="px-2 py-1.5"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {(form.sales || []).length === 0 && (
                       <tr>
-                        <td colSpan={5} className="px-2 py-3 text-center text-[10px] text-slate-400">
+                        <td colSpan={7} className="px-2 py-3 text-center text-[10px] text-slate-400">
                           Ingen salg endnu — tryk "+ Tilføj salg" for at registrere en booking.
                         </td>
                       </tr>
                     )}
-                    {(form.sales || []).map((sale) => (
-                      <tr key={sale.id} className="border-t border-slate-100">
-                        <td className="px-2 py-1">
-                          <input
-                            className={CI}
-                            placeholder="Annoncør..."
-                            value={sale.annoncør}
-                            onChange={(e) => updateSale(sale.id, { annoncør: e.target.value })}
-                          />
-                        </td>
-                        <td className="px-2 py-1">
-                          <input
-                            type="date"
-                            className={CI}
-                            value={sale.fromDate || ""}
-                            onChange={(e) => updateSale(sale.id, { fromDate: e.target.value })}
-                          />
-                        </td>
-                        <td className="px-2 py-1">
-                          <input
-                            type="date"
-                            className={CI}
-                            value={sale.toDate || ""}
-                            onChange={(e) => updateSale(sale.id, { toDate: e.target.value })}
-                          />
-                        </td>
-                        <td className="px-2 py-1">
-                          <input
-                            type="number"
-                            className={CIR}
-                            value={sale.salgspris || ""}
-                            onChange={(e) =>
-                              updateSale(sale.id, { salgspris: Number(e.target.value) || 0 })
-                            }
-                          />
-                        </td>
-                        <td className="px-2 py-1.5 text-right">
-                          <button
-                            onClick={() => removeSale(sale.id)}
-                            className="text-rose-500 hover:text-rose-700"
-                            title="Slet salg"
-                          >
-                            <Ic
-                              d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                              className="w-3.5 h-3.5"
+                    {(form.sales || []).map((sale) => {
+                      const netMedie = netMedieForSale(sale);
+                      return (
+                        <tr key={sale.id} className="border-t border-slate-100">
+                          <td className="px-2 py-1">
+                            <input
+                              className={CI}
+                              placeholder="Annoncør..."
+                              value={sale.annoncør}
+                              onChange={(e) => updateSale(sale.id, { annoncør: e.target.value })}
                             />
-                          </button>
-                        </td>
-                      </tr>
-                    ))}
+                          </td>
+                          <td className="px-2 py-1">
+                            <input
+                              type="date"
+                              className={CI}
+                              value={sale.fromDate || ""}
+                              onChange={(e) => updateSale(sale.id, { fromDate: e.target.value })}
+                            />
+                          </td>
+                          <td className="px-2 py-1">
+                            <input
+                              type="date"
+                              className={CI}
+                              value={sale.toDate || ""}
+                              onChange={(e) => updateSale(sale.id, { toDate: e.target.value })}
+                            />
+                          </td>
+                          <td className="px-2 py-1">
+                            <input
+                              type="number"
+                              className={CIR}
+                              placeholder="0"
+                              value={sale.listpris || sale.salgspris || ""}
+                              onChange={(e) =>
+                                updateSale(sale.id, {
+                                  listpris: Number(e.target.value) || 0,
+                                  salgspris: 0,
+                                })
+                              }
+                            />
+                          </td>
+                          <td className="px-2 py-1">
+                            <input
+                              type="number"
+                              min={0}
+                              max={100}
+                              step={0.01}
+                              className={CIR}
+                              placeholder="0"
+                              value={sale.rabatPct || ""}
+                              onChange={(e) =>
+                                updateSale(sale.id, { rabatPct: Number(e.target.value) || 0 })
+                              }
+                            />
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-slate-900">
+                            {fmtDKK(netMedie)}
+                          </td>
+                          <td className="px-2 py-1.5 text-right">
+                            <button
+                              onClick={() => removeSale(sale.id)}
+                              className="text-rose-500 hover:text-rose-700"
+                              title="Slet salg"
+                            >
+                              <Ic
+                                d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                                className="w-3.5 h-3.5"
+                              />
+                            </button>
+                          </td>
+                        </tr>
+                      );
+                    })}
                     {(form.sales || []).length > 0 && (
                       <tr className="border-t-2 border-slate-200 bg-slate-50">
-                        <td className="px-2 py-1.5 font-semibold text-slate-700" colSpan={3}>
-                          Annoncør betaler i alt ({(form.sales || []).length} salg)
+                        <td className="px-2 py-1.5 font-semibold text-slate-700" colSpan={5}>
+                          Net medie i alt ({(form.sales || []).length} salg)
                         </td>
                         <td className="px-2 py-1.5 text-right tabular-nums font-bold text-slate-900">
-                          {fmtDKK(econ.medieSalg)}
+                          {fmtDKK(econ.netMedieRevenue)}
                         </td>
                         <td></td>
                       </tr>
@@ -978,12 +1015,29 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                   <thead className="bg-slate-50">
                     <tr className="text-left text-[10px] text-slate-500">
                       <th className="px-2 py-1.5 font-semibold">Post</th>
-                      <th className="px-2 py-1.5 font-semibold text-right">Kostpris</th>
+                      <th className="px-2 py-1.5 font-semibold text-right">Salgspris (bygherre)</th>
+                      <th className="px-2 py-1.5 font-semibold text-right">Kostpris (Hyde)</th>
+                      <th className="px-2 py-1.5 font-semibold text-right">Margin</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1.5">Produktion</td>
+                      <td className="px-2 py-1.5">
+                        Produktion
+                        <span className="text-[9px] text-slate-400 ml-1">
+                          {form.areaSqm > 0 ? `(${form.areaSqm} m² × 150 / 90)` : "(150 / 90 kr/m²)"}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1">
+                        <input
+                          type="number"
+                          className={CIR}
+                          value={form.costs.produktionSalg || ""}
+                          onChange={(e) =>
+                            updateCosts({ produktionSalg: Number(e.target.value) || 0 })
+                          }
+                        />
+                      </td>
                       <td className="px-2 py-1">
                         <input
                           type="number"
@@ -994,9 +1048,31 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                           }
                         />
                       </td>
+                      <td
+                        className={`px-2 py-1.5 text-right tabular-nums font-semibold ${
+                          econ.produktionMargin >= 0 ? "text-emerald-700" : "text-rose-700"
+                        }`}
+                      >
+                        {fmtDKK(econ.produktionMargin)}
+                      </td>
                     </tr>
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1.5">Montering</td>
+                      <td className="px-2 py-1.5">
+                        Montering
+                        <span className="text-[9px] text-slate-400 ml-1">
+                          {form.areaSqm > 0 ? `(${form.areaSqm} m² × 125 / 70)` : "(125 / 70 kr/m²)"}
+                        </span>
+                      </td>
+                      <td className="px-2 py-1">
+                        <input
+                          type="number"
+                          className={CIR}
+                          value={form.costs.monteringSalg || ""}
+                          onChange={(e) =>
+                            updateCosts({ monteringSalg: Number(e.target.value) || 0 })
+                          }
+                        />
+                      </td>
                       <td className="px-2 py-1">
                         <input
                           type="number"
@@ -1007,18 +1083,49 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                           }
                         />
                       </td>
+                      <td
+                        className={`px-2 py-1.5 text-right tabular-nums font-semibold ${
+                          econ.monteringMargin >= 0 ? "text-emerald-700" : "text-rose-700"
+                        }`}
+                      >
+                        {fmtDKK(econ.monteringMargin)}
+                      </td>
                     </tr>
                     <tr className="border-t border-slate-100">
-                      <td className="px-2 py-1.5">Kommunale gebyrer</td>
+                      <td className="px-2 py-1.5">
+                        Kommune
+                        {form.kommune && settings && (
+                          <span className="text-[9px] text-slate-400 ml-1">
+                            ({lookupKommuneRate(settings.kommunaleRates || [], form.kommune)} kr/m²/døgn × {form.areaSqm} m² × {days} dage)
+                          </span>
+                        )}
+                      </td>
                       <td className="px-2 py-1">
                         <input
                           type="number"
                           className={CIR}
-                          value={form.costs.kommunaleGebyr || ""}
+                          value={form.costs.kommunaleSalg || ""}
                           onChange={(e) =>
-                            updateCosts({ kommunaleGebyr: Number(e.target.value) || 0 })
+                            updateCosts({ kommunaleSalg: Number(e.target.value) || 0 })
                           }
                         />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input
+                          type="number"
+                          className={CIR}
+                          value={form.costs.kommunaleKost || ""}
+                          onChange={(e) =>
+                            updateCosts({ kommunaleKost: Number(e.target.value) || 0 })
+                          }
+                        />
+                      </td>
+                      <td
+                        className={`px-2 py-1.5 text-right tabular-nums font-semibold ${
+                          econ.kommunaleMargin >= 0 ? "text-emerald-700" : "text-rose-700"
+                        }`}
+                      >
+                        {fmtDKK(econ.kommunaleMargin)}
                       </td>
                     </tr>
                     <tr className="border-t border-slate-100">
@@ -1028,6 +1135,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                           (kørsel, løn, etc. for hele perioden)
                         </span>
                       </td>
+                      <td className="px-2 py-1.5 text-right text-slate-400">—</td>
                       <td className="px-2 py-1">
                         <input
                           type="number"
@@ -1038,13 +1146,28 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                           }
                         />
                       </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-rose-700">
+                        {fmtDKK(-econ.internalOverhead)}
+                      </td>
                     </tr>
                     <tr className="border-t-2 border-slate-200 bg-slate-50">
-                      <td className="px-2 py-1.5 font-semibold text-slate-700">
-                        Total omkostninger
+                      <td className="px-2 py-1.5 font-semibold text-slate-700">Totaler</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-bold text-slate-900">
+                        {fmtDKK(econ.produktionSalg + econ.monteringSalg + econ.kommunaleSalg)}
                       </td>
                       <td className="px-2 py-1.5 text-right tabular-nums font-bold text-rose-700">
                         {fmtDKK(econ.totalKost)}
+                      </td>
+                      <td
+                        className={`px-2 py-1.5 text-right tabular-nums font-bold ${
+                          (econ.produktionMargin + econ.monteringMargin + econ.kommunaleMargin - econ.internalOverhead) >= 0
+                            ? "text-emerald-700"
+                            : "text-rose-700"
+                        }`}
+                      >
+                        {fmtDKK(
+                          econ.produktionMargin + econ.monteringMargin + econ.kommunaleMargin - econ.internalOverhead
+                        )}
                       </td>
                     </tr>
                   </tbody>
@@ -1055,32 +1178,32 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
             {/* Bottom summary */}
             <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
               <KpiCard
-                label="Annoncør betaler"
-                value={fmtDKK(econ.medieSalg)}
-                sublabel="Total medie-omsætning"
+                label="Faktura-total"
+                value={fmtDKK(econ.fakturaTotal)}
+                sublabel="Hvad bygherre betaler Hyde"
               />
               <KpiCard
-                label="Total kostpris"
-                value={fmtDKK(econ.totalKost)}
-                sublabel="Produktion + mont. + komm. + ovh."
-                tone="amber"
+                label={`Medie-gebyr (${form.hydeSharePct}%)`}
+                value={fmtDKK(econ.hydeMediaShare)}
+                sublabel={`af ${fmtDKK(econ.netMedieRevenue)} net medie`}
+                tone="blue"
               />
               <KpiCard
-                label={`Vores gebyr (${form.hydeSharePct}%)`}
-                value={fmtDKK(econ.hydeGebyr)}
-                sublabel={`= DB · ${fmtDKK(econ.dækningsbidragPerMonth)}/md`}
-                tone={econ.hydeGebyr >= 0 ? "emerald" : "rose"}
+                label="Service-margin"
+                value={fmtDKK(econ.produktionMargin + econ.monteringMargin + econ.kommunaleMargin)}
+                sublabel="Salgspris − kostpris (prod+mont+komm)"
+                tone="blue"
               />
               <KpiCard
-                label={`Bygherre-andel (${form.bygherreSharePct}%)`}
-                value={fmtDKK(econ.bygherreAndel)}
-                sublabel="Til bygherre efter omk."
+                label="Hyde's DB"
+                value={fmtDKK(econ.dækningsbidrag)}
+                sublabel={`${fmtDKK(econ.dækningsbidragPerMonth)}/md · ROI ${fmtPct(econ.roi)}`}
+                tone={econ.dækningsbidrag >= 0 ? "emerald" : "rose"}
               />
               <KpiCard
-                label="DB% / ROI"
-                value={`${fmtPct(econ.dækningsbidragPct)} / ${fmtPct(econ.roi)}`}
-                sublabel="DB% af medie-oms."
-                tone={econ.dækningsbidragPct >= 15 ? "emerald" : econ.dækningsbidragPct >= 5 ? "amber" : "rose"}
+                label="Bygherre's andel"
+                value={fmtDKK(econ.bygherreMediaShare)}
+                sublabel={`${form.bygherreSharePct}% af net medie`}
               />
             </div>
 
@@ -1234,9 +1357,9 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
             {settings && (
               <div className="border-t border-slate-100 pt-3 space-y-2">
                 <div>
-                  <div className="text-[11px] font-bold text-slate-900">Kommunale gebyrer pr. m²</div>
+                  <div className="text-[11px] font-bold text-slate-900">Kommunale gebyrer pr. m² / døgn</div>
                   <div className="text-[10px] text-slate-500">
-                    Forskellige kommuner har forskellige rates. Vælges via "Kommune"-felt på case.
+                    Fx Frederiksberg: 4,5 kr/m²/døgn. Beregnes som rate × m² × antal døgn på case'en.
                   </div>
                 </div>
 
@@ -1247,7 +1370,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                   {(settings.kommunaleRates || []).map((rate, idx) => (
                     <div
                       key={`${rate.kommune}-${idx}`}
-                      className="grid grid-cols-[1fr_110px_24px] items-center gap-2 px-2 py-1 rounded border border-slate-100 hover:bg-slate-50"
+                      className="grid grid-cols-[1fr_120px_24px] items-center gap-2 px-2 py-1 rounded border border-slate-100 hover:bg-slate-50"
                     >
                       <input
                         className="text-[11px] font-medium text-slate-900 bg-transparent border-0 focus:outline-none"
@@ -1263,17 +1386,18 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                       <div className="flex items-center gap-1">
                         <input
                           type="number"
+                          step={0.01}
                           className="h-6 w-full rounded border border-slate-200 bg-white px-1 text-[11px] text-right tabular-nums"
-                          defaultValue={rate.perSqm}
+                          defaultValue={rate.perSqmPerDag}
                           onBlur={(ev) => {
                             const v = Number(ev.target.value) || 0;
-                            if (v === rate.perSqm) return;
+                            if (v === rate.perSqmPerDag) return;
                             const next = [...(settings.kommunaleRates || [])];
-                            next[idx] = { ...rate, perSqm: v };
+                            next[idx] = { ...rate, perSqmPerDag: v };
                             saveSettings({ kommunaleRates: next });
                           }}
                         />
-                        <span className="text-[9px] text-slate-400">kr/m²</span>
+                        <span className="text-[9px] text-slate-400">kr/m²/døgn</span>
                       </div>
                       <button
                         onClick={() => {
@@ -1311,7 +1435,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                         onToast("Kommunen findes allerede", "error");
                         return;
                       }
-                      const next = [...(settings.kommunaleRates || []), { kommune: v, perSqm: 0 }];
+                      const next = [...(settings.kommunaleRates || []), { kommune: v, perSqmPerDag: 0 }];
                       saveSettings({ kommunaleRates: next });
                       setNewKommuneName("");
                     }}
@@ -1330,7 +1454,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                         onToast("Kommunen findes allerede", "error");
                         return;
                       }
-                      const next = [...(settings.kommunaleRates || []), { kommune: v, perSqm: 0 }];
+                      const next = [...(settings.kommunaleRates || []), { kommune: v, perSqmPerDag: 0 }];
                       saveSettings({ kommunaleRates: next });
                       setNewKommuneName("");
                     }}

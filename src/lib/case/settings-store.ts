@@ -14,9 +14,11 @@ function rowToSettings(row: Record<string, unknown>): CostSettings {
   const kommunaleRates: KommuneRate[] = rawRates
     .map((r) => {
       const rate = r as Record<string, unknown>;
+      // Accept both new "perSqmPerDag" and legacy "perSqm" keys
+      const perDay = rate.perSqmPerDag != null ? Number(rate.perSqmPerDag) : Number(rate.perSqm || 0);
       return {
         kommune: String(rate.kommune || ""),
-        perSqm: Number(rate.perSqm || 0),
+        perSqmPerDag: perDay,
       };
     })
     .filter((r) => r.kommune.length > 0);

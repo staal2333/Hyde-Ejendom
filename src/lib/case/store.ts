@@ -34,9 +34,11 @@ function rowToCase(row: Record<string, unknown>): Case {
     sales,
     costs: {
       produktionSalg: Number(costs.produktionSalg || 0),
-      produktionKost: Number(costs.produktionKost || 0),
       monteringSalg: Number(costs.monteringSalg || 0),
+      kommunaleSalg: Number(costs.kommunaleSalg || costs.kommunaleGebyr || 0),
+      produktionKost: Number(costs.produktionKost || 0),
       monteringKost: Number(costs.monteringKost || 0),
+      kommunaleKost: Number(costs.kommunaleKost || costs.kommunaleGebyr || 0),
       medieSalg: Number(costs.medieSalg || 0),
       kommunaleGebyr: Number(costs.kommunaleGebyr || 0),
       internalOverhead: Number(costs.internalOverhead || 0),

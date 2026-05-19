@@ -67,13 +67,17 @@ export function caseFromTilbud(tilbud: Tilbud, settings: CostSettings): CaseUpse
   const monteringKost = areaSqm * settings.monteringKostPerSqm;
   const internalOverhead = months * (settings.defaultOverheadPerMonth || 0);
 
-  // Seed a single sale from the tilbud's client + medie line.
+  // Seed a single sale from the tilbud's medie-line. Tilbuddet allerede har
+  // medieSalg som "netto efter rabat", så vi sætter listpris=medieSalg og rabat=0.
+  // Brugeren kan opdele i listpris + rabatPct senere hvis ønsket.
   const initialSale: CaseSale = {
     id: `sale-${Date.now()}-1`,
     annoncør: tilbud.clientName || "",
     fromDate: "",
     toDate: "",
-    salgspris: medieSalg,
+    listpris: medieSalg,
+    rabatPct: 0,
+    salgspris: 0,
     notes: tilbud.campaignName ? `Kampagne: ${tilbud.campaignName}` : "",
   };
 
@@ -94,8 +98,10 @@ export function caseFromTilbud(tilbud: Tilbud, settings: CostSettings): CaseUpse
       produktionKost,
       monteringSalg,
       monteringKost,
-      medieSalg: 0, // legacy field — sales is now source of truth
-      kommunaleGebyr,
+      kommunaleSalg: kommunaleGebyr,
+      kommunaleKost: kommunaleGebyr, // passthrough
+      medieSalg: 0,                  // legacy
+      kommunaleGebyr,                // legacy
       internalOverhead,
     },
     status: "tilbud_sendt",

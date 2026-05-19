@@ -1,30 +1,34 @@
-import { effectiveMedieSalg, type Case, type OperatingExpense } from "./types";
+import { effectiveMedieSalg, netMedieForSale, type Case, type OperatingExpense } from "./types";
 
 export interface CaseEconomics {
-  // Annoncør-betaling (sum af alle salg)
-  medieSalg: number;
-  kommunaleGebyr: number;
+  // ─── Salgspriser (hvad bygherre faktureres) ─────
+  netMedieRevenue: number;       // sum af (listpris − rabat) for alle salg
+  produktionSalg: number;
+  monteringSalg: number;
+  kommunaleSalg: number;
+  fakturaTotal: number;          // hvad bygherre samlet betaler Hyde
 
-  // Kostpriser (alt Hyde betaler ud)
+  // ─── Kostpriser (hvad Hyde reelt betaler ud) ────
   produktionKost: number;
   monteringKost: number;
+  kommunaleKost: number;
   internalOverhead: number;
   totalKost: number;
 
-  // Til deling efter omkostninger (= medieSalg − totalKost)
-  netTilDeling: number;
+  // ─── Split af medievisning ──────────────────────
+  hydeMediaShare: number;        // netMedieRevenue × hydeSharePct
+  bygherreMediaShare: number;    // netMedieRevenue × bygherreSharePct
 
-  // Split af netTilDeling
-  hydeGebyr: number;            // Hyde's andel (= DB)
-  bygherreAndel: number;        // bygherrens andel
+  // ─── Margins på services ────────────────────────
+  produktionMargin: number;      // produktionSalg − produktionKost
+  monteringMargin: number;       // monteringSalg − monteringKost
+  kommunaleMargin: number;       // kommunaleSalg − kommunaleKost (typisk 0)
 
-  // DB = hydeGebyr (Hyde's egentlige overskud)
-  dækningsbidrag: number;
-  dækningsbidragPct: number;    // DB / medieSalg × 100
+  // ─── Hyde's bottom line ─────────────────────────
+  dækningsbidrag: number;        // = hydeMediaShare + alle marginer − overhead
+  dækningsbidragPct: number;     // DB / fakturaTotal × 100
   dækningsbidragPerMonth: number;
-
-  // ROI relativ til Hyde's andel af omkostninger
-  roi: number;                  // DB / (totalKost × hydeSharePct) × 100
+  roi: number;                   // DB / Hyde's eksponering × 100
 }
 
 function round2(n: number): number {
@@ -35,41 +39,63 @@ export function calcCaseEconomics(c: Case): CaseEconomics {
   const costs = c.costs;
   const months = Math.max(1, c.varighedMaaneder || 1);
 
-  const medieSalg = Math.max(0, effectiveMedieSalg(c.sales || [], costs.medieSalg || 0));
-  const kommunaleGebyr = Math.max(0, costs.kommunaleGebyr || 0);
+  // Net medievisning fra salg (efter rabat). Falder tilbage til legacy medieSalg hvis sales[] er tom.
+  const netMedieRevenue = Math.max(0, effectiveMedieSalg(c.sales || [], costs.medieSalg || 0));
+
+  // Salgspriser (hvad bygherre faktureres) — kommunaleGebyr behandles som kommunaleSalg ved fallback
+  const produktionSalg = Math.max(0, costs.produktionSalg || 0);
+  const monteringSalg = Math.max(0, costs.monteringSalg || 0);
+  const kommunaleSalg = Math.max(0, costs.kommunaleSalg || costs.kommunaleGebyr || 0);
+
+  // Kostpriser — kommunaleKost falder tilbage til kommunaleSalg (passthrough)
   const produktionKost = Math.max(0, costs.produktionKost || 0);
   const monteringKost = Math.max(0, costs.monteringKost || 0);
+  const kommunaleKost = Math.max(0, costs.kommunaleKost || kommunaleSalg);
   const internalOverhead = Math.max(0, costs.internalOverhead || 0);
 
+  const fakturaTotal = netMedieRevenue + produktionSalg + monteringSalg + kommunaleSalg;
+  const totalKost = produktionKost + monteringKost + kommunaleKost + internalOverhead;
+
+  // Split af medie-omsætning
   const hydePct = Math.max(0, Math.min(100, c.hydeSharePct || 0)) / 100;
   const bygherrePct = Math.max(0, Math.min(100, c.bygherreSharePct || 0)) / 100;
+  const hydeMediaShare = netMedieRevenue * hydePct;
+  const bygherreMediaShare = netMedieRevenue * bygherrePct;
 
-  const totalKost = produktionKost + monteringKost + kommunaleGebyr + internalOverhead;
+  // Margins på services (Hyde tjener differencen mellem salgspris og kostpris)
+  const produktionMargin = produktionSalg - produktionKost;
+  const monteringMargin = monteringSalg - monteringKost;
+  const kommunaleMargin = kommunaleSalg - kommunaleKost;
 
-  // Annoncør betaler én pris (medieSalg). Hyde trækker omkostninger fra, og resten deles 40/60.
-  const netTilDeling = medieSalg - totalKost;
-  const hydeGebyr = netTilDeling * hydePct;
-  const bygherreAndel = netTilDeling * bygherrePct;
-
-  const dækningsbidrag = hydeGebyr;
-  const dækningsbidragPct = medieSalg > 0 ? (dækningsbidrag / medieSalg) * 100 : 0;
+  // Hyde's DB: andel af medie + alle service-marginer − overhead
+  const dækningsbidrag =
+    hydeMediaShare + produktionMargin + monteringMargin + kommunaleMargin - internalOverhead;
+  const dækningsbidragPct = fakturaTotal > 0 ? (dækningsbidrag / fakturaTotal) * 100 : 0;
   const dækningsbidragPerMonth = dækningsbidrag / months;
-  // ROI: DB / (Hyde's andel af omkostninger). Bygherre bærer 60% af omkostningerne via deres mindre andel.
-  const hydeCostShare = totalKost * hydePct;
-  const roi = hydeCostShare > 0 ? (dækningsbidrag / hydeCostShare) * 100 : 0;
+
+  // ROI: DB / Hyde's eksponering (kostpriser Hyde reelt har betalt for produktion+montering+overhead)
+  const hydeExposure = produktionKost + monteringKost + internalOverhead;
+  const roi = hydeExposure > 0 ? (dækningsbidrag / hydeExposure) * 100 : 0;
 
   return {
-    medieSalg: round2(medieSalg),
-    kommunaleGebyr: round2(kommunaleGebyr),
+    netMedieRevenue: round2(netMedieRevenue),
+    produktionSalg: round2(produktionSalg),
+    monteringSalg: round2(monteringSalg),
+    kommunaleSalg: round2(kommunaleSalg),
+    fakturaTotal: round2(fakturaTotal),
 
     produktionKost: round2(produktionKost),
     monteringKost: round2(monteringKost),
+    kommunaleKost: round2(kommunaleKost),
     internalOverhead: round2(internalOverhead),
     totalKost: round2(totalKost),
 
-    netTilDeling: round2(netTilDeling),
-    hydeGebyr: round2(hydeGebyr),
-    bygherreAndel: round2(bygherreAndel),
+    hydeMediaShare: round2(hydeMediaShare),
+    bygherreMediaShare: round2(bygherreMediaShare),
+
+    produktionMargin: round2(produktionMargin),
+    monteringMargin: round2(monteringMargin),
+    kommunaleMargin: round2(kommunaleMargin),
 
     dækningsbidrag: round2(dækningsbidrag),
     dækningsbidragPct: round2(dækningsbidragPct),
@@ -124,8 +150,8 @@ export function calcPortfolioKPIs(cases: Case[]): PortfolioKPIs {
     }
 
     if (!TABT_STATUSES.has(c.status)) {
-      totalOmsætning += e.medieSalg;
-      if (e.medieSalg > 0) {
+      totalOmsætning += e.fakturaTotal;
+      if (e.fakturaTotal > 0) {
         dbPctSum += e.dækningsbidragPct;
         dbPctCount++;
       }
@@ -228,20 +254,16 @@ export function calcMonthlyForecast(cases: Case[], horizonMonths = 12): MonthlyF
     const hydePct = Math.max(0, Math.min(100, c.hydeSharePct || 0)) / 100;
     const caseMonths = countMonthsBetween(caseStart, caseEnd);
 
-    // Costs × Hyde's andel distributed (negativt) over case-perioden
-    const hydeCostShare = e.totalKost * hydePct;
-    if (hydeCostShare > 0) {
-      distribute(-hydeCostShare / caseMonths, caseStart, caseEnd, true);
-    } else {
-      // Sørg for at case'en stadig tæller selvom ingen costs
-      distribute(0, caseStart, caseEnd, true);
-    }
+    // Service-marginer + overhead − fordelt over case-perioden
+    const serviceContrib =
+      e.produktionMargin + e.monteringMargin + e.kommunaleMargin - e.internalOverhead;
+    distribute(serviceContrib / caseMonths, caseStart, caseEnd, true);
 
-    // Hver sales Hyde-andel af salgspris fordeles over salgs-perioden
+    // Hver sales Hyde-andel af netto-medie fordeles over salgs-perioden
     const sales = c.sales || [];
     if (sales.length === 0) {
-      // Legacy: ingen salg — brug medieSalg fordelt over hele case-perioden
-      const medieHyde = e.medieSalg * hydePct;
+      // Legacy: ingen salg — brug netMedieRevenue × Hyde-andel fordelt over case-perioden
+      const medieHyde = e.netMedieRevenue * hydePct;
       if (medieHyde > 0) {
         distribute(medieHyde / caseMonths, caseStart, caseEnd, false);
       }
@@ -250,7 +272,7 @@ export function calcMonthlyForecast(cases: Case[], horizonMonths = 12): MonthlyF
         const saleStart = parseDateLoose(sale.fromDate) || caseStart;
         const saleEnd = parseDateLoose(sale.toDate) || caseEnd;
         const saleMonths = countMonthsBetween(saleStart, saleEnd);
-        const hydeAmount = (sale.salgspris || 0) * hydePct;
+        const hydeAmount = netMedieForSale(sale) * hydePct;
         if (hydeAmount > 0) {
           distribute(hydeAmount / saleMonths, saleStart, saleEnd, false);
         }

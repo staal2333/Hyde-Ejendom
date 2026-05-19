@@ -35,19 +35,36 @@ export const CASE_STATUS_COLOR: Record<CaseStatus, string> = {
 
 /**
  * A single sale/booking within a case — one advertiser renting the
- * scaffolding's media space for a given period. Multiple sales can
- * stack up over a case's 1-12 month duration as advertisers rotate.
+ * scaffolding's media space for a given period.
+ *
+ * Net medievisning = listpris × (1 − rabatPct/100). It is THIS net
+ * amount that gets split between Hyde and bygherre per the case's
+ * hydeSharePct (e.g., 10% Hyde / 90% bygherre).
+ *
+ * Salgspris (legacy) er bevaret for bagudkompatibilitet — hvis
+ * listpris er 0 og salgspris > 0, behandles salgspris som listpris
+ * med 0% rabat.
  */
 export const caseSaleSchema = z.object({
   id: z.string().min(1),
   annoncør: z.string().default(""),
   fromDate: z.string().optional().default(""),
   toDate: z.string().optional().default(""),
-  salgspris: z.number().nonnegative().default(0),
+  listpris: z.number().nonnegative().default(0),
+  rabatPct: z.number().min(0).max(100).default(0),
+  salgspris: z.number().nonnegative().default(0), // legacy
   notes: z.string().optional().default(""),
 });
 
 export type CaseSale = z.infer<typeof caseSaleSchema>;
+
+/** Net medievisning for én sale: listpris × (1 − rabat). Falls back to legacy salgspris. */
+export function netMedieForSale(sale: CaseSale): number {
+  if ((sale.listpris || 0) > 0) {
+    return (sale.listpris || 0) * (1 - (sale.rabatPct || 0) / 100);
+  }
+  return sale.salgspris || 0;
+}
 
 /**
  * Costs are split into salgspris (what the bygherre pays in tilbud)
@@ -57,12 +74,20 @@ export type CaseSale = z.infer<typeof caseSaleSchema>;
  * when sales array is populated.
  */
 export const caseCostsSchema = z.object({
+  // Salgspriser (hvad bygherre faktureres)
   produktionSalg: z.number().nonnegative().default(0),
-  produktionKost: z.number().nonnegative().default(0),
   monteringSalg: z.number().nonnegative().default(0),
+  kommunaleSalg: z.number().nonnegative().default(0),
+
+  // Kostpriser (hvad Hyde reelt betaler underleverandører)
+  produktionKost: z.number().nonnegative().default(0),
   monteringKost: z.number().nonnegative().default(0),
+  kommunaleKost: z.number().nonnegative().default(0),
+
+  // Legacy felter — kommunaleGebyr behandles som kommunaleSalg ved manglende værdi
   medieSalg: z.number().nonnegative().default(0),
   kommunaleGebyr: z.number().nonnegative().default(0),
+
   internalOverhead: z.number().nonnegative().default(0),
 });
 
@@ -74,18 +99,20 @@ export function createDefaultCaseSale(seed = 1): CaseSale {
     annoncør: "",
     fromDate: "",
     toDate: "",
+    listpris: 0,
+    rabatPct: 0,
     salgspris: 0,
     notes: "",
   };
 }
 
 /**
- * Returns the effective medieSalg: sum of sales when present,
- * else the legacy costs.medieSalg value.
+ * Returns the effective net medievisning (after rabat): sum of sales'
+ * netMedieForSale(), else the legacy costs.medieSalg value.
  */
 export function effectiveMedieSalg(sales: CaseSale[], legacyMedieSalg = 0): number {
   if (sales && sales.length > 0) {
-    return sales.reduce((sum, s) => sum + (s.salgspris || 0), 0);
+    return sales.reduce((sum, s) => sum + netMedieForSale(s), 0);
   }
   return legacyMedieSalg;
 }
@@ -173,9 +200,11 @@ export function createDefaultCase(seed = 1): Case {
     sales: [],
     costs: {
       produktionSalg: 0,
-      produktionKost: 0,
       monteringSalg: 0,
+      kommunaleSalg: 0,
+      produktionKost: 0,
       monteringKost: 0,
+      kommunaleKost: 0,
       medieSalg: 0,
       kommunaleGebyr: 0,
       internalOverhead: 0,
@@ -191,7 +220,7 @@ export function createDefaultCase(seed = 1): Case {
 
 export const kommuneRateSchema = z.object({
   kommune: z.string().min(1),
-  perSqm: z.number().nonnegative().default(0),
+  perSqmPerDag: z.number().nonnegative().default(0),
 });
 
 export type KommuneRate = z.infer<typeof kommuneRateSchema>;
@@ -211,17 +240,17 @@ export function defaultCostSettings(): CostSettings {
   return {
     produktionKostPerSqm: 90,
     monteringKostPerSqm: 70,
-    defaultHydeSharePct: 40,
+    defaultHydeSharePct: 10,
     defaultOverheadPerMonth: 0,
     kommunaleRates: [
-      { kommune: "København", perSqm: 0 },
-      { kommune: "Frederiksberg", perSqm: 0 },
+      { kommune: "København", perSqmPerDag: 0 },
+      { kommune: "Frederiksberg", perSqmPerDag: 4.5 },
     ],
     updatedAt: new Date().toISOString(),
   };
 }
 
-/** Lookup kommune-specific rate. Returns 0 if not found. */
+/** Lookup kommune-specific rate (kr/m²/døgn). Returns 0 if not found. */
 export function lookupKommuneRate(
   rates: KommuneRate[],
   kommune: string | undefined
@@ -229,7 +258,20 @@ export function lookupKommuneRate(
   if (!kommune) return 0;
   const target = kommune.trim().toLowerCase();
   const found = rates.find((r) => r.kommune.trim().toLowerCase() === target);
-  return found?.perSqm || 0;
+  return found?.perSqmPerDag || 0;
+}
+
+/** Calculate days between two ISO date strings, fallback to months × 30. */
+export function caseDays(c: { startDate?: string; endDate?: string; varighedMaaneder?: number }): number {
+  if (c.startDate && c.endDate) {
+    const start = new Date(c.startDate).getTime();
+    const end = new Date(c.endDate).getTime();
+    if (!Number.isNaN(start) && !Number.isNaN(end) && end >= start) {
+      const days = Math.round((end - start) / 86_400_000) + 1;
+      if (days > 0) return days;
+    }
+  }
+  return Math.max(1, (c.varighedMaaneder || 1) * 30);
 }
 
 // ─── Operating expenses (faste driftsudgifter) ──────────────
