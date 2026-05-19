@@ -23,6 +23,7 @@ export type TabId =
   | "lead_scanner"
   | "ooh"
   | "tilbud"
+  | "economy"
   | "outreach"
   | "indbakke"
   | "settings";
@@ -245,7 +246,7 @@ export function DashboardProvider({ children }: { children: ReactNode }) {
       const hash = window.location.hash.replace("#", "") as TabId;
       const valid: TabId[] = [
         "home", "discover", "street_agent", "scaffolding", "staging",
-        "properties", "research", "lead_sourcing", "ooh", "tilbud", "outreach", "indbakke", "settings",
+        "properties", "research", "lead_sourcing", "lead_scanner", "ooh", "tilbud", "economy", "outreach", "indbakke", "settings",
       ];
       if (valid.includes(hash)) return hash;
     }
