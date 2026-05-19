@@ -803,12 +803,17 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
               </div>
             </div>
 
-            {/* Revenue split visual */}
+            {/* Revenue split visual — efter omkostninger */}
             <div className="space-y-1">
               <div className="flex items-center justify-between text-[10px] text-slate-600">
-                <span>Medieomsætning split: <strong>{fmtDKK(econ.medieSalg)}</strong></span>
                 <span>
-                  Hyde {fmtDKK(econ.hydeMedieRevenue)} • Bygherre {fmtDKK(econ.bygherreMedieRevenue)}
+                  Til deling (efter omk.): <strong>{fmtDKK(econ.netTilDeling)}</strong>
+                  <span className="text-slate-400">
+                    {" "}({fmtDKK(econ.medieSalg)} − {fmtDKK(econ.totalKost)})
+                  </span>
+                </span>
+                <span>
+                  Hyde {fmtDKK(econ.hydeGebyr)} • Bygherre {fmtDKK(econ.bygherreAndel)}
                 </span>
               </div>
               <div className="h-3 rounded-full bg-slate-100 overflow-hidden flex">
@@ -844,84 +849,74 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                       <th className="px-2 py-1.5 font-semibold">Fra</th>
                       <th className="px-2 py-1.5 font-semibold">Til</th>
                       <th className="px-2 py-1.5 font-semibold text-right">Salgspris</th>
-                      <th className="px-2 py-1.5 font-semibold text-right">Hyde-andel</th>
                       <th className="px-2 py-1.5"></th>
                     </tr>
                   </thead>
                   <tbody>
                     {(form.sales || []).length === 0 && (
                       <tr>
-                        <td colSpan={6} className="px-2 py-3 text-center text-[10px] text-slate-400">
+                        <td colSpan={5} className="px-2 py-3 text-center text-[10px] text-slate-400">
                           Ingen salg endnu — tryk "+ Tilføj salg" for at registrere en booking.
                         </td>
                       </tr>
                     )}
-                    {(form.sales || []).map((sale) => {
-                      const hydeAmount = (sale.salgspris || 0) * (form.hydeSharePct / 100);
-                      return (
-                        <tr key={sale.id} className="border-t border-slate-100">
-                          <td className="px-2 py-1">
-                            <input
-                              className={CI}
-                              placeholder="Annoncør..."
-                              value={sale.annoncør}
-                              onChange={(e) => updateSale(sale.id, { annoncør: e.target.value })}
+                    {(form.sales || []).map((sale) => (
+                      <tr key={sale.id} className="border-t border-slate-100">
+                        <td className="px-2 py-1">
+                          <input
+                            className={CI}
+                            placeholder="Annoncør..."
+                            value={sale.annoncør}
+                            onChange={(e) => updateSale(sale.id, { annoncør: e.target.value })}
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          <input
+                            type="date"
+                            className={CI}
+                            value={sale.fromDate || ""}
+                            onChange={(e) => updateSale(sale.id, { fromDate: e.target.value })}
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          <input
+                            type="date"
+                            className={CI}
+                            value={sale.toDate || ""}
+                            onChange={(e) => updateSale(sale.id, { toDate: e.target.value })}
+                          />
+                        </td>
+                        <td className="px-2 py-1">
+                          <input
+                            type="number"
+                            className={CIR}
+                            value={sale.salgspris || ""}
+                            onChange={(e) =>
+                              updateSale(sale.id, { salgspris: Number(e.target.value) || 0 })
+                            }
+                          />
+                        </td>
+                        <td className="px-2 py-1.5 text-right">
+                          <button
+                            onClick={() => removeSale(sale.id)}
+                            className="text-rose-500 hover:text-rose-700"
+                            title="Slet salg"
+                          >
+                            <Ic
+                              d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                              className="w-3.5 h-3.5"
                             />
-                          </td>
-                          <td className="px-2 py-1">
-                            <input
-                              type="date"
-                              className={CI}
-                              value={sale.fromDate || ""}
-                              onChange={(e) => updateSale(sale.id, { fromDate: e.target.value })}
-                            />
-                          </td>
-                          <td className="px-2 py-1">
-                            <input
-                              type="date"
-                              className={CI}
-                              value={sale.toDate || ""}
-                              onChange={(e) => updateSale(sale.id, { toDate: e.target.value })}
-                            />
-                          </td>
-                          <td className="px-2 py-1">
-                            <input
-                              type="number"
-                              className={CIR}
-                              value={sale.salgspris || ""}
-                              onChange={(e) =>
-                                updateSale(sale.id, { salgspris: Number(e.target.value) || 0 })
-                              }
-                            />
-                          </td>
-                          <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-emerald-700">
-                            {fmtDKK(hydeAmount)}
-                          </td>
-                          <td className="px-2 py-1.5 text-right">
-                            <button
-                              onClick={() => removeSale(sale.id)}
-                              className="text-rose-500 hover:text-rose-700"
-                              title="Slet salg"
-                            >
-                              <Ic
-                                d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
-                                className="w-3.5 h-3.5"
-                              />
-                            </button>
-                          </td>
-                        </tr>
-                      );
-                    })}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
                     {(form.sales || []).length > 0 && (
                       <tr className="border-t-2 border-slate-200 bg-slate-50">
                         <td className="px-2 py-1.5 font-semibold text-slate-700" colSpan={3}>
-                          Total medieomsætning ({(form.sales || []).length} salg)
+                          Annoncør betaler i alt ({(form.sales || []).length} salg)
                         </td>
                         <td className="px-2 py-1.5 text-right tabular-nums font-bold text-slate-900">
                           {fmtDKK(econ.medieSalg)}
-                        </td>
-                        <td className="px-2 py-1.5 text-right tabular-nums font-bold text-emerald-700">
-                          {fmtDKK(econ.hydeMedieRevenue)}
                         </td>
                         <td></td>
                       </tr>
@@ -983,24 +978,12 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                   <thead className="bg-slate-50">
                     <tr className="text-left text-[10px] text-slate-500">
                       <th className="px-2 py-1.5 font-semibold">Post</th>
-                      <th className="px-2 py-1.5 font-semibold text-right">Salgspris</th>
                       <th className="px-2 py-1.5 font-semibold text-right">Kostpris</th>
-                      <th className="px-2 py-1.5 font-semibold text-right">Margin</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr className="border-t border-slate-100">
                       <td className="px-2 py-1.5">Produktion</td>
-                      <td className="px-2 py-1">
-                        <input
-                          type="number"
-                          className={CIR}
-                          value={form.costs.produktionSalg || ""}
-                          onChange={(e) =>
-                            updateCosts({ produktionSalg: Number(e.target.value) || 0 })
-                          }
-                        />
-                      </td>
                       <td className="px-2 py-1">
                         <input
                           type="number"
@@ -1011,26 +994,9 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                           }
                         />
                       </td>
-                      <td
-                        className={`px-2 py-1.5 text-right tabular-nums font-semibold ${
-                          econ.productionMargin >= 0 ? "text-emerald-700" : "text-rose-700"
-                        }`}
-                      >
-                        {fmtDKK(econ.productionMargin)}
-                      </td>
                     </tr>
                     <tr className="border-t border-slate-100">
                       <td className="px-2 py-1.5">Montering</td>
-                      <td className="px-2 py-1">
-                        <input
-                          type="number"
-                          className={CIR}
-                          value={form.costs.monteringSalg || ""}
-                          onChange={(e) =>
-                            updateCosts({ monteringSalg: Number(e.target.value) || 0 })
-                          }
-                        />
-                      </td>
                       <td className="px-2 py-1">
                         <input
                           type="number"
@@ -1041,17 +1007,9 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                           }
                         />
                       </td>
-                      <td
-                        className={`px-2 py-1.5 text-right tabular-nums font-semibold ${
-                          econ.monteringMargin >= 0 ? "text-emerald-700" : "text-rose-700"
-                        }`}
-                      >
-                        {fmtDKK(econ.monteringMargin)}
-                      </td>
                     </tr>
                     <tr className="border-t border-slate-100">
                       <td className="px-2 py-1.5">Kommunale gebyrer</td>
-                      <td className="px-2 py-1.5 text-right text-slate-400">—</td>
                       <td className="px-2 py-1">
                         <input
                           type="number"
@@ -1062,9 +1020,6 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                           }
                         />
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-rose-700">
-                        {fmtDKK(-econ.kommunaleGebyr)}
-                      </td>
                     </tr>
                     <tr className="border-t border-slate-100">
                       <td className="px-2 py-1.5">
@@ -1073,7 +1028,6 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                           (kørsel, løn, etc. for hele perioden)
                         </span>
                       </td>
-                      <td className="px-2 py-1.5 text-right text-slate-400">—</td>
                       <td className="px-2 py-1">
                         <input
                           type="number"
@@ -1084,8 +1038,13 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                           }
                         />
                       </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums font-semibold text-rose-700">
-                        {fmtDKK(-econ.internalOverhead)}
+                    </tr>
+                    <tr className="border-t-2 border-slate-200 bg-slate-50">
+                      <td className="px-2 py-1.5 font-semibold text-slate-700">
+                        Total omkostninger
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums font-bold text-rose-700">
+                        {fmtDKK(econ.totalKost)}
                       </td>
                     </tr>
                   </tbody>
@@ -1094,19 +1053,34 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
             </div>
 
             {/* Bottom summary */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-              <KpiCard label="Total omsætning" value={fmtDKK(econ.totalSalg)} />
-              <KpiCard label="Total kostpris" value={fmtDKK(econ.totalKost)} tone="amber" />
+            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
               <KpiCard
-                label="Dækningsbidrag"
-                value={fmtDKK(econ.dækningsbidrag)}
-                sublabel={`${fmtDKK(econ.dækningsbidragPerMonth)}/md`}
-                tone={econ.dækningsbidrag >= 0 ? "emerald" : "rose"}
+                label="Annoncør betaler"
+                value={fmtDKK(econ.medieSalg)}
+                sublabel="Total medie-omsætning"
+              />
+              <KpiCard
+                label="Total kostpris"
+                value={fmtDKK(econ.totalKost)}
+                sublabel="Produktion + mont. + komm. + ovh."
+                tone="amber"
+              />
+              <KpiCard
+                label={`Vores gebyr (${form.hydeSharePct}%)`}
+                value={fmtDKK(econ.hydeGebyr)}
+                sublabel={`= DB · ${fmtDKK(econ.dækningsbidragPerMonth)}/md`}
+                tone={econ.hydeGebyr >= 0 ? "emerald" : "rose"}
+              />
+              <KpiCard
+                label={`Bygherre-andel (${form.bygherreSharePct}%)`}
+                value={fmtDKK(econ.bygherreAndel)}
+                sublabel="Til bygherre efter omk."
               />
               <KpiCard
                 label="DB% / ROI"
                 value={`${fmtPct(econ.dækningsbidragPct)} / ${fmtPct(econ.roi)}`}
-                tone={econ.dækningsbidragPct >= 30 ? "emerald" : econ.dækningsbidragPct >= 15 ? "amber" : "rose"}
+                sublabel="DB% af medie-oms."
+                tone={econ.dækningsbidragPct >= 15 ? "emerald" : econ.dækningsbidragPct >= 5 ? "amber" : "rose"}
               />
             </div>
 
