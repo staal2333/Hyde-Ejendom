@@ -4,16 +4,29 @@ import {
   costSettingsSchema,
   defaultCostSettings,
   type CostSettings,
+  type KommuneRate,
 } from "./types";
 
 const SETTINGS_ID = "default";
 
 function rowToSettings(row: Record<string, unknown>): CostSettings {
+  const rawRates = Array.isArray(row.kommunale_rates) ? row.kommunale_rates : [];
+  const kommunaleRates: KommuneRate[] = rawRates
+    .map((r) => {
+      const rate = r as Record<string, unknown>;
+      return {
+        kommune: String(rate.kommune || ""),
+        perSqm: Number(rate.perSqm || 0),
+      };
+    })
+    .filter((r) => r.kommune.length > 0);
+
   return {
     produktionKostPerSqm: Number(row.produktion_kost_per_sqm || 0),
     monteringKostPerSqm: Number(row.montering_kost_per_sqm || 0),
     defaultHydeSharePct: Number(row.default_hyde_share_pct || 40),
     defaultOverheadPerMonth: Number(row.default_overhead_per_month || 0),
+    kommunaleRates,
     updatedAt: String(row.updated_at || new Date().toISOString()),
   };
 }
@@ -25,6 +38,7 @@ function settingsToRow(s: CostSettings) {
     montering_kost_per_sqm: s.monteringKostPerSqm,
     default_hyde_share_pct: s.defaultHydeSharePct,
     default_overhead_per_month: s.defaultOverheadPerMonth,
+    kommunale_rates: s.kommunaleRates || [],
   };
 }
 

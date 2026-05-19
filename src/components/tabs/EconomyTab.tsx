@@ -11,6 +11,7 @@ import {
   OPERATING_EXPENSE_LABEL,
   createDefaultCase,
   createDefaultCaseSale,
+  lookupKommuneRate,
   type Case,
   type CaseSale,
   type CaseStatus,
@@ -99,6 +100,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
   const [settings, setSettings] = useState<CostSettings | null>(null);
   const [expenses, setExpenses] = useState<OperatingExpense[]>([]);
   const [newExpenseLabel, setNewExpenseLabel] = useState("");
+  const [newKommuneName, setNewKommuneName] = useState("");
 
   // ─── Fetch ──────────────────────────────────────────────────
 
@@ -297,17 +299,26 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
     if (!settings) return;
     const area = form.areaSqm || 0;
     const months = Math.max(1, form.varighedMaaneder || 1);
+    const kommuneRate = lookupKommuneRate(settings.kommunaleRates || [], form.kommune);
+    const kommunale = area * kommuneRate;
     setForm((p) => ({
       ...p,
       costs: {
         ...p.costs,
         produktionKost: area * settings.produktionKostPerSqm,
         monteringKost: area * settings.monteringKostPerSqm,
+        kommunaleGebyr: kommuneRate > 0 ? kommunale : p.costs.kommunaleGebyr,
         internalOverhead: months * settings.defaultOverheadPerMonth,
       },
     }));
-    onToast("Kostpriser opdateret fra indstillinger", "info");
-  }, [settings, form.areaSqm, form.varighedMaaneder, onToast]);
+    const kommuneNote =
+      form.kommune && kommuneRate > 0
+        ? ` — kommunale gebyr beregnet for ${form.kommune}`
+        : form.kommune && kommuneRate === 0
+        ? ` — ingen rate sat for ${form.kommune}, kommunale gebyr ikke ændret`
+        : "";
+    onToast(`Kostpriser opdateret${kommuneNote}`, "info");
+  }, [settings, form.areaSqm, form.varighedMaaneder, form.kommune, onToast]);
 
   const setHydeShare = (pct: number) => {
     const clamped = Math.max(0, Math.min(100, pct));
@@ -703,6 +714,30 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                   value={form.address}
                   onChange={(e) => updateField("address", e.target.value)}
                 />
+              </div>
+              <div>
+                <div className={LABEL}>
+                  Kommune
+                  {form.kommune && settings && (
+                    <span className="ml-1 font-normal text-slate-400 normal-case">
+                      ({lookupKommuneRate(settings.kommunaleRates || [], form.kommune)} kr/m²)
+                    </span>
+                  )}
+                </div>
+                <input
+                  className={CI}
+                  list="kommune-options"
+                  value={form.kommune || ""}
+                  onChange={(e) => updateField("kommune", e.target.value)}
+                  placeholder="F.eks. København"
+                />
+                <datalist id="kommune-options">
+                  {(settings?.kommunaleRates || []).map((r) => (
+                    <option key={r.kommune} value={r.kommune}>
+                      {r.perSqm} kr/m²
+                    </option>
+                  ))}
+                </datalist>
               </div>
               <div>
                 <div className={LABEL}>Areal (m²)</div>
@@ -1220,6 +1255,118 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
               Hint: I tilbud bruges <strong>150 DKK/m²</strong> for produktion og <strong>125 DKK/m²</strong> for montering som salgspris.
               Kostprisen er typisk lavere.
             </div>
+
+            {/* Kommunale gebyrer per kommune */}
+            {settings && (
+              <div className="border-t border-slate-100 pt-3 space-y-2">
+                <div>
+                  <div className="text-[11px] font-bold text-slate-900">Kommunale gebyrer pr. m²</div>
+                  <div className="text-[10px] text-slate-500">
+                    Forskellige kommuner har forskellige rates. Vælges via "Kommune"-felt på case.
+                  </div>
+                </div>
+
+                <div className="space-y-1">
+                  {(settings.kommunaleRates || []).length === 0 && (
+                    <div className="text-[10px] text-slate-400 italic">Ingen kommuner endnu.</div>
+                  )}
+                  {(settings.kommunaleRates || []).map((rate, idx) => (
+                    <div
+                      key={`${rate.kommune}-${idx}`}
+                      className="grid grid-cols-[1fr_110px_24px] items-center gap-2 px-2 py-1 rounded border border-slate-100 hover:bg-slate-50"
+                    >
+                      <input
+                        className="text-[11px] font-medium text-slate-900 bg-transparent border-0 focus:outline-none"
+                        defaultValue={rate.kommune}
+                        onBlur={(ev) => {
+                          const v = ev.target.value.trim();
+                          if (!v || v === rate.kommune) return;
+                          const next = [...(settings.kommunaleRates || [])];
+                          next[idx] = { ...rate, kommune: v };
+                          saveSettings({ kommunaleRates: next });
+                        }}
+                      />
+                      <div className="flex items-center gap-1">
+                        <input
+                          type="number"
+                          className="h-6 w-full rounded border border-slate-200 bg-white px-1 text-[11px] text-right tabular-nums"
+                          defaultValue={rate.perSqm}
+                          onBlur={(ev) => {
+                            const v = Number(ev.target.value) || 0;
+                            if (v === rate.perSqm) return;
+                            const next = [...(settings.kommunaleRates || [])];
+                            next[idx] = { ...rate, perSqm: v };
+                            saveSettings({ kommunaleRates: next });
+                          }}
+                        />
+                        <span className="text-[9px] text-slate-400">kr/m²</span>
+                      </div>
+                      <button
+                        onClick={() => {
+                          if (!confirm(`Slet kommune-rate for ${rate.kommune}?`)) return;
+                          const next = (settings.kommunaleRates || []).filter((_, i) => i !== idx);
+                          saveSettings({ kommunaleRates: next });
+                        }}
+                        className="text-rose-500 hover:text-rose-700"
+                        title="Slet"
+                      >
+                        <Ic
+                          d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                          className="w-3 h-3"
+                        />
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    className="h-7 flex-1 rounded-md border border-slate-300 bg-white px-2 text-[11px]"
+                    placeholder="Tilføj kommune..."
+                    value={newKommuneName}
+                    onChange={(e) => setNewKommuneName(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key !== "Enter") return;
+                      const v = newKommuneName.trim();
+                      if (!v) return;
+                      const exists = (settings.kommunaleRates || []).some(
+                        (r) => r.kommune.toLowerCase() === v.toLowerCase()
+                      );
+                      if (exists) {
+                        onToast("Kommunen findes allerede", "error");
+                        return;
+                      }
+                      const next = [...(settings.kommunaleRates || []), { kommune: v, perSqm: 0 }];
+                      saveSettings({ kommunaleRates: next });
+                      setNewKommuneName("");
+                    }}
+                  />
+                  <button
+                    onClick={() => {
+                      const v = newKommuneName.trim();
+                      if (!v) {
+                        onToast("Indtast kommune-navn", "error");
+                        return;
+                      }
+                      const exists = (settings.kommunaleRates || []).some(
+                        (r) => r.kommune.toLowerCase() === v.toLowerCase()
+                      );
+                      if (exists) {
+                        onToast("Kommunen findes allerede", "error");
+                        return;
+                      }
+                      const next = [...(settings.kommunaleRates || []), { kommune: v, perSqm: 0 }];
+                      saveSettings({ kommunaleRates: next });
+                      setNewKommuneName("");
+                    }}
+                    className="h-7 px-3 rounded-md bg-violet-600 text-[11px] font-semibold text-white hover:bg-violet-700"
+                  >
+                    + Tilføj
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Operating expenses */}

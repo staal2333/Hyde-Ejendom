@@ -101,6 +101,7 @@ export const caseSchema = z.object({
 
   // Address / bygherre
   address: z.string().default(""),
+  kommune: z.string().optional().default(""),
   bygherreNavn: z.string().default(""),
   bygherreContactId: z.string().optional().default(""),
 
@@ -160,6 +161,7 @@ export function createDefaultCase(seed = 1): Case {
     tilbudId: "",
     placementId: "",
     address: "",
+    kommune: "",
     bygherreNavn: "",
     bygherreContactId: "",
     startDate: "",
@@ -187,11 +189,19 @@ export function createDefaultCase(seed = 1): Case {
 
 // ─── Cost settings (global default kostpriser) ──────────────
 
+export const kommuneRateSchema = z.object({
+  kommune: z.string().min(1),
+  perSqm: z.number().nonnegative().default(0),
+});
+
+export type KommuneRate = z.infer<typeof kommuneRateSchema>;
+
 export const costSettingsSchema = z.object({
   produktionKostPerSqm: z.number().nonnegative().default(90),
   monteringKostPerSqm: z.number().nonnegative().default(70),
   defaultHydeSharePct: z.number().min(0).max(100).default(40),
   defaultOverheadPerMonth: z.number().nonnegative().default(0),
+  kommunaleRates: z.array(kommuneRateSchema).default([]),
   updatedAt: z.string().min(1),
 });
 
@@ -203,8 +213,23 @@ export function defaultCostSettings(): CostSettings {
     monteringKostPerSqm: 70,
     defaultHydeSharePct: 40,
     defaultOverheadPerMonth: 0,
+    kommunaleRates: [
+      { kommune: "København", perSqm: 0 },
+      { kommune: "Frederiksberg", perSqm: 0 },
+    ],
     updatedAt: new Date().toISOString(),
   };
+}
+
+/** Lookup kommune-specific rate. Returns 0 if not found. */
+export function lookupKommuneRate(
+  rates: KommuneRate[],
+  kommune: string | undefined
+): number {
+  if (!kommune) return 0;
+  const target = kommune.trim().toLowerCase();
+  const found = rates.find((r) => r.kommune.trim().toLowerCase() === target);
+  return found?.perSqm || 0;
 }
 
 // ─── Operating expenses (faste driftsudgifter) ──────────────

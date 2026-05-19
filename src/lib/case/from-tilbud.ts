@@ -2,7 +2,7 @@ import type { Tilbud, TilbudLine } from "@/lib/tilbud/types";
 import { calcLineTotals } from "@/lib/tilbud/calculations";
 import { MONTERING_PER_SQM, PRODUKTION_PER_SQM } from "@/lib/tilbud/placement-types";
 import type { CaseSale, CaseUpsertInput, CostSettings } from "./types";
-import { createDefaultCase } from "./types";
+import { createDefaultCase, lookupKommuneRate } from "./types";
 
 function findLine(lines: TilbudLine[], name: string): TilbudLine | undefined {
   const target = name.trim().toLowerCase();
