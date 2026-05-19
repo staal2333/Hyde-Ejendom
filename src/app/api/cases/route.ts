@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
   const limit = Number(req.nextUrl.searchParams.get("limit") || 100);
   const offset = Number(req.nextUrl.searchParams.get("offset") || 0);
 
-  const result = listCases({
+  const result = await listCases({
     q,
     status,
     limit: Number.isFinite(limit) ? limit : 100,
@@ -34,9 +34,9 @@ export async function POST(req: NextRequest) {
       if (!tilbud) {
         return NextResponse.json({ error: "Tilbud ikke fundet" }, { status: 404 });
       }
-      const settings = getCostSettings();
+      const settings = await getCostSettings();
       const input = caseFromTilbud(tilbud, settings);
-      const saved = upsertCase(input);
+      const saved = await upsertCase(input);
       return NextResponse.json({ success: true, case: saved });
     }
 
@@ -48,7 +48,7 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const saved = upsertCase(parsed.data);
+    const saved = await upsertCase(parsed.data);
     return NextResponse.json({ success: true, case: saved });
   } catch (error) {
     logger.error("Kunne ikke gemme case", { service: "case" });

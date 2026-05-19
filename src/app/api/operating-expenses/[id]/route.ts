@@ -19,7 +19,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         { status: 400 }
       );
     }
-    const saved = upsertOperatingExpense(parsed.data);
+    const saved = await upsertOperatingExpense(parsed.data);
     return NextResponse.json({ success: true, expense: saved });
   } catch (error) {
     logger.error("Kunne ikke opdatere driftsudgift", { service: "case" });
@@ -32,7 +32,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ok = deleteOperatingExpense(id);
+  const ok = await deleteOperatingExpense(id);
   if (!ok) {
     return NextResponse.json({ error: "Driftsudgift ikke fundet" }, { status: 404 });
   }

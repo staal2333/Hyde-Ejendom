@@ -1,68 +1,78 @@
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { supabase, HAS_SUPABASE } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
 import {
   operatingExpenseSchema,
   type OperatingExpense,
+  type OperatingExpenseCategory,
   type OperatingExpenseUpsertInput,
 } from "./types";
 
-const STORE_FILE = join(process.cwd(), ".operating-expenses.json");
-
-interface OpExGlobal {
-  __opex_store: Map<string, OperatingExpense>;
-  __opex_loaded: boolean;
+function rowToExpense(row: Record<string, unknown>): OperatingExpense {
+  return {
+    id: String(row.id),
+    label: String(row.label || ""),
+    category: (row.category as OperatingExpenseCategory) || "andet",
+    amountPerMonth: Number(row.amount_per_month || 0),
+    enabled: row.enabled !== false,
+    notes: String(row.notes || ""),
+    createdAt: String(row.created_at || new Date().toISOString()),
+    updatedAt: String(row.updated_at || new Date().toISOString()),
+  };
 }
 
-const g = globalThis as unknown as Partial<OpExGlobal>;
-if (!g.__opex_store) g.__opex_store = new Map<string, OperatingExpense>();
-const opexStore = g.__opex_store;
+function expenseToRow(e: OperatingExpense) {
+  return {
+    id: e.id,
+    label: e.label,
+    category: e.category,
+    amount_per_month: e.amountPerMonth,
+    enabled: e.enabled,
+    notes: e.notes || "",
+  };
+}
 
-function loadFromDisk() {
-  if (g.__opex_loaded) return;
-  g.__opex_loaded = true;
+export async function listOperatingExpenses(): Promise<OperatingExpense[]> {
+  if (!HAS_SUPABASE || !supabase) return [];
   try {
-    if (!existsSync(STORE_FILE)) return;
-    const raw = readFileSync(STORE_FILE, "utf8");
-    const parsed = JSON.parse(raw) as Record<string, OperatingExpense>;
-    for (const [id, value] of Object.entries(parsed)) {
-      const valid = operatingExpenseSchema.safeParse(value);
-      if (valid.success) opexStore.set(id, valid.data);
-    }
-  } catch (error) {
-    logger.warn(`[opex-store] Kunne ikke læse fra disk: ${error instanceof Error ? error.message : error}`);
+    const { data, error } = await supabase
+      .from("operating_expenses")
+      .select("*")
+      .order("label", { ascending: true });
+    if (error) throw error;
+    return (data || []).map(rowToExpense);
+  } catch (err) {
+    logger.error(`[opex-store] list error: ${err instanceof Error ? err.message : err}`);
+    return [];
   }
 }
 
-function saveToDisk() {
-  if (process.env.VERCEL) return;
+export async function getOperatingExpense(id: string): Promise<OperatingExpense | undefined> {
+  if (!HAS_SUPABASE || !supabase) return undefined;
   try {
-    writeFileSync(
-      STORE_FILE,
-      JSON.stringify(Object.fromEntries(opexStore.entries()), null, 2),
-      "utf8"
-    );
-  } catch (error) {
-    logger.warn(`[opex-store] Kunne ikke skrive til disk: ${error instanceof Error ? error.message : error}`);
+    const { data, error } = await supabase
+      .from("operating_expenses")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? rowToExpense(data) : undefined;
+  } catch (err) {
+    logger.error(`[opex-store] get error: ${err instanceof Error ? err.message : err}`);
+    return undefined;
   }
 }
 
-export function listOperatingExpenses(): OperatingExpense[] {
-  loadFromDisk();
-  return [...opexStore.values()].sort((a, b) => a.label.localeCompare(b.label));
-}
+export async function upsertOperatingExpense(
+  input: OperatingExpenseUpsertInput
+): Promise<OperatingExpense> {
+  if (!HAS_SUPABASE || !supabase) {
+    throw new Error("Supabase is not configured");
+  }
 
-export function getOperatingExpense(id: string): OperatingExpense | undefined {
-  loadFromDisk();
-  return opexStore.get(id);
-}
-
-export function upsertOperatingExpense(input: OperatingExpenseUpsertInput): OperatingExpense {
-  loadFromDisk();
+  const existing = input.id ? await getOperatingExpense(input.id) : undefined;
   const now = new Date().toISOString();
-  const existing = input.id ? opexStore.get(input.id) : undefined;
   const base: OperatingExpense = existing ?? {
-    id: input.id || `opex-${Date.now()}-${opexStore.size + 1}`,
+    id: input.id || `opex-${Date.now()}`,
     label: "",
     category: "andet",
     amountPerMonth: 0,
@@ -85,14 +95,25 @@ export function upsertOperatingExpense(input: OperatingExpenseUpsertInput): Oper
   if (!parsed.success) {
     throw new Error(parsed.error.issues.map((x) => x.message).join(", "));
   }
-  opexStore.set(parsed.data.id, parsed.data);
-  saveToDisk();
-  return parsed.data;
+
+  const { data, error } = await supabase
+    .from("operating_expenses")
+    .upsert(expenseToRow(parsed.data), { onConflict: "id" })
+    .select("*")
+    .single();
+  if (error) throw error;
+  if (!data) throw new Error("Upsert returned no data");
+  return rowToExpense(data);
 }
 
-export function deleteOperatingExpense(id: string): boolean {
-  loadFromDisk();
-  const deleted = opexStore.delete(id);
-  if (deleted) saveToDisk();
-  return deleted;
+export async function deleteOperatingExpense(id: string): Promise<boolean> {
+  if (!HAS_SUPABASE || !supabase) return false;
+  try {
+    const { error } = await supabase.from("operating_expenses").delete().eq("id", id);
+    if (error) throw error;
+    return true;
+  } catch (err) {
+    logger.error(`[opex-store] delete error: ${err instanceof Error ? err.message : err}`);
+    return false;
+  }
 }

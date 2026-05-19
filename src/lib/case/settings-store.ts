@@ -1,5 +1,4 @@
-import { existsSync, readFileSync, writeFileSync } from "fs";
-import { join } from "path";
+import { supabase, HAS_SUPABASE } from "@/lib/supabase";
 import { logger } from "@/lib/logger";
 import {
   costSettingsSchema,
@@ -7,52 +6,54 @@ import {
   type CostSettings,
 } from "./types";
 
-const STORE_FILE = join(process.cwd(), ".case-settings.json");
+const SETTINGS_ID = "default";
 
-interface SettingsGlobal {
-  __case_settings: CostSettings | null;
-  __case_settings_loaded: boolean;
+function rowToSettings(row: Record<string, unknown>): CostSettings {
+  return {
+    produktionKostPerSqm: Number(row.produktion_kost_per_sqm || 0),
+    monteringKostPerSqm: Number(row.montering_kost_per_sqm || 0),
+    defaultHydeSharePct: Number(row.default_hyde_share_pct || 40),
+    defaultOverheadPerMonth: Number(row.default_overhead_per_month || 0),
+    updatedAt: String(row.updated_at || new Date().toISOString()),
+  };
 }
 
-const g = globalThis as unknown as Partial<SettingsGlobal>;
+function settingsToRow(s: CostSettings) {
+  return {
+    id: SETTINGS_ID,
+    produktion_kost_per_sqm: s.produktionKostPerSqm,
+    montering_kost_per_sqm: s.monteringKostPerSqm,
+    default_hyde_share_pct: s.defaultHydeSharePct,
+    default_overhead_per_month: s.defaultOverheadPerMonth,
+  };
+}
 
-function loadFromDisk(): CostSettings {
-  if (g.__case_settings_loaded && g.__case_settings) return g.__case_settings;
-  g.__case_settings_loaded = true;
-
+export async function getCostSettings(): Promise<CostSettings> {
+  if (!HAS_SUPABASE || !supabase) return defaultCostSettings();
   try {
-    if (existsSync(STORE_FILE)) {
-      const raw = readFileSync(STORE_FILE, "utf8");
-      const parsed = costSettingsSchema.safeParse(JSON.parse(raw));
-      if (parsed.success) {
-        g.__case_settings = parsed.data;
-        return parsed.data;
-      }
-    }
-  } catch (error) {
-    logger.warn(`[case-settings] Kunne ikke læse fra disk: ${error instanceof Error ? error.message : error}`);
-  }
+    const { data, error } = await supabase
+      .from("case_settings")
+      .select("*")
+      .eq("id", SETTINGS_ID)
+      .maybeSingle();
+    if (error) throw error;
+    if (data) return rowToSettings(data);
 
-  const fallback = defaultCostSettings();
-  g.__case_settings = fallback;
-  return fallback;
-}
-
-function saveToDisk(settings: CostSettings) {
-  if (process.env.VERCEL) return;
-  try {
-    writeFileSync(STORE_FILE, JSON.stringify(settings, null, 2), "utf8");
-  } catch (error) {
-    logger.warn(`[case-settings] Kunne ikke skrive til disk: ${error instanceof Error ? error.message : error}`);
+    // Seed default row if missing
+    const fallback = defaultCostSettings();
+    await supabase.from("case_settings").upsert(settingsToRow(fallback), { onConflict: "id" });
+    return fallback;
+  } catch (err) {
+    logger.error(`[case-settings] getCostSettings error: ${err instanceof Error ? err.message : err}`);
+    return defaultCostSettings();
   }
 }
 
-export function getCostSettings(): CostSettings {
-  return loadFromDisk();
-}
-
-export function updateCostSettings(patch: Partial<CostSettings>): CostSettings {
-  const current = loadFromDisk();
+export async function updateCostSettings(patch: Partial<CostSettings>): Promise<CostSettings> {
+  if (!HAS_SUPABASE || !supabase) {
+    throw new Error("Supabase is not configured");
+  }
+  const current = await getCostSettings();
   const merged: CostSettings = {
     ...current,
     ...patch,
@@ -62,7 +63,13 @@ export function updateCostSettings(patch: Partial<CostSettings>): CostSettings {
   if (!parsed.success) {
     throw new Error(parsed.error.issues.map((x) => x.message).join(", "));
   }
-  g.__case_settings = parsed.data;
-  saveToDisk(parsed.data);
-  return parsed.data;
+
+  const { data, error } = await supabase
+    .from("case_settings")
+    .upsert(settingsToRow(parsed.data), { onConflict: "id" })
+    .select("*")
+    .single();
+  if (error) throw error;
+  if (!data) throw new Error("Upsert returned no data");
+  return rowToSettings(data);
 }

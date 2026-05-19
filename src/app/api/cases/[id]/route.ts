@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const c = getCase(id);
+  const c = await getCase(id);
   if (!c) {
     return NextResponse.json({ error: "Case ikke fundet" }, { status: 404 });
   }
@@ -25,7 +25,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
         { status: 400 }
       );
     }
-    const saved = upsertCase(parsed.data);
+    const saved = await upsertCase(parsed.data);
     return NextResponse.json({ success: true, case: saved });
   } catch (error) {
     logger.error("Kunne ikke opdatere case", { service: "case" });
@@ -38,7 +38,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ok = deleteCase(id);
+  const ok = await deleteCase(id);
   if (!ok) {
     return NextResponse.json({ error: "Case ikke fundet" }, { status: 404 });
   }

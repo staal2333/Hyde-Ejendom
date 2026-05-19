@@ -6,7 +6,7 @@ import { logger } from "@/lib/logger";
 export const runtime = "nodejs";
 
 export async function GET() {
-  return NextResponse.json(getCostSettings());
+  return NextResponse.json(await getCostSettings());
 }
 
 export async function PATCH(req: NextRequest) {
@@ -19,7 +19,7 @@ export async function PATCH(req: NextRequest) {
         { status: 400 }
       );
     }
-    const saved = updateCostSettings(parsed.data);
+    const saved = await updateCostSettings(parsed.data);
     return NextResponse.json({ success: true, settings: saved });
   } catch (error) {
     logger.error("Kunne ikke opdatere case-settings", { service: "case" });
