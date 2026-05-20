@@ -126,6 +126,16 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
   const [form, setForm] = useState<Case>(() => createDefaultCase(1));
   const [filter, setFilter] = useState<CaseStatus | "all">("all");
   const [search, setSearch] = useState("");
+  const [expandedAddresses, setExpandedAddresses] = useState<Set<string>>(new Set());
+
+  const toggleAddress = (addr: string) => {
+    setExpandedAddresses((prev) => {
+      const next = new Set(prev);
+      if (next.has(addr)) next.delete(addr);
+      else next.add(addr);
+      return next;
+    });
+  };
 
   // Settings state
   const [settings, setSettings] = useState<CostSettings | null>(null);
@@ -203,6 +213,18 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
 
   const kpis = useMemo(() => calcPortfolioKPIs(cases), [cases]);
 
+  // Group filtered cases by address — one box per building
+  const groupedByAddress = useMemo(() => {
+    const map = new Map<string, Case[]>();
+    for (const c of filteredCases) {
+      const key = (c.address || "").trim() || "(Uden adresse)";
+      const list = map.get(key);
+      if (list) list.push(c);
+      else map.set(key, [c]);
+    }
+    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], "da"));
+  }, [filteredCases]);
+
   const monthlyOpEx = useMemo(() => totalMonthlyOperatingCost(expenses), [expenses]);
 
   const forecast = useMemo(() => {
@@ -227,6 +249,8 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
   const openCase = useCallback((c: Case) => {
     setForm(c);
     setSelectedId(c.id);
+    const addr = (c.address || "").trim() || "(Uden adresse)";
+    setExpandedAddresses((prev) => new Set(prev).add(addr));
   }, []);
 
   const createBlank = useCallback(() => {
@@ -704,55 +728,118 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
       {/* ═══ CASES SUB-TAB ═══ */}
       {subTab === "cases" && (
         <div className="grid grid-cols-12 gap-3">
-          {/* List */}
+          {/* List — grouped by address */}
           <div className="col-span-12 lg:col-span-5 rounded-lg border border-slate-200 bg-white">
             <div className="px-3 py-2 border-b border-slate-100 text-[11px] font-semibold text-slate-600 flex items-center justify-between">
-              <span>{filteredCases.length} cases</span>
+              <span>
+                {groupedByAddress.length} {groupedByAddress.length === 1 ? "adresse" : "adresser"}
+                <span className="text-slate-400 font-normal"> · {filteredCases.length} cases</span>
+              </span>
               {loading && <span className="text-slate-400">indlæser...</span>}
             </div>
-            <div className="max-h-[640px] overflow-y-auto">
+            <div className="max-h-[640px] overflow-y-auto p-2 space-y-2">
               {filteredCases.length === 0 && !loading && (
                 <div className="px-3 py-8 text-center text-[11px] text-slate-400">
-                  Ingen cases. Opret en eller importér fra et tilbud.
+                  Ingen cases. Scan en kunde-faktura eller opret en case.
                 </div>
               )}
-              {filteredCases.map((c) => {
-                const e = calcCaseEconomics(c);
-                const isActive = c.id === selectedId;
+              {groupedByAddress.map(([address, addrCases]) => {
+                const isExpanded = expandedAddresses.has(address);
+                const addrDB = addrCases.reduce(
+                  (sum, c) => sum + calcCaseEconomics(c).dækningsbidrag,
+                  0
+                );
+                const bygherre = addrCases.find((c) => c.bygherreNavn)?.bygherreNavn || "";
+                const hasActiveChild = addrCases.some((c) => c.id === selectedId);
                 return (
-                  <button
-                    key={c.id}
-                    onClick={() => openCase(c)}
-                    className={`w-full text-left px-3 py-2 border-b border-slate-100 transition-colors ${
-                      isActive ? "bg-violet-50" : "hover:bg-slate-50"
+                  <div
+                    key={address}
+                    className={`rounded-lg border overflow-hidden ${
+                      hasActiveChild ? "border-violet-300" : "border-slate-200"
                     }`}
                   >
-                    <div className="flex items-center justify-between gap-2">
+                    {/* Address box header */}
+                    <button
+                      onClick={() => toggleAddress(address)}
+                      className={`w-full text-left px-3 py-2.5 flex items-center gap-2 transition-colors ${
+                        hasActiveChild ? "bg-violet-50" : "bg-slate-50 hover:bg-slate-100"
+                      }`}
+                    >
+                      <Ic
+                        d={isExpanded ? "M19.5 8.25l-7.5 7.5-7.5-7.5" : "M8.25 4.5l7.5 7.5-7.5 7.5"}
+                        className="w-3.5 h-3.5 text-slate-400 shrink-0"
+                      />
+                      <div className="flex items-center justify-center w-7 h-7 rounded-md bg-white border border-slate-200 shrink-0">
+                        <Ic
+                          d="M2.25 21h19.5m-18-18v18m10.5-18v18m6-13.5V21M6.75 6.75h.75m-.75 3h.75m-.75 3h.75m3-6h.75m-.75 3h.75m-.75 3h.75"
+                          className="w-3.5 h-3.5 text-slate-500"
+                        />
+                      </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-[12px] font-semibold text-slate-900 truncate">
-                          {c.title || c.caseNumber}
+                        <div className="text-[12px] font-bold text-slate-900 truncate">
+                          {address}
                         </div>
                         <div className="text-[10px] text-slate-500 truncate">
-                          {c.address || c.bygherreNavn || c.caseNumber}
+                          {bygherre && `${bygherre} · `}
+                          {addrCases.length} {addrCases.length === 1 ? "case" : "cases"}
                         </div>
                       </div>
-                      <span
-                        className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border ${CASE_STATUS_COLOR[c.status]}`}
-                      >
-                        {CASE_STATUS_LABEL[c.status]}
-                      </span>
-                    </div>
-                    <div className="mt-1 flex items-center justify-between gap-2 text-[10px] tabular-nums">
-                      <span className="text-slate-500">{c.varighedMaaneder} mdr</span>
-                      <span
-                        className={`font-bold ${
-                          e.dækningsbidrag >= 0 ? "text-emerald-700" : "text-rose-700"
-                        }`}
-                      >
-                        {fmtDKK(e.dækningsbidrag)} ({fmtPct(e.dækningsbidragPct)})
-                      </span>
-                    </div>
-                  </button>
+                      <div className="text-right shrink-0">
+                        <div
+                          className={`text-[12px] font-bold tabular-nums ${
+                            addrDB >= 0 ? "text-emerald-700" : "text-rose-700"
+                          }`}
+                        >
+                          {fmtDKK(addrDB)}
+                        </div>
+                        <div className="text-[9px] text-slate-400">samlet DB</div>
+                      </div>
+                    </button>
+
+                    {/* Cases under this address */}
+                    {isExpanded && (
+                      <div className="divide-y divide-slate-100 border-t border-slate-100">
+                        {addrCases.map((c) => {
+                          const e = calcCaseEconomics(c);
+                          const isActive = c.id === selectedId;
+                          return (
+                            <button
+                              key={c.id}
+                              onClick={() => openCase(c)}
+                              className={`w-full text-left pl-9 pr-3 py-2 transition-colors ${
+                                isActive ? "bg-violet-50" : "hover:bg-slate-50"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-2">
+                                <div className="min-w-0 flex-1">
+                                  <div className="text-[11px] font-semibold text-slate-900 truncate">
+                                    {c.title || c.caseNumber}
+                                  </div>
+                                  <div className="text-[9px] text-slate-400 truncate">
+                                    {c.caseNumber} · {c.varighedMaaneder} mdr
+                                  </div>
+                                </div>
+                                <span
+                                  className={`text-[9px] font-semibold px-1.5 py-0.5 rounded border shrink-0 ${CASE_STATUS_COLOR[c.status]}`}
+                                >
+                                  {CASE_STATUS_LABEL[c.status]}
+                                </span>
+                              </div>
+                              <div className="mt-0.5 text-[10px] tabular-nums text-right">
+                                <span
+                                  className={`font-bold ${
+                                    e.dækningsbidrag >= 0 ? "text-emerald-700" : "text-rose-700"
+                                  }`}
+                                >
+                                  {fmtDKK(e.dækningsbidrag)} ({fmtPct(e.dækningsbidragPct)})
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
+                  </div>
                 );
               })}
             </div>
