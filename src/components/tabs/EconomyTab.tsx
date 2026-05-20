@@ -777,62 +777,104 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
     [fetchPlannedPayments, onToast]
   );
 
-  // Opret planlagte betalinger (faktura ind + bygherre-andel ud) fra en case
+  // Opret planlagte betalinger fra en case: faktura ind, bygherre-andel ud,
+  // samt leverandør- og kommune-omkostninger ud.
   const addCaseToProjection = useCallback(async () => {
     if (!selectedId) {
       onToast("Gem case'en først", "error");
       return;
     }
     const e = calcCaseEconomics(form);
+    const today = new Date().toISOString().slice(0, 10);
     const addDays = (iso: string, n: number) => {
       const d = new Date(iso);
-      if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
+      if (Number.isNaN(d.getTime())) return today;
       d.setDate(d.getDate() + n);
       return d.toISOString().slice(0, 10);
     };
-    const endDate =
-      form.endDate ||
-      (form.sales || [])
-        .map((s) => s.toDate)
-        .filter(Boolean)
-        .sort()
-        .reverse()[0] ||
-      new Date().toISOString().slice(0, 10);
+    const saleDates = (form.sales || []).map((s) => s.toDate).filter(Boolean).sort();
+    const startDates = (form.sales || []).map((s) => s.fromDate).filter(Boolean).sort();
+    const endDate = form.endDate || saleDates[saleDates.length - 1] || today;
+    const startDate = form.startDate || startDates[0] || today;
     const inDate = addDays(endDate, 14);
     const bygDate = addDays(inDate, 14);
-    try {
-      await fetch("/api/planned-payments", {
+    // Omkostninger der allerede er afholdt (case startet i fortiden) markeres
+    // "betalt" så de ikke trækkes igen i prognosen — kun fremtidige tæller.
+    const costStatus = startDate < today ? "betalt" : "forventet";
+
+    const post = (body: Record<string, unknown>) =>
+      fetch("/api/planned-payments", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          id: `pp-case-${selectedId}-faktura`,
-          label: `Faktura — ${form.title}`,
-          direction: "ind",
-          amount: Math.round(e.fakturaTotal),
-          expectedDate: inDate,
-          category: "faktura",
-          status: "forventet",
-          notes: "Auto fra case (faktura-total ekskl. moms — justér ved behov)",
-        }),
+        body: JSON.stringify(body),
+      });
+
+    try {
+      await post({
+        id: `pp-case-${selectedId}-faktura`,
+        label: `Faktura — ${form.title}`,
+        direction: "ind",
+        amount: Math.round(e.fakturaTotal),
+        expectedDate: inDate,
+        category: "faktura",
+        status: "forventet",
+        notes: "Auto fra case (faktura-total ekskl. moms — justér ved behov)",
       });
       if (e.bygherreMediaShare > 0) {
-        await fetch("/api/planned-payments", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: `pp-case-${selectedId}-bygherre`,
-            label: `Bygherre-andel — ${form.title}`,
-            direction: "ud",
-            amount: Math.round(e.bygherreMediaShare),
-            expectedDate: bygDate,
-            category: "andet",
-            status: "forventet",
-            notes: "Auto fra case — bygherrens andel af medievisning",
-          }),
+        await post({
+          id: `pp-case-${selectedId}-bygherre`,
+          label: `Bygherre-andel — ${form.title}`,
+          direction: "ud",
+          amount: Math.round(e.bygherreMediaShare),
+          expectedDate: bygDate,
+          category: "andet",
+          status: "forventet",
+          notes: "Auto fra case — bygherrens andel af medievisning",
+        });
+      }
+      if (e.produktionKost > 0) {
+        await post({
+          id: `pp-case-${selectedId}-produktion`,
+          label: `Produktion (banner) — ${form.title}`,
+          direction: "ud",
+          amount: Math.round(e.produktionKost),
+          expectedDate: startDate,
+          category: "leverandoer",
+          status: costStatus,
+          notes: "Auto fra case — leverandør (tryk/produktion)",
+        });
+      }
+      if (e.monteringKost > 0) {
+        await post({
+          id: `pp-case-${selectedId}-montering`,
+          label: `Montering — ${form.title}`,
+          direction: "ud",
+          amount: Math.round(e.monteringKost),
+          expectedDate: startDate,
+          category: "leverandoer",
+          status: costStatus,
+          notes: "Auto fra case — leverandør (montering/lift)",
+        });
+      }
+      if (e.kommunaleKost > 0) {
+        await post({
+          id: `pp-case-${selectedId}-kommune`,
+          label: `Kommunale gebyrer — ${form.title}`,
+          direction: "ud",
+          amount: Math.round(e.kommunaleKost),
+          expectedDate: startDate,
+          category: "andet",
+          status: costStatus,
+          notes: "Auto fra case — kommunal afgift",
         });
       }
       await fetchPlannedPayments();
-      onToast("Case føjet til cash-prognosen (faktura + bygherre-andel)", "success");
+      onToast(
+        costStatus === "betalt"
+          ? "Case føjet til prognosen — leverandør/kommune markeret 'betalt' (case allerede startet)"
+          : "Case føjet til cash-prognosen med alle ind- og udbetalinger",
+        "success"
+      );
     } catch {
       onToast("Kunne ikke føje til prognosen", "error");
     }
