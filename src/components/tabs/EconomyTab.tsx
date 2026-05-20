@@ -65,6 +65,82 @@ function fmtPct(n: number) {
   return `${n.toFixed(1)}%`;
 }
 
+// ─── Case-relevans: kategori, rang & farver ─────────────────
+type CaseCategory = "aktiv" | "pipeline" | "afsluttet" | "tabt";
+
+/** Grupper status i en bred kategori til farve & sortering. */
+function caseCategory(status: CaseStatus): CaseCategory {
+  if (status === "opsat" || status === "i_drift" || status === "nedtaget") return "aktiv";
+  if (status === "tilbud_sendt" || status === "godkendt") return "pipeline";
+  if (status === "tabt") return "tabt";
+  return "afsluttet";
+}
+
+/** Lavere rang = mere relevant → vises øverst. */
+const CASE_STATUS_RANK: Record<CaseStatus, number> = {
+  i_drift: 0,
+  opsat: 1,
+  godkendt: 2,
+  tilbud_sendt: 3,
+  nedtaget: 4,
+  afsluttet: 5,
+  tabt: 6,
+};
+
+const CATEGORY_RANK: Record<CaseCategory, number> = {
+  aktiv: 0,
+  pipeline: 1,
+  afsluttet: 2,
+  tabt: 3,
+};
+
+const CATEGORY_LABEL: Record<CaseCategory, string> = {
+  aktiv: "Aktiv",
+  pipeline: "Pipeline",
+  afsluttet: "Afsluttet",
+  tabt: "Tabt",
+};
+
+const CATEGORY_STYLE: Record<
+  CaseCategory,
+  { borderAll: string; borderLeft: string; header: string; chip: string }
+> = {
+  aktiv: {
+    borderAll: "border-emerald-200",
+    borderLeft: "border-l-emerald-500",
+    header: "bg-emerald-50/70 hover:bg-emerald-100/80",
+    chip: "bg-emerald-100 text-emerald-700 border-emerald-300",
+  },
+  pipeline: {
+    borderAll: "border-blue-200",
+    borderLeft: "border-l-blue-500",
+    header: "bg-blue-50/70 hover:bg-blue-100/80",
+    chip: "bg-blue-100 text-blue-700 border-blue-300",
+  },
+  afsluttet: {
+    borderAll: "border-slate-200",
+    borderLeft: "border-l-slate-400",
+    header: "bg-slate-50 hover:bg-slate-100",
+    chip: "bg-slate-100 text-slate-600 border-slate-300",
+  },
+  tabt: {
+    borderAll: "border-rose-200",
+    borderLeft: "border-l-rose-400",
+    header: "bg-rose-50/60 hover:bg-rose-100/70",
+    chip: "bg-rose-100 text-rose-700 border-rose-300",
+  },
+};
+
+/** Boxens kategori = den mest relevante (aktive) blandt dens cases. */
+function boxCategory(cases: Case[]): CaseCategory {
+  let best: CaseCategory = "tabt";
+  for (const c of cases) {
+    const cat = caseCategory(c.status);
+    if (CATEGORY_RANK[cat] < CATEGORY_RANK[best]) best = cat;
+  }
+  return best;
+}
+
 const SUB_TABS = [
   { id: "cases" as SubTab, label: "Cases", icon: "M3 6.75A2.25 2.25 0 015.25 4.5h13.5A2.25 2.25 0 0121 6.75v10.5A2.25 2.25 0 0118.75 19.5H5.25A2.25 2.25 0 013 17.25V6.75z" },
   { id: "forecast" as SubTab, label: "Likviditet", icon: "M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" },
@@ -261,7 +337,9 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
 
   const kpis = useMemo(() => calcPortfolioKPIs(cases), [cases]);
 
-  // Group filtered cases by address — one box per building
+  // Group filtered cases by address — one box per building.
+  // Cases i hver box sorteres mest-relevant-først; boxe sorteres
+  // efter kategori (aktiv → pipeline → afsluttet → tabt), så DB.
   const groupedByAddress = useMemo(() => {
     const map = new Map<string, Case[]>();
     for (const c of filteredCases) {
@@ -270,7 +348,21 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
       if (list) list.push(c);
       else map.set(key, [c]);
     }
-    return [...map.entries()].sort((a, b) => a[0].localeCompare(b[0], "da"));
+    for (const list of map.values()) {
+      list.sort((a, b) => {
+        const r = CASE_STATUS_RANK[a.status] - CASE_STATUS_RANK[b.status];
+        if (r !== 0) return r;
+        return (b.startDate || b.createdAt).localeCompare(a.startDate || a.createdAt);
+      });
+    }
+    return [...map.entries()].sort((a, b) => {
+      const cr = CATEGORY_RANK[boxCategory(a[1])] - CATEGORY_RANK[boxCategory(b[1])];
+      if (cr !== 0) return cr;
+      const dbA = a[1].reduce((s, c) => s + calcCaseEconomics(c).dækningsbidrag, 0);
+      const dbB = b[1].reduce((s, c) => s + calcCaseEconomics(c).dækningsbidrag, 0);
+      if (dbB !== dbA) return dbB - dbA;
+      return a[0].localeCompare(b[0], "da");
+    });
   }, [filteredCases]);
 
   const monthlyOpEx = useMemo(() => totalMonthlyOperatingCost(expenses), [expenses]);
@@ -1027,18 +1119,22 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                 );
                 const bygherre = addrCases.find((c) => c.bygherreNavn)?.bygherreNavn || "";
                 const hasActiveChild = addrCases.some((c) => c.id === selectedId);
+                const boxCat = boxCategory(addrCases);
+                const catStyle = CATEGORY_STYLE[boxCat];
                 return (
                   <div
                     key={address}
-                    className={`rounded-lg border overflow-hidden ${
-                      hasActiveChild ? "border-violet-300" : "border-slate-200"
+                    className={`rounded-lg border border-l-4 overflow-hidden ${
+                      hasActiveChild
+                        ? "border-violet-300 border-l-violet-500"
+                        : `${catStyle.borderAll} ${catStyle.borderLeft}`
                     }`}
                   >
                     {/* Address box header */}
                     <button
                       onClick={() => toggleAddress(address)}
                       className={`w-full text-left px-3 py-2.5 flex items-center gap-2 transition-colors ${
-                        hasActiveChild ? "bg-violet-50" : "bg-slate-50 hover:bg-slate-100"
+                        hasActiveChild ? "bg-violet-50" : catStyle.header
                       }`}
                     >
                       <Ic
@@ -1052,8 +1148,15 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                         />
                       </div>
                       <div className="min-w-0 flex-1">
-                        <div className="text-[12px] font-bold text-slate-900 truncate">
-                          {address}
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[12px] font-bold text-slate-900 truncate">
+                            {address}
+                          </span>
+                          <span
+                            className={`shrink-0 text-[8px] font-bold uppercase tracking-wide px-1.5 py-0.5 rounded border ${catStyle.chip}`}
+                          >
+                            {CATEGORY_LABEL[boxCat]}
+                          </span>
                         </div>
                         <div className="text-[10px] text-slate-500 truncate">
                           {bygherre && `${bygherre} · `}
@@ -1078,11 +1181,12 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                         {addrCases.map((c) => {
                           const e = calcCaseEconomics(c);
                           const isActive = c.id === selectedId;
+                          const caseStyle = CATEGORY_STYLE[caseCategory(c.status)];
                           return (
                             <button
                               key={c.id}
                               onClick={() => openCase(c)}
-                              className={`w-full text-left pl-9 pr-3 py-2 transition-colors ${
+                              className={`w-full text-left pl-9 pr-3 py-2 border-l-2 transition-colors ${caseStyle.borderLeft} ${
                                 isActive ? "bg-violet-50" : "hover:bg-slate-50"
                               }`}
                             >
