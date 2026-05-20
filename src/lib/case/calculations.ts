@@ -1,4 +1,5 @@
 import { effectiveMedieSalg, netMedieForSale, type Case, type OperatingExpense } from "./types";
+import type { PlannedPayment } from "./planned-payments";
 
 export interface CaseEconomics {
   // ─── Salgspriser (hvad bygherre faktureres) ─────
@@ -395,5 +396,108 @@ export function calcLiquidityForecast(
     avgMonthlyNet: months.length ? round2(netSum / months.length) : 0,
     lowestCash: round2(lowestCash),
     totalMomsHorizon: round2(totalMoms),
+  };
+}
+
+// ─── Cash-prognose drevet af planlagte betalinger ───────────
+
+export interface CashProjectionMonth {
+  month: string;
+  monthLabel: string;
+  ind: number;          // planlagte indbetalinger
+  ud: number;           // planlagte udbetalinger
+  burn: number;         // fast månedligt burn
+  net: number;          // ind − ud − burn
+  cashEnd: number;
+  negative: boolean;
+}
+
+export interface CashProjection {
+  startingCash: number;
+  monthlyBurn: number;
+  months: CashProjectionMonth[];
+  runwayMonths: number | null;
+  runwayEndLabel: string | null;
+  lowestCash: number;
+  totalIn: number;
+  totalOut: number;
+}
+
+/**
+ * Projektér kassebeholdning ud fra planlagte betalinger + fast burn.
+ * Kun betalinger med status "forventet" tæller (modtaget/betalt er
+ * allerede i saldoen). Forfaldne (dato før indeværende måned) lægges
+ * i første måned.
+ */
+export function calcCashProjection(
+  startingCash: number,
+  plannedPayments: PlannedPayment[],
+  monthlyBurn: number,
+  horizonMonths = 12
+): CashProjection {
+  const now = new Date();
+  const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+
+  const months: CashProjectionMonth[] = [];
+  const buckets = new Map<string, CashProjectionMonth>();
+  for (let i = 0; i < horizonMonths; i++) {
+    const d = new Date(startOfMonth.getFullYear(), startOfMonth.getMonth() + i, 1);
+    const m: CashProjectionMonth = {
+      month: monthKey(d),
+      monthLabel: `${MONTH_NAMES_DA[d.getMonth()]} ${d.getFullYear()}`,
+      ind: 0,
+      ud: 0,
+      burn: Math.max(0, monthlyBurn),
+      net: 0,
+      cashEnd: 0,
+      negative: false,
+    };
+    months.push(m);
+    buckets.set(m.month, m);
+  }
+  const firstKey = months[0]?.month || "";
+
+  for (const p of plannedPayments) {
+    if (p.status !== "forventet") continue;
+    const key = p.expectedDate.slice(0, 7);
+    let m = buckets.get(key);
+    if (!m && firstKey && key < firstKey) m = buckets.get(firstKey); // forfalden → første måned
+    if (!m) continue; // uden for horisonten
+    if (p.direction === "ind") m.ind += p.amount;
+    else m.ud += p.amount;
+  }
+
+  let cash = startingCash;
+  let lowest = startingCash;
+  let runwayMonths: number | null = null;
+  let runwayEndLabel: string | null = null;
+  let totalIn = 0;
+  let totalOut = 0;
+
+  months.forEach((m, i) => {
+    m.ind = round2(m.ind);
+    m.ud = round2(m.ud);
+    m.net = round2(m.ind - m.ud - m.burn);
+    cash = round2(cash + m.net);
+    m.cashEnd = cash;
+    m.negative = cash < 0;
+    totalIn += m.ind;
+    totalOut += m.ud + m.burn;
+    if (cash < lowest) lowest = cash;
+    if (runwayMonths === null && cash < 0) {
+      runwayMonths = i;
+      runwayEndLabel = m.monthLabel;
+    }
+  });
+
+  return {
+    startingCash: round2(startingCash),
+    monthlyBurn: round2(monthlyBurn),
+    months,
+    runwayMonths,
+    runwayEndLabel,
+    lowestCash: round2(lowest),
+    totalIn: round2(totalIn),
+    totalOut: round2(totalOut),
   };
 }

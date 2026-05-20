@@ -29,11 +29,12 @@ import {
 import {
   applyOperatingExpenses,
   calcCaseEconomics,
-  calcLiquidityForecast,
+  calcCashProjection,
   calcMonthlyForecast,
   calcPortfolioKPIs,
   totalMonthlyOperatingCost,
 } from "@/lib/case/calculations";
+import type { PlannedPayment } from "@/lib/case/planned-payments";
 import type { Tilbud } from "@/lib/tilbud/types";
 
 export interface EconomyTabProps {
@@ -41,6 +42,16 @@ export interface EconomyTabProps {
 }
 
 type SubTab = "cases" | "forecast" | "settings";
+
+const PLANNED_CAT_LABEL: Record<string, string> = {
+  faktura: "Faktura",
+  moms: "Moms",
+  leverandoer: "Leverandør",
+  loen: "Løn",
+  drift: "Drift",
+  andet: "Andet",
+};
+const PLANNED_CATS = ["faktura", "moms", "leverandoer", "loen", "drift", "andet"] as const;
 
 const CI = "h-7 w-full rounded-md border border-slate-300 bg-white px-2 text-[11px] text-slate-900 focus:outline-none focus:ring-2 focus:ring-violet-300";
 const CIR = `${CI} text-right tabular-nums`;
@@ -149,6 +160,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
   const [newExpenseLabel, setNewExpenseLabel] = useState("");
   const [newKommuneName, setNewKommuneName] = useState("");
   const [bankSummary, setBankSummary] = useState<BankSummary | null>(null);
+  const [plannedPayments, setPlannedPayments] = useState<PlannedPayment[]>([]);
 
   // ─── Fetch ──────────────────────────────────────────────────
 
@@ -205,13 +217,31 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
     }
   }, []);
 
+  const fetchPlannedPayments = useCallback(async () => {
+    try {
+      const r = await fetch("/api/planned-payments");
+      const d = (await r.json()) as { items: PlannedPayment[] };
+      setPlannedPayments(d.items || []);
+    } catch {
+      // silent
+    }
+  }, []);
+
   useEffect(() => {
     fetchCases();
     fetchTilbud();
     fetchSettings();
     fetchExpenses();
     fetchBankSummary();
-  }, [fetchCases, fetchTilbud, fetchSettings, fetchExpenses, fetchBankSummary]);
+    fetchPlannedPayments();
+  }, [
+    fetchCases,
+    fetchTilbud,
+    fetchSettings,
+    fetchExpenses,
+    fetchBankSummary,
+    fetchPlannedPayments,
+  ]);
 
   // ─── Computed ──────────────────────────────────────────────
 
@@ -261,16 +291,14 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
   );
 
   // Likviditet — runway-projektion
-  const liquidity = useMemo(
-    () =>
-      calcLiquidityForecast(
-        cases,
-        monthlyOpEx,
-        settings?.cashBalance ?? 0,
-        settings?.momsPct ?? 25,
-        12
-      ),
-    [cases, monthlyOpEx, settings?.cashBalance, settings?.momsPct]
+  // Fast månedligt burn: manuel override, ellers auto-baseline fra banken
+  const autoBurn = bankSummary?.monthlyBurnBaseline ?? 0;
+  const monthlyBurn =
+    settings?.recurringBurn && settings.recurringBurn > 0 ? settings.recurringBurn : autoBurn;
+
+  const cashProjection = useMemo(
+    () => calcCashProjection(settings?.cashBalance ?? 0, plannedPayments, monthlyBurn, 12),
+    [settings?.cashBalance, plannedPayments, monthlyBurn]
   );
 
   const econ = useMemo(() => calcCaseEconomics(form), [form]);
@@ -682,6 +710,71 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
       }
     },
     [fetchExpenses, onToast]
+  );
+
+  // ─── Planlagte betalinger ────────────────────────────────
+
+  const addPlannedPayment = useCallback(
+    async (direction: "ind" | "ud") => {
+      try {
+        const r = await fetch("/api/planned-payments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            label: direction === "ind" ? "Ny indbetaling" : "Ny udbetaling",
+            direction,
+            amount: 0,
+            expectedDate: new Date().toISOString().slice(0, 10),
+            category: direction === "ind" ? "faktura" : "drift",
+            status: "forventet",
+          }),
+        });
+        if (!r.ok) {
+          onToast("Kunne ikke oprette betaling", "error");
+          return;
+        }
+        await fetchPlannedPayments();
+      } catch {
+        onToast("Fejl", "error");
+      }
+    },
+    [fetchPlannedPayments, onToast]
+  );
+
+  const updatePlannedPayment = useCallback(
+    async (id: string, patch: Partial<PlannedPayment>) => {
+      try {
+        const r = await fetch(`/api/planned-payments/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ ...patch, id }),
+        });
+        if (!r.ok) {
+          onToast("Kunne ikke gemme", "error");
+          return;
+        }
+        await fetchPlannedPayments();
+      } catch {
+        onToast("Fejl", "error");
+      }
+    },
+    [fetchPlannedPayments, onToast]
+  );
+
+  const removePlannedPayment = useCallback(
+    async (id: string) => {
+      try {
+        const r = await fetch(`/api/planned-payments/${id}`, { method: "DELETE" });
+        if (!r.ok) {
+          onToast("Kunne ikke slette", "error");
+          return;
+        }
+        await fetchPlannedPayments();
+      } catch {
+        onToast("Fejl", "error");
+      }
+    },
+    [fetchPlannedPayments, onToast]
   );
 
   // ─── Render ────────────────────────────────────────────────
@@ -1601,71 +1694,253 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
             <KpiCard
               label="Runway"
               value={
-                liquidity.runwayMonths != null
-                  ? `${liquidity.runwayMonths} mdr`
+                cashProjection.runwayMonths != null
+                  ? `${cashProjection.runwayMonths} mdr`
                   : "12+ mdr"
               }
               sublabel={
-                liquidity.runwayEndLabel
-                  ? `Kassen i nul: ${liquidity.runwayEndLabel}`
+                cashProjection.runwayEndLabel
+                  ? `Kassen i nul: ${cashProjection.runwayEndLabel}`
                   : "Positiv hele horisonten"
               }
               tone={
-                liquidity.runwayMonths == null
+                cashProjection.runwayMonths == null
                   ? "emerald"
-                  : liquidity.runwayMonths >= 6
+                  : cashProjection.runwayMonths >= 6
                   ? "amber"
                   : "rose"
               }
             />
             <KpiCard
-              label="Gns. cashflow / md"
-              value={fmtDKK(liquidity.avgMonthlyNet)}
-              sublabel={liquidity.avgMonthlyNet >= 0 ? "Kassen vokser" : "Kassen falder"}
-              tone={liquidity.avgMonthlyNet >= 0 ? "emerald" : "rose"}
+              label="Forventede indbetalinger"
+              value={fmtDKK(cashProjection.totalIn)}
+              sublabel="Planlagte ind næste 12 mdr"
+              tone="emerald"
             />
             <KpiCard
               label="Laveste kasse (12 mdr)"
-              value={fmtDKK(liquidity.lowestCash)}
-              sublabel={`Moms est. ${fmtDKK(liquidity.totalMomsHorizon)}`}
-              tone={liquidity.lowestCash >= 0 ? "default" : "rose"}
+              value={fmtDKK(cashProjection.lowestCash)}
+              sublabel={`Burn ${fmtDKK(monthlyBurn)}/md`}
+              tone={cashProjection.lowestCash >= 0 ? "default" : "rose"}
             />
           </div>
 
-          {/* Cashflow-tabel */}
+          {/* Planlagte betalinger */}
+          <div className="rounded-lg border border-slate-200 bg-white p-4">
+            <SectionHeader
+              icon="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z"
+              title="Planlagte betalinger"
+              hint="Forventede ind- og udbetalinger der indgår i cash-prognosen"
+              action={
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => addPlannedPayment("ind")}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-emerald-700 hover:underline"
+                  >
+                    <Ic d="M12 4.5v15m7.5-7.5h-15" className="w-3 h-3" /> Indbetaling
+                  </button>
+                  <button
+                    onClick={() => addPlannedPayment("ud")}
+                    className="flex items-center gap-1 text-[10px] font-semibold text-rose-700 hover:underline"
+                  >
+                    <Ic d="M12 4.5v15m7.5-7.5h-15" className="w-3 h-3" /> Udbetaling
+                  </button>
+                </div>
+              }
+            />
+            <div className="rounded-md border border-slate-200 overflow-hidden bg-white">
+              <table className="w-full text-[11px]">
+                <thead className="bg-slate-50">
+                  <tr className="text-left text-[10px] text-slate-500">
+                    <th className="px-2 py-1.5 font-semibold">Tekst</th>
+                    <th className="px-2 py-1.5 font-semibold">Retning</th>
+                    <th className="px-2 py-1.5 font-semibold">Kategori</th>
+                    <th className="px-2 py-1.5 font-semibold text-right">Beløb</th>
+                    <th className="px-2 py-1.5 font-semibold">Forventet dato</th>
+                    <th className="px-2 py-1.5 font-semibold">Status</th>
+                    <th className="px-2 py-1.5"></th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {plannedPayments.length === 0 && (
+                    <tr>
+                      <td colSpan={7} className="px-2 py-3 text-center text-[10px] text-slate-400">
+                        Ingen planlagte betalinger endnu — tilføj forventede ind-/udbetalinger.
+                      </td>
+                    </tr>
+                  )}
+                  {plannedPayments.map((p) => (
+                    <tr key={p.id} className="border-t border-slate-100">
+                      <td className="px-2 py-1">
+                        <input
+                          className={CI}
+                          defaultValue={p.label}
+                          onBlur={(e) => {
+                            const v = e.target.value.trim();
+                            if (v !== p.label) updatePlannedPayment(p.id, { label: v });
+                          }}
+                        />
+                      </td>
+                      <td className="px-2 py-1">
+                        <select
+                          className="h-7 rounded-md border border-slate-300 bg-white px-1 text-[11px]"
+                          value={p.direction}
+                          onChange={(e) =>
+                            updatePlannedPayment(p.id, {
+                              direction: e.target.value as "ind" | "ud",
+                            })
+                          }
+                        >
+                          <option value="ind">Ind</option>
+                          <option value="ud">Ud</option>
+                        </select>
+                      </td>
+                      <td className="px-2 py-1">
+                        <select
+                          className="h-7 rounded-md border border-slate-300 bg-white px-1 text-[11px]"
+                          value={p.category}
+                          onChange={(e) =>
+                            updatePlannedPayment(p.id, {
+                              category: e.target.value as PlannedPayment["category"],
+                            })
+                          }
+                        >
+                          {PLANNED_CATS.map((c) => (
+                            <option key={c} value={c}>
+                              {PLANNED_CAT_LABEL[c]}
+                            </option>
+                          ))}
+                        </select>
+                      </td>
+                      <td className="px-2 py-1">
+                        <input
+                          type="number"
+                          className={CIR}
+                          defaultValue={p.amount || ""}
+                          onBlur={(e) => {
+                            const v = Number(e.target.value) || 0;
+                            if (v !== p.amount) updatePlannedPayment(p.id, { amount: v });
+                          }}
+                        />
+                      </td>
+                      <td className="px-2 py-1">
+                        <input
+                          type="date"
+                          className={CI}
+                          defaultValue={p.expectedDate}
+                          onBlur={(e) => {
+                            if (e.target.value && e.target.value !== p.expectedDate)
+                              updatePlannedPayment(p.id, { expectedDate: e.target.value });
+                          }}
+                        />
+                      </td>
+                      <td className="px-2 py-1">
+                        <select
+                          className={`h-7 rounded-md border px-1 text-[11px] font-semibold ${
+                            p.status === "forventet"
+                              ? "border-amber-300 bg-amber-50 text-amber-800"
+                              : "border-emerald-300 bg-emerald-50 text-emerald-800"
+                          }`}
+                          value={p.status}
+                          onChange={(e) =>
+                            updatePlannedPayment(p.id, {
+                              status: e.target.value as PlannedPayment["status"],
+                            })
+                          }
+                        >
+                          <option value="forventet">Forventet</option>
+                          <option value="modtaget">Modtaget</option>
+                          <option value="betalt">Betalt</option>
+                        </select>
+                      </td>
+                      <td className="px-2 py-1.5 text-right">
+                        <button
+                          onClick={() => removePlannedPayment(p.id)}
+                          className="text-rose-500 hover:text-rose-700"
+                          title="Slet"
+                        >
+                          <Ic
+                            d="M14.74 9l-.346 9m-4.788 0L9.26 9m9.968-3.21c.342.052.682.107 1.022.166m-1.022-.165L18.16 19.673a2.25 2.25 0 01-2.244 2.077H8.084a2.25 2.25 0 01-2.244-2.077L4.772 5.79m14.456 0a48.108 48.108 0 00-3.478-.397m-12 .562c.34-.059.68-.114 1.022-.165m0 0a48.11 48.11 0 013.478-.397m7.5 0v-.916c0-1.18-.91-2.164-2.09-2.201a51.964 51.964 0 00-3.32 0c-1.18.037-2.09 1.022-2.09 2.201v.916m7.5 0a48.667 48.667 0 00-7.5 0"
+                            className="w-3.5 h-3.5"
+                          />
+                        </button>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="text-[10px] text-slate-400 mt-2">
+              Kun betalinger med status <strong>Forventet</strong> indgår i prognosen — sæt til
+              "Modtaget"/"Betalt" når pengene er gået ind/ud (de er så allerede i saldoen).
+            </div>
+          </div>
+
+          {/* Cash-prognose */}
           <div className="rounded-lg border border-emerald-200 bg-gradient-to-br from-emerald-50/60 to-white p-4">
             <SectionHeader
-              icon="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z"
-              title="12 måneders cashflow"
-              hint="DB fra cases − faste driftsudgifter − moms-afregning"
+              icon="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"
+              title="Cash-prognose — 12 måneder"
+              hint="Kassebeholdning + planlagte indbetalinger − udbetalinger − fast burn"
+              action={
+                <div className="flex items-center gap-1.5 text-[10px]">
+                  <span className="text-slate-500">Fast burn/md:</span>
+                  <input
+                    type="number"
+                    className="h-7 w-24 rounded-md border border-slate-300 bg-white px-1 text-[11px] text-right tabular-nums"
+                    defaultValue={settings?.recurringBurn || ""}
+                    placeholder={String(Math.round(autoBurn))}
+                    key={`burn-${settings?.recurringBurn ?? 0}`}
+                    onBlur={(e) => {
+                      const v = Number(e.target.value) || 0;
+                      if (settings && v !== settings.recurringBurn) {
+                        saveSettings({ recurringBurn: v });
+                      }
+                    }}
+                  />
+                  <span className="text-slate-400">
+                    {settings?.recurringBurn && settings.recurringBurn > 0
+                      ? "(manuel)"
+                      : `(auto ${fmtDKK(autoBurn)})`}
+                  </span>
+                </div>
+              }
             />
             <div className="rounded-md border border-slate-200 overflow-hidden bg-white">
               <table className="w-full text-[11px]">
                 <thead className="bg-slate-50">
                   <tr className="text-left text-[10px] text-slate-500">
                     <th className="px-2 py-1.5 font-semibold">Måned</th>
-                    <th className="px-2 py-1.5 font-semibold text-right">DB ind</th>
-                    <th className="px-2 py-1.5 font-semibold text-right">Drift</th>
-                    <th className="px-2 py-1.5 font-semibold text-right">Moms</th>
+                    <th className="px-2 py-1.5 font-semibold text-right">Ind</th>
+                    <th className="px-2 py-1.5 font-semibold text-right">Ud</th>
+                    <th className="px-2 py-1.5 font-semibold text-right">Burn</th>
                     <th className="px-2 py-1.5 font-semibold text-right">Netto</th>
                     <th className="px-2 py-1.5 font-semibold text-right">Kasse ultimo</th>
                   </tr>
                 </thead>
                 <tbody>
-                  {liquidity.months.map((m) => (
+                  <tr className="border-t border-slate-100 bg-slate-50/60">
+                    <td className="px-2 py-1.5 font-semibold text-slate-600" colSpan={5}>
+                      Kassebeholdning nu
+                    </td>
+                    <td className="px-2 py-1.5 text-right tabular-nums font-bold text-slate-900">
+                      {fmtDKK(cashProjection.startingCash)}
+                    </td>
+                  </tr>
+                  {cashProjection.months.map((m) => (
                     <tr
                       key={m.month}
                       className={`border-t border-slate-100 ${m.negative ? "bg-rose-50" : ""}`}
                     >
                       <td className="px-2 py-1.5 font-medium text-slate-700">{m.monthLabel}</td>
                       <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700">
-                        {m.dbIn !== 0 ? fmtDKK(m.dbIn) : "—"}
+                        {m.ind !== 0 ? fmtDKK(m.ind) : "—"}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-rose-700">
+                        {m.ud !== 0 ? `−${fmtDKK(m.ud)}` : "—"}
                       </td>
                       <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
-                        {m.opexOut !== 0 ? `−${fmtDKK(m.opexOut)}` : "—"}
-                      </td>
-                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
-                        {m.momsOut !== 0 ? `−${fmtDKK(m.momsOut)}` : "—"}
+                        {m.burn !== 0 ? `−${fmtDKK(m.burn)}` : "—"}
                       </td>
                       <td
                         className={`px-2 py-1.5 text-right tabular-nums font-semibold ${
@@ -1687,8 +1962,8 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
               </table>
             </div>
             <div className="text-[10px] text-slate-400 mt-2">
-              Moms estimeres som {settings?.momsPct ?? 25}% af DB og afregnes ved kalenderkvartal
-              (marts/juni/sep/dec). Cases med status "tabt" indgår ikke.
+              Forfaldne betalinger (dato før denne måned) lægges i første måned. Fast burn er
+              jeres gennemsnitlige faste forbrug — auto-beregnet fra kontoudtoget, kan overstyres.
             </div>
           </div>
 

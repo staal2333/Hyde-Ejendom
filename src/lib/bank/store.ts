@@ -93,6 +93,7 @@ export async function getBankSummary(): Promise<BankSummary> {
     totalExpense: 0,
     byMonth: [],
     byCategory: [],
+    monthlyBurnBaseline: 0,
   };
   if (!HAS_SUPABASE || !supabase) return empty;
 
@@ -153,6 +154,13 @@ export async function getBankSummary(): Promise<BankSummary> {
       .map((c) => ({ ...c, income: round2(c.income), expense: round2(c.expense) }))
       .sort((a, b) => b.expense - a.expense);
 
+    // Fast burn-baseline: software + løn + andet (ikke case-drevne poster), pr. måned
+    const months = Math.max(1, byMonth.length);
+    const fixedExpense = byCategory
+      .filter((c) => c.category === "software" || c.category === "loen" || c.category === "andet")
+      .reduce((sum, c) => sum + c.expense, 0);
+    const monthlyBurnBaseline = round2(fixedExpense / months);
+
     return {
       transactionCount: txs.length,
       closingBalance: newest.balance,
@@ -163,6 +171,7 @@ export async function getBankSummary(): Promise<BankSummary> {
       totalExpense: round2(totalExpense),
       byMonth,
       byCategory,
+      monthlyBurnBaseline,
     };
   } catch (err) {
     logger.error(`[bank-store] summary error: ${err instanceof Error ? err.message : err}`);

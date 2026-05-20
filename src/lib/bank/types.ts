@@ -73,4 +73,6 @@ export interface BankSummary {
   totalExpense: number;
   byMonth: BankMonthAgg[];
   byCategory: BankCategoryAgg[];
+  /** Gns. månedligt fast burn (software + løn + andet) — baseline til cash-prognose */
+  monthlyBurnBaseline: number;
 }

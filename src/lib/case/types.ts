@@ -235,6 +235,7 @@ export const costSettingsSchema = z.object({
   cashBalance: z.number().default(0),
   cashBalanceUpdatedAt: z.string().optional().default(""),
   momsPct: z.number().min(0).max(100).default(25),
+  recurringBurn: z.number().nonnegative().default(0), // 0 = brug auto fra bank
   updatedAt: z.string().min(1),
 });
 
@@ -253,6 +254,7 @@ export function defaultCostSettings(): CostSettings {
     cashBalance: 0,
     cashBalanceUpdatedAt: "",
     momsPct: 25,
+    recurringBurn: 0,
     updatedAt: new Date().toISOString(),
   };
 }

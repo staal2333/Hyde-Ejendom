@@ -32,6 +32,7 @@ function rowToSettings(row: Record<string, unknown>): CostSettings {
     cashBalance: Number(row.cash_balance || 0),
     cashBalanceUpdatedAt: String(row.cash_balance_updated_at || ""),
     momsPct: row.moms_pct != null ? Number(row.moms_pct) : 25,
+    recurringBurn: Number(row.recurring_burn || 0),
     updatedAt: String(row.updated_at || new Date().toISOString()),
   };
 }
@@ -47,6 +48,7 @@ function settingsToRow(s: CostSettings) {
     cash_balance: s.cashBalance ?? 0,
     cash_balance_updated_at: s.cashBalanceUpdatedAt || "",
     moms_pct: s.momsPct ?? 25,
+    recurring_burn: s.recurringBurn ?? 0,
   };
 }
 
