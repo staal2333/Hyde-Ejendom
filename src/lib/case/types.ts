@@ -168,6 +168,9 @@ export const caseSchema = z.object({
 
 export const caseUpsertInputSchema = caseSchema.partial().extend({
   id: z.string().optional(),
+  // costs som partial — så en delvis PATCH ikke nulstiller resten af felterne
+  // via zod-defaults (upsertCase merger feltvist med base.costs).
+  costs: caseCostsSchema.partial().optional(),
 });
 
 export type Case = z.infer<typeof caseSchema>;
