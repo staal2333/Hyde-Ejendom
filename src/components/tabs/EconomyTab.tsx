@@ -5,6 +5,11 @@ import TabBar from "../ui/TabBar";
 import Ic from "../ui/Icon";
 import type { InvoiceLineType, InvoiceScanResult } from "@/lib/case/invoice-scan";
 import {
+  BANK_CATEGORY_LABEL,
+  type BankCategory,
+  type BankSummary,
+} from "@/lib/bank/types";
+import {
   CASE_STATUSES,
   CASE_STATUS_COLOR,
   CASE_STATUS_LABEL,
@@ -143,6 +148,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
   const [expenses, setExpenses] = useState<OperatingExpense[]>([]);
   const [newExpenseLabel, setNewExpenseLabel] = useState("");
   const [newKommuneName, setNewKommuneName] = useState("");
+  const [bankSummary, setBankSummary] = useState<BankSummary | null>(null);
 
   // ─── Fetch ──────────────────────────────────────────────────
 
@@ -189,12 +195,23 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
     }
   }, []);
 
+  const fetchBankSummary = useCallback(async () => {
+    try {
+      const r = await fetch("/api/bank/summary");
+      const d = (await r.json()) as BankSummary;
+      setBankSummary(d && d.transactionCount > 0 ? d : null);
+    } catch {
+      // silent
+    }
+  }, []);
+
   useEffect(() => {
     fetchCases();
     fetchTilbud();
     fetchSettings();
     fetchExpenses();
-  }, [fetchCases, fetchTilbud, fetchSettings, fetchExpenses]);
+    fetchBankSummary();
+  }, [fetchCases, fetchTilbud, fetchSettings, fetchExpenses, fetchBankSummary]);
 
   // ─── Computed ──────────────────────────────────────────────
 
@@ -417,6 +434,45 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
   // Customer invoice scan (creates a whole case)
   const customerInvoiceRef = useRef<HTMLInputElement>(null);
   const [customerScanLoading, setCustomerScanLoading] = useState(false);
+
+  // Bank statement import
+  const bankFileRef = useRef<HTMLInputElement>(null);
+  const [bankImportLoading, setBankImportLoading] = useState(false);
+
+  const openBankPicker = () => bankFileRef.current?.click();
+
+  const handleBankImport = useCallback(
+    async (file: File) => {
+      setBankImportLoading(true);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const r = await fetch("/api/bank/import", { method: "POST", body: fd });
+        const d = (await r.json()) as {
+          success?: boolean;
+          imported?: number;
+          closingBalance?: number;
+          error?: string;
+        };
+        if (!r.ok || !d.success) {
+          onToast(d.error || "Kunne ikke importere kontoudtog", "error");
+          return;
+        }
+        await Promise.all([fetchBankSummary(), fetchSettings()]);
+        onToast(
+          `Kontoudtog importeret — ${d.imported} transaktioner, saldo ${Math.round(
+            d.closingBalance || 0
+          ).toLocaleString("da-DK")} kr`,
+          "success"
+        );
+      } catch (err) {
+        onToast(err instanceof Error ? err.message : "Fejl ved import", "error");
+      } finally {
+        setBankImportLoading(false);
+      }
+    },
+    [fetchBankSummary, fetchSettings, onToast]
+  );
 
   const openCustomerInvoicePicker = () => customerInvoiceRef.current?.click();
 
@@ -1477,6 +1533,47 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
       {/* ═══ LIKVIDITET SUB-TAB ═══ */}
       {subTab === "forecast" && (
         <div className="space-y-3">
+          {/* Importér kontoudtog */}
+          <div className="flex items-center justify-between rounded-lg border border-slate-200 bg-white px-3 py-2">
+            <div className="text-[11px] text-slate-600">
+              <span className="font-semibold text-slate-800">Kontoudtog</span>{" "}
+              {bankSummary
+                ? `· ${bankSummary.transactionCount} transaktioner · saldo pr. ${bankSummary.closingBalanceDate}`
+                : "· importér jeres Lunar-kontoudtog (PDF) for faktiske tal"}
+            </div>
+            <button
+              onClick={openBankPicker}
+              disabled={bankImportLoading}
+              className="flex items-center gap-1.5 h-7 rounded-md bg-slate-900 px-3 text-[11px] font-semibold text-white hover:bg-slate-700 disabled:opacity-60"
+            >
+              {bankImportLoading ? (
+                <>
+                  <span className="inline-block w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Importerer...
+                </>
+              ) : (
+                <>
+                  <Ic
+                    d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5M16.5 12L12 16.5m0 0L7.5 12m4.5 4.5V3"
+                    className="w-3.5 h-3.5"
+                  />
+                  {bankSummary ? "Opdatér kontoudtog" : "Importér kontoudtog"}
+                </>
+              )}
+            </button>
+            <input
+              ref={bankFileRef}
+              type="file"
+              accept="application/pdf"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleBankImport(f);
+                e.target.value = "";
+              }}
+            />
+          </div>
+
           {/* Top: kassebeholdning + runway KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <div className="rounded-lg border border-violet-300 bg-violet-50 p-3">
@@ -1594,6 +1691,121 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
               (marts/juni/sep/dec). Cases med status "tabt" indgår ikke.
             </div>
           </div>
+
+          {/* Faktisk likviditet fra kontoudtog */}
+          {bankSummary && (
+            <div className="rounded-lg border border-slate-300 bg-white p-4">
+              <SectionHeader
+                icon="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z"
+                title="Faktisk likviditet (fra kontoudtog)"
+                hint={`${bankSummary.firstDate} → ${bankSummary.lastDate} · ${bankSummary.transactionCount} transaktioner`}
+              />
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 mb-3">
+                <KpiCard
+                  label="Aktuel saldo"
+                  value={fmtDKK(bankSummary.closingBalance)}
+                  sublabel={`pr. ${bankSummary.closingBalanceDate}`}
+                  tone="emerald"
+                />
+                <KpiCard
+                  label="Total ind"
+                  value={fmtDKK(bankSummary.totalIncome)}
+                  sublabel="Hele perioden"
+                />
+                <KpiCard
+                  label="Total ud"
+                  value={fmtDKK(bankSummary.totalExpense)}
+                  sublabel="Hele perioden"
+                  tone="amber"
+                />
+              </div>
+
+              {/* Kategori-fordeling */}
+              <div className="mb-3">
+                <div className={LABEL + " mb-1"}>Forbrug pr. kategori</div>
+                <div className="rounded-md border border-slate-200 overflow-hidden">
+                  <table className="w-full text-[11px]">
+                    <thead className="bg-slate-50">
+                      <tr className="text-left text-[10px] text-slate-500">
+                        <th className="px-2 py-1.5 font-semibold">Kategori</th>
+                        <th className="px-2 py-1.5 font-semibold text-right">Ind</th>
+                        <th className="px-2 py-1.5 font-semibold text-right">Ud</th>
+                        <th className="px-2 py-1.5 font-semibold text-right">Antal</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {bankSummary.byCategory.map((c) => (
+                        <tr key={c.category} className="border-t border-slate-100">
+                          <td className="px-2 py-1.5 font-medium text-slate-700">
+                            {BANK_CATEGORY_LABEL[c.category as BankCategory]}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700">
+                            {c.income > 0 ? fmtDKK(c.income) : "—"}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums text-rose-700">
+                            {c.expense > 0 ? fmtDKK(c.expense) : "—"}
+                          </td>
+                          <td className="px-2 py-1.5 text-right tabular-nums text-slate-400">
+                            {c.count}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Faktisk månedlig cashflow */}
+              <div>
+                <div className={LABEL + " mb-1"}>Faktisk cashflow pr. måned</div>
+                <div className="space-y-1">
+                  {(() => {
+                    const maxAbs = Math.max(
+                      1,
+                      ...bankSummary.byMonth.map((m) => Math.max(m.income, m.expense))
+                    );
+                    return bankSummary.byMonth.slice(-12).map((m) => (
+                      <div
+                        key={m.month}
+                        className="grid grid-cols-[70px_1fr_110px] items-center gap-2 text-[11px]"
+                      >
+                        <div className="text-slate-600 font-medium">{m.monthLabel}</div>
+                        <div className="flex items-center gap-0.5 h-4">
+                          <div className="flex-1 flex justify-end">
+                            <div
+                              className="h-3 bg-rose-300 rounded-l"
+                              style={{ width: `${(m.expense / maxAbs) * 100}%` }}
+                              title={`Ud ${fmtDKK(m.expense)}`}
+                            />
+                          </div>
+                          <div className="w-px h-4 bg-slate-300" />
+                          <div className="flex-1">
+                            <div
+                              className="h-3 bg-emerald-400 rounded-r"
+                              style={{ width: `${(m.income / maxAbs) * 100}%` }}
+                              title={`Ind ${fmtDKK(m.income)}`}
+                            />
+                          </div>
+                        </div>
+                        <div
+                          className={`text-right tabular-nums font-semibold ${
+                            m.net >= 0 ? "text-emerald-700" : "text-rose-700"
+                          }`}
+                        >
+                          {fmtDKK(m.net)}
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+                <div className="text-[10px] text-slate-400 mt-1.5">
+                  Rød = udgifter · grøn = indtægter · tal = netto. Kassebeholdningen ovenfor er
+                  auto-opdateret til kontoudtogets slutsaldo.
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Forecast bars — DB pr. måned */}
           <div className="rounded-lg border border-slate-200 bg-white p-4">
