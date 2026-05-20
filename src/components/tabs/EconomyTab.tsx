@@ -777,6 +777,67 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
     [fetchPlannedPayments, onToast]
   );
 
+  // Opret planlagte betalinger (faktura ind + bygherre-andel ud) fra en case
+  const addCaseToProjection = useCallback(async () => {
+    if (!selectedId) {
+      onToast("Gem case'en først", "error");
+      return;
+    }
+    const e = calcCaseEconomics(form);
+    const addDays = (iso: string, n: number) => {
+      const d = new Date(iso);
+      if (Number.isNaN(d.getTime())) return new Date().toISOString().slice(0, 10);
+      d.setDate(d.getDate() + n);
+      return d.toISOString().slice(0, 10);
+    };
+    const endDate =
+      form.endDate ||
+      (form.sales || [])
+        .map((s) => s.toDate)
+        .filter(Boolean)
+        .sort()
+        .reverse()[0] ||
+      new Date().toISOString().slice(0, 10);
+    const inDate = addDays(endDate, 14);
+    const bygDate = addDays(inDate, 14);
+    try {
+      await fetch("/api/planned-payments", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          id: `pp-case-${selectedId}-faktura`,
+          label: `Faktura — ${form.title}`,
+          direction: "ind",
+          amount: Math.round(e.fakturaTotal),
+          expectedDate: inDate,
+          category: "faktura",
+          status: "forventet",
+          notes: "Auto fra case (faktura-total ekskl. moms — justér ved behov)",
+        }),
+      });
+      if (e.bygherreMediaShare > 0) {
+        await fetch("/api/planned-payments", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: `pp-case-${selectedId}-bygherre`,
+            label: `Bygherre-andel — ${form.title}`,
+            direction: "ud",
+            amount: Math.round(e.bygherreMediaShare),
+            expectedDate: bygDate,
+            category: "andet",
+            status: "forventet",
+            notes: "Auto fra case — bygherrens andel af medievisning",
+          }),
+        });
+      }
+      await fetchPlannedPayments();
+      onToast("Case føjet til cash-prognosen (faktura + bygherre-andel)", "success");
+    } catch {
+      onToast("Kunne ikke føje til prognosen", "error");
+    }
+  }, [selectedId, form, fetchPlannedPayments, onToast]);
+
   // ─── Render ────────────────────────────────────────────────
 
   return (
@@ -1052,6 +1113,16 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                     className="h-7 px-2 rounded-md text-[10px] font-semibold text-rose-600 hover:bg-rose-50 border border-rose-200"
                   >
                     Slet
+                  </button>
+                )}
+                {selectedId && (
+                  <button
+                    onClick={addCaseToProjection}
+                    className="flex items-center gap-1 h-7 px-2 rounded-md text-[10px] font-semibold text-emerald-700 hover:bg-emerald-50 border border-emerald-200"
+                    title="Opret faktura-indbetaling + bygherre-andel som planlagte betalinger i cash-prognosen"
+                  >
+                    <Ic d="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" className="w-3 h-3" />
+                    Føj til prognose
                   </button>
                 )}
                 <button
