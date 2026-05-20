@@ -412,24 +412,34 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
       try {
         const fd = new FormData();
         fd.append("file", file);
+        fd.append("previewOnly", "true"); // scan → review før oprettelse
         const r = await fetch("/api/case/customer-invoice", { method: "POST", body: fd });
-        const d = (await r.json()) as { success?: boolean; case?: Case; error?: string };
-        if (!r.ok || !d.case) {
+        const d = (await r.json()) as {
+          success?: boolean;
+          caseInput?: Partial<Case>;
+          error?: string;
+        };
+        if (!r.ok || !d.caseInput) {
           onToast(d.error || "Kunne ikke læse kunde-faktura", "error");
           return;
         }
-        await fetchCases();
-        setForm(d.case);
-        setSelectedId(d.case.id);
+        // Indlæs som ugemt kladde — brugeren gennemser i detalje-panelet og klikker "Opret case"
+        const draft: Case = {
+          ...createDefaultCase(Date.now()),
+          ...d.caseInput,
+          id: `case-draft-${Date.now()}`,
+        };
+        setForm(draft);
+        setSelectedId(null);
         setSubTab("cases");
-        onToast("Case oprettet fra kunde-faktura — tjek tallene og gem", "success");
+        onToast("Faktura scannet — gennemse tallene og klik 'Opret case'", "info");
       } catch (err) {
         onToast(err instanceof Error ? err.message : "Fejl ved upload", "error");
       } finally {
         setCustomerScanLoading(false);
       }
     },
-    [fetchCases, onToast]
+    [onToast]
   );
 
   const openScanPicker = () => fileInputRef.current?.click();

@@ -16,7 +16,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     let tilbud;
     if (typeof body?.id === "string" && body.id) {
-      tilbud = getTilbud(body.id);
+      tilbud = await getTilbud(body.id);
       if (!tilbud) {
         return NextResponse.json({ error: "Tilbud ikke fundet" }, { status: 404 });
       }
@@ -25,7 +25,7 @@ export async function POST(req: NextRequest) {
       if (!parsed.success) {
         return NextResponse.json({ error: parsed.error.issues[0]?.message || "Ugyldige data" }, { status: 400 });
       }
-      tilbud = upsertTilbud(parsed.data);
+      tilbud = await upsertTilbud(parsed.data);
     } else {
       return NextResponse.json({ error: "Send enten { id } eller { tilbud }" }, { status: 400 });
     }

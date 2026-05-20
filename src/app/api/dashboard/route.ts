@@ -26,6 +26,13 @@ export async function GET() {
 
     const scaffoldStats = await getScaffoldStats();
 
+    const tilbudSummary = await getTilbudSummary().catch(() => ({
+      total: 0,
+      draft: 0,
+      final: 0,
+      totalValue: 0,
+    }));
+
     // OOH send analytics (track opens, clicks, etc.)
     let oohAnalytics = { totalSent: 0, opened: 0, clicked: 0, replied: 0, meetings: 0, sold: 0 };
     try {
@@ -111,9 +118,7 @@ export async function GET() {
         todayFollowups: 0,
         topNewLeads: [],
       })),
-      tilbudSummary: (() => {
-        try { return getTilbudSummary(); } catch { return { total: 0, draft: 0, final: 0, totalValue: 0 }; }
-      })(),
+      tilbudSummary,
     });
   } catch (error) {
     const msg = error instanceof Error ? error.message : "Unknown error";

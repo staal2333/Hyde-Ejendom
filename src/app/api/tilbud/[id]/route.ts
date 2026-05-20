@@ -7,7 +7,7 @@ export const runtime = "nodejs";
 
 export async function GET(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const tilbud = getTilbud(id);
+  const tilbud = await getTilbud(id);
   if (!tilbud) {
     return NextResponse.json({ error: "Tilbud ikke fundet" }, { status: 404 });
   }
@@ -22,7 +22,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
     if (!parsed.success) {
       return NextResponse.json({ error: parsed.error.issues[0]?.message || "Ugyldige data" }, { status: 400 });
     }
-    const saved = upsertTilbud(parsed.data);
+    const saved = await upsertTilbud(parsed.data);
     return NextResponse.json({ success: true, tilbud: saved });
   } catch (error) {
     logger.error("Kunne ikke opdatere tilbud", { service: "tilbud" });
@@ -35,7 +35,7 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ id
 
 export async function DELETE(_: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params;
-  const ok = deleteTilbud(id);
+  const ok = await deleteTilbud(id);
   if (!ok) {
     return NextResponse.json({ error: "Tilbud ikke fundet" }, { status: 404 });
   }

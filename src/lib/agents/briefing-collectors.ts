@@ -26,8 +26,8 @@ async function collectStaged(): Promise<BriefingData["staged"]> {
 async function collectTilbud(): Promise<BriefingData["tilbud"]> {
   try {
     const { listTilbud } = await import("@/lib/tilbud/store");
-    const drafts = listTilbud({ status: "draft", limit: 200 });
-    const finals = listTilbud({ status: "final", limit: 200 });
+    const drafts = await listTilbud({ status: "draft", limit: 200 });
+    const finals = await listTilbud({ status: "final", limit: 200 });
     return { drafts: drafts.total, finals: finals.total };
   } catch (e) {
     logger.warn(`[briefing] tilbud collect failed: ${e instanceof Error ? e.message : String(e)}`);

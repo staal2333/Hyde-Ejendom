@@ -227,7 +227,7 @@ async function collectTilbud(email: string): Promise<Tilbud[]> {
   try {
     const { listTilbud } = await import("@/lib/tilbud/store");
     const nameFromEmail = email.split("@")[0].replace(/[._-]/g, " ");
-    const result = listTilbud({ q: nameFromEmail, limit: 10 });
+    const result = await listTilbud({ q: nameFromEmail, limit: 10 });
     return result.items;
   } catch (e) {
     logger.warn(`[contact-context] Tilbud collect failed: ${e instanceof Error ? e.message : String(e)}`);

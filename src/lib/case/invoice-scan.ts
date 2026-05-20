@@ -280,6 +280,9 @@ Svar i JSON:
   "to_date": "YYYY-MM-DD hvis slutdato kan udledes, ellers tom",
   "invoice_number": "Fakturanummer",
   "invoice_date": "YYYY-MM-DD fakturadato",
+  "from_week": <ISO ugenummer for kampagne-start hvis "Uge X" er angivet, ellers 0>,
+  "to_week": <ISO ugenummer for kampagne-slut, ellers 0>,
+  "week_year": <årstal for ugenumrene, fx 2026 — udled fra fakturadatoen hvis ikke eksplicit>,
   "medie_listpris": <medievisningens Enhedspris FØR rabat>,
   "medie_rabat_pct": <rabatprocent på medievisning, fx 84.28>,
   "medie_netto": <medievisningens endelige Pris EFTER rabat>,
@@ -292,8 +295,39 @@ Svar i JSON:
 VIGTIGT:
 - medie_listpris er Enhedsprisen FØR rabat — ofte et stort tal
 - medie_netto er den endelige Pris EFTER rabat
-- Hvis kun "Uge X" er angivet, prøv at udlede datoer ud fra fakturadatoens år
+- Hvis perioden er angivet som "Uge X" eller "Uge X+Y", udfyld from_week/to_week
+  med ugenumrene (lad from_date/to_date være tomme — systemet beregner datoerne)
+- Hvis eksplicitte datoer er angivet, brug from_date/to_date i stedet
 - Alle beløb er ekskl. moms (netto)`;
+
+/** Monday of an ISO-8601 week. Week 1 contains the year's first Thursday. */
+function isoWeekMonday(year: number, week: number): Date {
+  const jan4 = new Date(Date.UTC(year, 0, 4));
+  const jan4Day = jan4.getUTCDay() || 7; // Mon=1 .. Sun=7
+  const week1Monday = new Date(jan4);
+  week1Monday.setUTCDate(jan4.getUTCDate() - jan4Day + 1);
+  const monday = new Date(week1Monday);
+  monday.setUTCDate(week1Monday.getUTCDate() + (week - 1) * 7);
+  return monday;
+}
+
+function isoDate(d: Date): string {
+  return d.toISOString().slice(0, 10);
+}
+
+/** Convert ISO week numbers to a from/to date range (Monday → Sunday). */
+export function weekRangeToDates(
+  year: number,
+  fromWeek: number,
+  toWeek: number
+): { fromDate: string; toDate: string } {
+  if (!year || fromWeek < 1) return { fromDate: "", toDate: "" };
+  const start = isoWeekMonday(year, fromWeek);
+  const endMonday = isoWeekMonday(year, toWeek >= fromWeek ? toWeek : fromWeek);
+  const end = new Date(endMonday);
+  end.setUTCDate(endMonday.getUTCDate() + 6); // Sunday of the last week
+  return { fromDate: isoDate(start), toDate: isoDate(end) };
+}
 
 function parseCustomerResponse(raw: string): CustomerInvoiceResult {
   let p: Record<string, unknown> = {};
@@ -302,15 +336,34 @@ function parseCustomerResponse(raw: string): CustomerInvoiceResult {
   } catch {
     logger.error(`[customer-invoice] Invalid JSON from LLM: ${raw.slice(0, 200)}`);
   }
+
+  let fromDate = String(p.from_date || "");
+  let toDate = String(p.to_date || "");
+
+  // Hvis AI gav ugenumre, beregn datoerne deterministisk (mere præcist end LLM-gæt)
+  const fromWeek = Number(p.from_week || 0);
+  const toWeek = Number(p.to_week || 0);
+  const invoiceDate = String(p.invoice_date || "");
+  const weekYear =
+    Number(p.week_year || 0) ||
+    (invoiceDate.match(/^\d{4}/) ? Number(invoiceDate.slice(0, 4)) : new Date().getFullYear());
+  if (fromWeek >= 1 && (!fromDate || !toDate)) {
+    const range = weekRangeToDates(weekYear, fromWeek, toWeek || fromWeek);
+    if (range.fromDate) {
+      fromDate = fromDate || range.fromDate;
+      toDate = toDate || range.toDate;
+    }
+  }
+
   return {
     bygherre: String(p.bygherre || ""),
     annoncør: String(p.annoncoer || p.annoncør || ""),
     address: String(p.address || ""),
     areaSqm: Number(p.area_sqm || 0),
-    fromDate: String(p.from_date || ""),
-    toDate: String(p.to_date || ""),
+    fromDate,
+    toDate,
     invoiceNumber: String(p.invoice_number || ""),
-    invoiceDate: String(p.invoice_date || ""),
+    invoiceDate,
     medieListpris: Number(p.medie_listpris || 0),
     medieRabatPct: Math.max(0, Math.min(100, Number(p.medie_rabat_pct || 0))),
     medieNetto: Number(p.medie_netto || 0),

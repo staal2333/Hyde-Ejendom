@@ -30,7 +30,7 @@ export async function POST(req: NextRequest) {
 
     // Support: { fromTilbudId: "..." } → seed case from existing tilbud
     if (typeof body === "object" && body && typeof body.fromTilbudId === "string") {
-      const tilbud = getTilbud(body.fromTilbudId);
+      const tilbud = await getTilbud(body.fromTilbudId);
       if (!tilbud) {
         return NextResponse.json({ error: "Tilbud ikke fundet" }, { status: 404 });
       }
