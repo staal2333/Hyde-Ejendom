@@ -100,23 +100,11 @@ REGLER:
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
   try {
-    // Dynamic import — pdfjs-dist is heavy and only needed when scanning
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const uint8 = new Uint8Array(buffer);
-    const loadingTask = pdfjs.getDocument({ data: uint8, useSystemFonts: true });
-    const doc = await loadingTask.promise;
-
-    const pages: string[] = [];
-    const maxPages = Math.min(doc.numPages, 5);
-    for (let i = 1; i <= maxPages; i++) {
-      const page = await doc.getPage(i);
-      const content = await page.getTextContent();
-      const text = content.items
-        .map((item) => ("str" in item ? (item as { str: string }).str : ""))
-        .join(" ");
-      pages.push(text);
-    }
-    return pages.join("\n\n").trim();
+    // pdf-parse v2 — robust Node-side PDF text extraction
+    const { PDFParse } = await import("pdf-parse");
+    const parser = new PDFParse({ data: new Uint8Array(buffer) });
+    const result = await parser.getText();
+    return (result.text || "").trim();
   } catch (err) {
     logger.warn(`[invoice-scan] PDF text extraction failed: ${err instanceof Error ? err.message : err}`);
     return "";

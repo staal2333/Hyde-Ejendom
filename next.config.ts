@@ -10,7 +10,7 @@ const nextConfig: NextConfig = {
     },
   },
   // Needed for sharp and fs usage in API routes
-  serverExternalPackages: ["sharp", "pdfkit", "pdf-lib"],
+  serverExternalPackages: ["sharp", "pdfkit", "pdf-lib", "pdf-parse"],
   // Webpack config for pdfjs-dist (canvas is not needed in browser)
   webpack: (config, { isServer }) => {
     if (!isServer) {
