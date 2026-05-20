@@ -83,6 +83,35 @@ function KpiCard({
   );
 }
 
+// ─── Sub-component: Section header ──────────────────────────
+
+function SectionHeader({
+  icon,
+  title,
+  hint,
+  action,
+}: {
+  icon: string;
+  title: string;
+  hint?: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-2 mb-2">
+      <div className="flex items-center gap-2 min-w-0">
+        <div className="flex items-center justify-center w-6 h-6 rounded-md bg-violet-100 text-violet-600 shrink-0">
+          <Ic d={icon} className="w-3.5 h-3.5" />
+        </div>
+        <div className="min-w-0">
+          <div className="text-[12px] font-bold text-slate-900 leading-tight">{title}</div>
+          {hint && <div className="text-[10px] text-slate-400 leading-tight">{hint}</div>}
+        </div>
+      </div>
+      {action}
+    </div>
+  );
+}
+
 // ─── Main tab component ─────────────────────────────────────
 
 export function EconomyTab({ onToast }: EconomyTabProps) {
@@ -347,6 +376,38 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
   const [scanLineTypes, setScanLineTypes] = useState<Record<number, InvoiceLineType>>({});
   const [scanLineEnabled, setScanLineEnabled] = useState<Record<number, boolean>>({});
 
+  // Customer invoice scan (creates a whole case)
+  const customerInvoiceRef = useRef<HTMLInputElement>(null);
+  const [customerScanLoading, setCustomerScanLoading] = useState(false);
+
+  const openCustomerInvoicePicker = () => customerInvoiceRef.current?.click();
+
+  const handleCustomerInvoice = useCallback(
+    async (file: File) => {
+      setCustomerScanLoading(true);
+      try {
+        const fd = new FormData();
+        fd.append("file", file);
+        const r = await fetch("/api/case/customer-invoice", { method: "POST", body: fd });
+        const d = (await r.json()) as { success?: boolean; case?: Case; error?: string };
+        if (!r.ok || !d.case) {
+          onToast(d.error || "Kunne ikke læse kunde-faktura", "error");
+          return;
+        }
+        await fetchCases();
+        setForm(d.case);
+        setSelectedId(d.case.id);
+        setSubTab("cases");
+        onToast("Case oprettet fra kunde-faktura — tjek tallene og gem", "success");
+      } catch (err) {
+        onToast(err instanceof Error ? err.message : "Fejl ved upload", "error");
+      } finally {
+        setCustomerScanLoading(false);
+      }
+    },
+    [fetchCases, onToast]
+  );
+
   const openScanPicker = () => fileInputRef.current?.click();
 
   const handleInvoiceFile = useCallback(
@@ -599,10 +660,42 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
               ))}
             </select>
             <button
-              onClick={createBlank}
-              className="h-7 rounded-md bg-violet-600 px-3 text-[11px] font-semibold text-white hover:bg-violet-700"
+              onClick={openCustomerInvoicePicker}
+              disabled={customerScanLoading}
+              className="flex items-center gap-1.5 h-7 rounded-md bg-gradient-to-r from-violet-600 to-indigo-600 px-3 text-[11px] font-semibold text-white hover:from-violet-700 hover:to-indigo-700 disabled:opacity-60 shadow-sm"
+              title="Upload en kunde-faktura (PDF) — AI opretter hele case'en automatisk"
             >
-              + Ny case
+              {customerScanLoading ? (
+                <>
+                  <span className="inline-block w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />
+                  Læser faktura...
+                </>
+              ) : (
+                <>
+                  <Ic
+                    d="M19.5 14.25v-2.625a3.375 3.375 0 00-3.375-3.375h-1.5A1.125 1.125 0 0113.5 7.125v-1.5a3.375 3.375 0 00-3.375-3.375H8.25m2.25 0H5.625c-.621 0-1.125.504-1.125 1.125v17.25c0 .621.504 1.125 1.125 1.125h12.75c.621 0 1.125-.504 1.125-1.125V11.25a9 9 0 00-9-9z"
+                    className="w-3.5 h-3.5"
+                  />
+                  Scan kunde-faktura
+                </>
+              )}
+            </button>
+            <input
+              ref={customerInvoiceRef}
+              type="file"
+              accept="application/pdf,image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) handleCustomerInvoice(f);
+                e.target.value = "";
+              }}
+            />
+            <button
+              onClick={createBlank}
+              className="h-7 rounded-md border border-slate-300 bg-white px-3 text-[11px] font-semibold text-slate-600 hover:bg-slate-50"
+            >
+              + Ny tom case
             </button>
           </div>
         )}
@@ -712,6 +805,12 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
             </div>
 
             {/* Core fields */}
+            <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-3">
+              <SectionHeader
+                icon="M3.75 21h16.5M4.5 3h15M5.25 3v18m13.5-18v18M9 6.75h1.5m-1.5 3h1.5m-1.5 3h1.5m3-6H15m-1.5 3H15m-1.5 3H15M9 21v-3.375c0-.621.504-1.125 1.125-1.125h3.75c.621 0 1.125.504 1.125 1.125V21"
+                title="Case-info"
+                hint="Bygherre, beliggenhed og periode"
+              />
             <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
               <div>
                 <div className={LABEL}>Bygherre</div>
@@ -816,6 +915,15 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                 />
               </div>
             </div>
+            </div>
+
+            {/* ─── Medievisning & salg ─── */}
+            <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-3 space-y-3">
+              <SectionHeader
+                icon="M3.375 19.5h17.25m-17.25 0a1.125 1.125 0 01-1.125-1.125M3.375 19.5h7.5c.621 0 1.125-.504 1.125-1.125m-9.75 0V5.625m0 12.75v-1.5c0-.621.504-1.125 1.125-1.125m18.375 2.625V5.625m0 12.75c0 .621-.504 1.125-1.125 1.125m1.125-1.125v-1.5c0-.621-.504-1.125-1.125-1.125m0 3.75h-7.5A1.125 1.125 0 0112 18.375m9.75-12.75c0-.621-.504-1.125-1.125-1.125H3.375c-.621 0-1.125.504-1.125 1.125m19.5 0v1.5c0 .621-.504 1.125-1.125 1.125M2.25 5.625v1.5c0 .621.504 1.125 1.125 1.125m0 0h17.25m-17.25 0h7.5c.621 0 1.125.504 1.125 1.125M3.375 8.25c-.621 0-1.125.504-1.125 1.125v1.5c0 .621.504 1.125 1.125 1.125m0 0h7.5"
+                title="Medievisning & salg"
+                hint={`Splittes ${form.hydeSharePct}% Hyde / ${form.bygherreSharePct}% bygherre — produktion/montering deles IKKE`}
+              />
 
             {/* Medie-split visualization (på net medievisning) */}
             <div className="space-y-1">
@@ -844,15 +952,18 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
             {/* Sales / Bookings */}
             <div>
               <div className="flex items-center justify-between mb-1">
-                <div className={LABEL}>Salg (annoncør-bookinger)</div>
+                <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                  Annoncør-bookinger
+                </div>
                 <button
                   onClick={addSale}
-                  className="text-[10px] font-semibold text-violet-600 hover:underline"
+                  className="flex items-center gap-1 text-[10px] font-semibold text-violet-600 hover:text-violet-800"
                 >
-                  + Tilføj salg
+                  <Ic d="M12 4.5v15m7.5-7.5h-15" className="w-3 h-3" />
+                  Tilføj salg
                 </button>
               </div>
-              <div className="rounded-md border border-slate-200 overflow-hidden">
+              <div className="rounded-md border border-slate-200 overflow-hidden bg-white">
                 <table className="w-full text-[11px]">
                   <thead className="bg-slate-50">
                     <tr className="text-left text-[10px] text-slate-500">
@@ -962,12 +1073,16 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                 </table>
               </div>
             </div>
+            </div>
 
-            {/* Costs table */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <div className={LABEL}>Omkostninger — salgspris vs. kostpris</div>
-                <div className="flex items-center gap-3">
+            {/* ─── Omkostninger ─── */}
+            <div className="rounded-lg border border-amber-200 bg-amber-50/40 p-3">
+              <SectionHeader
+                icon="M2.25 8.25h19.5M2.25 9h19.5m-16.5 5.25h6m-6 2.25h3m-3.75 3h15a2.25 2.25 0 002.25-2.25V6.75A2.25 2.25 0 0019.5 4.5h-15a2.25 2.25 0 00-2.25 2.25v10.5A2.25 2.25 0 004.5 19.5z"
+                title="Omkostninger"
+                hint="Salgspris til bygherre vs. Hyde's kostpris — marginen er 100% Hyde's"
+                action={
+                  <div className="flex items-center gap-3">
                   <button
                     onClick={openScanPicker}
                     disabled={scanLoading}
@@ -1003,14 +1118,15 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                   {settings && (
                     <button
                       onClick={applyCostDefaults}
-                      className="text-[10px] text-violet-600 hover:underline"
+                      className="text-[10px] font-semibold text-violet-600 hover:underline"
                     >
-                      Brug standard kostpriser
+                      Brug standard priser
                     </button>
                   )}
-                </div>
-              </div>
-              <div className="rounded-md border border-slate-200 overflow-hidden">
+                  </div>
+                }
+              />
+              <div className="rounded-md border border-slate-200 overflow-hidden bg-white">
                 <table className="w-full text-[11px]">
                   <thead className="bg-slate-50">
                     <tr className="text-left text-[10px] text-slate-500">
@@ -1025,7 +1141,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                       <td className="px-2 py-1.5">
                         Produktion
                         <span className="text-[9px] text-slate-400 ml-1">
-                          {form.areaSqm > 0 ? `(${form.areaSqm} m² × 150 / 90)` : "(150 / 90 kr/m²)"}
+                          {`salg ${PRODUKTION_SALG_PER_SQM} / kost ${settings?.produktionKostPerSqm ?? 45} kr/m²`}
                         </span>
                       </td>
                       <td className="px-2 py-1">
@@ -1060,7 +1176,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
                       <td className="px-2 py-1.5">
                         Montering
                         <span className="text-[9px] text-slate-400 ml-1">
-                          {form.areaSqm > 0 ? `(${form.areaSqm} m² × 125 / 70)` : "(125 / 70 kr/m²)"}
+                          {`salg ${MONTERING_SALG_PER_SQM} / kost ${settings?.monteringKostPerSqm ?? 100} kr/m²`}
                         </span>
                       </td>
                       <td className="px-2 py-1">
@@ -1175,36 +1291,62 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
               </div>
             </div>
 
-            {/* Bottom summary */}
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-              <KpiCard
-                label="Faktura-total"
-                value={fmtDKK(econ.fakturaTotal)}
-                sublabel="Hvad bygherre betaler Hyde"
+            {/* ─── Resultat ─── */}
+            <div className="rounded-lg border border-emerald-200 bg-gradient-to-br from-emerald-50/70 to-white p-4">
+              <SectionHeader
+                icon="M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941"
+                title="Resultat"
+                hint="Hyde's dækningsbidrag på denne case"
               />
-              <KpiCard
-                label={`Medie-gebyr (${form.hydeSharePct}%)`}
-                value={fmtDKK(econ.hydeMediaShare)}
-                sublabel={`af ${fmtDKK(econ.netMedieRevenue)} net medie`}
-                tone="blue"
-              />
-              <KpiCard
-                label="Service-margin"
-                value={fmtDKK(econ.produktionMargin + econ.monteringMargin + econ.kommunaleMargin)}
-                sublabel="Salgspris − kostpris (prod+mont+komm)"
-                tone="blue"
-              />
-              <KpiCard
-                label="Hyde's DB"
-                value={fmtDKK(econ.dækningsbidrag)}
-                sublabel={`${fmtDKK(econ.dækningsbidragPerMonth)}/md · ROI ${fmtPct(econ.roi)}`}
-                tone={econ.dækningsbidrag >= 0 ? "emerald" : "rose"}
-              />
-              <KpiCard
-                label="Bygherre's andel"
-                value={fmtDKK(econ.bygherreMediaShare)}
-                sublabel={`${form.bygherreSharePct}% af net medie`}
-              />
+
+              {/* Hero: DB */}
+              <div className="flex flex-wrap items-end justify-between gap-4 mb-3">
+                <div>
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    Hyde's dækningsbidrag
+                  </div>
+                  <div
+                    className={`text-3xl font-extrabold tabular-nums leading-tight ${
+                      econ.dækningsbidrag >= 0 ? "text-emerald-600" : "text-rose-600"
+                    }`}
+                  >
+                    {fmtDKK(econ.dækningsbidrag)}
+                  </div>
+                  <div className="text-[11px] text-slate-500">
+                    {fmtDKK(econ.dækningsbidragPerMonth)}/md · DB {fmtPct(econ.dækningsbidragPct)} · ROI{" "}
+                    {fmtPct(econ.roi)}
+                  </div>
+                </div>
+                <div className="text-right">
+                  <div className="text-[10px] font-semibold uppercase tracking-wide text-slate-500">
+                    Faktura-total til bygherre
+                  </div>
+                  <div className="text-xl font-bold text-slate-900 tabular-nums">
+                    {fmtDKK(econ.fakturaTotal)}
+                  </div>
+                </div>
+              </div>
+
+              {/* Breakdown */}
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
+                <KpiCard
+                  label={`Medie-gebyr (${form.hydeSharePct}%)`}
+                  value={fmtDKK(econ.hydeMediaShare)}
+                  sublabel={`af ${fmtDKK(econ.netMedieRevenue)} net medie`}
+                  tone="blue"
+                />
+                <KpiCard
+                  label="Service-margin"
+                  value={fmtDKK(econ.produktionMargin + econ.monteringMargin + econ.kommunaleMargin)}
+                  sublabel="Produktion + montering + kommune"
+                  tone="blue"
+                />
+                <KpiCard
+                  label="Bygherre's andel"
+                  value={fmtDKK(econ.bygherreMediaShare)}
+                  sublabel={`${form.bygherreSharePct}% af net medie`}
+                />
+              </div>
             </div>
 
             {/* Notes */}

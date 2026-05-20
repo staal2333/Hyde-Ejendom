@@ -248,6 +248,134 @@ export async function scanInvoiceFile(
   throw new Error(`Filtype understøttes ikke: ${mimeType}. Brug PDF, JPG eller PNG.`);
 }
 
+// ════════════════════════════════════════════════════════════
+// KUNDE-FAKTURA SCAN — udgående faktura (Hyde → bygherre).
+// Udtrækker hele case-strukturen: medievisning (listpris+rabat),
+// produktion/montering/kommune salgspriser, areal, bygherre, periode.
+// ════════════════════════════════════════════════════════════
+
+export interface CustomerInvoiceResult {
+  bygherre: string;          // fakturamodtager
+  annoncør: string;          // kunden der reklamerer
+  address: string;           // hvor stilladset står
+  areaSqm: number;
+  fromDate: string;          // YYYY-MM-DD eller ""
+  toDate: string;
+  invoiceNumber: string;
+  invoiceDate: string;
+  medieListpris: number;     // enhedspris før rabat
+  medieRabatPct: number;
+  medieNetto: number;        // pris efter rabat
+  produktionSalg: number;
+  monteringSalg: number;
+  kommunaleSalg: number;
+  notes: string;
+}
+
+const CUSTOMER_SYSTEM_PROMPT = `Du scanner en KUNDE-FAKTURA som et out-of-home media-bureau har sendt til en bygherre/kunde for en stillads-reklamekampagne.
+
+Fakturaen har typisk disse linjer:
+1. MEDIEVISNING — har en Enhedspris (listepris FØR rabat), en Rabat i %, og en endelig Pris (netto EFTER rabat). Beskrivelsen indeholder ofte areal + adresse, fx "170 m2 Gammel Kongevej 49".
+2. PRODUKTION — tryk/print af banner. Beskrivelse ofte "170*150 DKK/m2". Brug linjens samlede Pris.
+3. MONTERING — opsætning/nedtagning af banner.
+4. KOMMUNE AFGIFT — kommunalt gebyr.
+
+Udtræk følgende. Brug 0 / tom streng hvis noget mangler — opfind ALDRIG tal.
+
+Svar i JSON:
+{
+  "bygherre": "Fakturamodtagerens firmanavn (øverst på fakturaen)",
+  "annoncoer": "Annoncøren/kunden der reklamerer — ofte i 'Kunde:'-feltet",
+  "address": "Adressen hvor stilladset står (fra medievisning-linjens beskrivelse)",
+  "area_sqm": <areal i m², fx 170>,
+  "from_date": "YYYY-MM-DD hvis kampagne-startdato kan udledes, ellers tom",
+  "to_date": "YYYY-MM-DD hvis slutdato kan udledes, ellers tom",
+  "invoice_number": "Fakturanummer",
+  "invoice_date": "YYYY-MM-DD fakturadato",
+  "medie_listpris": <medievisningens Enhedspris FØR rabat>,
+  "medie_rabat_pct": <rabatprocent på medievisning, fx 84.28>,
+  "medie_netto": <medievisningens endelige Pris EFTER rabat>,
+  "produktion_salg": <produktion-linjens samlede pris>,
+  "montering_salg": <montering-linjens samlede pris>,
+  "kommunale_salg": <kommune-afgift-linjens pris>,
+  "notes": "Kort note om usikkerheder eller manglende felter"
+}
+
+VIGTIGT:
+- medie_listpris er Enhedsprisen FØR rabat — ofte et stort tal
+- medie_netto er den endelige Pris EFTER rabat
+- Hvis kun "Uge X" er angivet, prøv at udlede datoer ud fra fakturadatoens år
+- Alle beløb er ekskl. moms (netto)`;
+
+function parseCustomerResponse(raw: string): CustomerInvoiceResult {
+  let p: Record<string, unknown> = {};
+  try {
+    p = JSON.parse(raw);
+  } catch {
+    logger.error(`[customer-invoice] Invalid JSON from LLM: ${raw.slice(0, 200)}`);
+  }
+  return {
+    bygherre: String(p.bygherre || ""),
+    annoncør: String(p.annoncoer || p.annoncør || ""),
+    address: String(p.address || ""),
+    areaSqm: Number(p.area_sqm || 0),
+    fromDate: String(p.from_date || ""),
+    toDate: String(p.to_date || ""),
+    invoiceNumber: String(p.invoice_number || ""),
+    invoiceDate: String(p.invoice_date || ""),
+    medieListpris: Number(p.medie_listpris || 0),
+    medieRabatPct: Math.max(0, Math.min(100, Number(p.medie_rabat_pct || 0))),
+    medieNetto: Number(p.medie_netto || 0),
+    produktionSalg: Number(p.produktion_salg || 0),
+    monteringSalg: Number(p.montering_salg || 0),
+    kommunaleSalg: Number(p.kommunale_salg || 0),
+    notes: String(p.notes || ""),
+  };
+}
+
+export async function scanCustomerInvoiceFile(
+  buffer: Buffer,
+  mimeType: string,
+  fileName: string
+): Promise<CustomerInvoiceResult> {
+  const client = getClient();
+  const isPdf = mimeType === "application/pdf" || fileName.toLowerCase().endsWith(".pdf");
+  const isImage = mimeType.startsWith("image/");
+
+  let userContent: OpenAI.Chat.ChatCompletionContentPart[] | string;
+
+  if (isPdf) {
+    const text = await extractPdfText(buffer);
+    if (text.length < 80) {
+      throw new Error(
+        "Kunne ikke udtrække tekst fra PDF. Hvis fakturaen er en scannet billede-PDF, så upload den som JPG/PNG i stedet."
+      );
+    }
+    userContent = `Her er kunde-fakturaens tekst:\n\n${text}`;
+  } else if (isImage) {
+    const dataUrl = `data:${mimeType};base64,${buffer.toString("base64")}`;
+    userContent = [
+      { type: "text", text: "Ekstrahér case-data fra denne kunde-faktura:" },
+      { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
+    ];
+  } else {
+    throw new Error(`Filtype understøttes ikke: ${mimeType}. Brug PDF, JPG eller PNG.`);
+  }
+
+  const response = await client.chat.completions.create({
+    model: config.openai.model,
+    messages: [
+      { role: "system", content: CUSTOMER_SYSTEM_PROMPT },
+      { role: "user", content: userContent },
+    ],
+    response_format: { type: "json_object" },
+    temperature: 0.1,
+    max_tokens: 1500,
+  });
+
+  return parseCustomerResponse(response.choices[0]?.message?.content || "");
+}
+
 /**
  * Roll up scanned lines into the case's cost fields.
  * Lines are summed by type; "andet" goes into overhead.
