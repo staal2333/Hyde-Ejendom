@@ -231,6 +231,10 @@ export const costSettingsSchema = z.object({
   defaultHydeSharePct: z.number().min(0).max(100).default(40),
   defaultOverheadPerMonth: z.number().nonnegative().default(0),
   kommunaleRates: z.array(kommuneRateSchema).default([]),
+  // Likviditet
+  cashBalance: z.number().default(0),
+  cashBalanceUpdatedAt: z.string().optional().default(""),
+  momsPct: z.number().min(0).max(100).default(25),
   updatedAt: z.string().min(1),
 });
 
@@ -246,6 +250,9 @@ export function defaultCostSettings(): CostSettings {
       { kommune: "København", perSqmPerDag: 0 },
       { kommune: "Frederiksberg", perSqmPerDag: 4.5 },
     ],
+    cashBalance: 0,
+    cashBalanceUpdatedAt: "",
+    momsPct: 25,
     updatedAt: new Date().toISOString(),
   };
 }

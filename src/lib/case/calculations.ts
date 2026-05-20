@@ -304,3 +304,96 @@ export function applyOperatingExpenses(
     expectedDB: round2(entry.expectedDB - monthlyOperatingCost),
   }));
 }
+
+// ─── Likviditet / runway ────────────────────────────────────
+
+export interface LiquidityMonth {
+  month: string;
+  monthLabel: string;
+  dbIn: number;         // forventet DB fra cases
+  opexOut: number;      // faste driftsudgifter
+  momsOut: number;      // moms-afregning (kun ved kvartalsslut)
+  net: number;          // dbIn − opexOut − momsOut
+  cashEnd: number;      // kassebeholdning ved månedens udgang
+  negative: boolean;
+}
+
+export interface LiquidityForecast {
+  startingCash: number;
+  months: LiquidityMonth[];
+  /** Antal hele måneder med positiv kasse før den går negativ. null = positiv hele horisonten. */
+  runwayMonths: number | null;
+  runwayEndLabel: string | null;
+  avgMonthlyNet: number;
+  lowestCash: number;
+  totalMomsHorizon: number;
+}
+
+/**
+ * Projektér kassebeholdning måned for måned:
+ *   kasse += DB fra cases − faste driftsudgifter − moms-afregning
+ * Moms estimeres som momsPct% af DB og afregnes ved kalenderkvartal
+ * (marts/juni/sep/dec). Runway = måneden hvor kassen først går negativ.
+ */
+export function calcLiquidityForecast(
+  cases: Case[],
+  monthlyOpEx: number,
+  startingCash: number,
+  momsPct: number,
+  horizonMonths = 12
+): LiquidityForecast {
+  const forecast = calcMonthlyForecast(cases, horizonMonths);
+  const months: LiquidityMonth[] = [];
+  let cash = startingCash;
+  let momsAccrued = 0;
+  let runwayMonths: number | null = null;
+  let runwayEndLabel: string | null = null;
+  let lowestCash = startingCash;
+  let netSum = 0;
+  let totalMoms = 0;
+
+  forecast.forEach((f, i) => {
+    const dbIn = f.expectedDB;
+    const opexOut = monthlyOpEx;
+    momsAccrued += dbIn * (Math.max(0, momsPct) / 100);
+
+    // Kalenderkvartal-slut: marts(2), juni(5), sep(8), dec(11)
+    const monthIdx = Number(f.month.slice(5, 7)) - 1;
+    let momsOut = 0;
+    if ([2, 5, 8, 11].includes(monthIdx)) {
+      momsOut = Math.max(0, round2(momsAccrued));
+      momsAccrued = 0;
+    }
+    totalMoms += momsOut;
+
+    const net = round2(dbIn - opexOut - momsOut);
+    netSum += net;
+    cash = round2(cash + net);
+    if (cash < lowestCash) lowestCash = cash;
+    if (runwayMonths === null && cash < 0) {
+      runwayMonths = i;
+      runwayEndLabel = f.monthLabel;
+    }
+
+    months.push({
+      month: f.month,
+      monthLabel: f.monthLabel,
+      dbIn: round2(dbIn),
+      opexOut: round2(opexOut),
+      momsOut,
+      net,
+      cashEnd: cash,
+      negative: cash < 0,
+    });
+  });
+
+  return {
+    startingCash: round2(startingCash),
+    months,
+    runwayMonths,
+    runwayEndLabel,
+    avgMonthlyNet: months.length ? round2(netSum / months.length) : 0,
+    lowestCash: round2(lowestCash),
+    totalMomsHorizon: round2(totalMoms),
+  };
+}

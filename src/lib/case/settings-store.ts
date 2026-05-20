@@ -29,6 +29,9 @@ function rowToSettings(row: Record<string, unknown>): CostSettings {
     defaultHydeSharePct: Number(row.default_hyde_share_pct || 40),
     defaultOverheadPerMonth: Number(row.default_overhead_per_month || 0),
     kommunaleRates,
+    cashBalance: Number(row.cash_balance || 0),
+    cashBalanceUpdatedAt: String(row.cash_balance_updated_at || ""),
+    momsPct: row.moms_pct != null ? Number(row.moms_pct) : 25,
     updatedAt: String(row.updated_at || new Date().toISOString()),
   };
 }
@@ -41,6 +44,9 @@ function settingsToRow(s: CostSettings) {
     default_hyde_share_pct: s.defaultHydeSharePct,
     default_overhead_per_month: s.defaultOverheadPerMonth,
     kommunale_rates: s.kommunaleRates || [],
+    cash_balance: s.cashBalance ?? 0,
+    cash_balance_updated_at: s.cashBalanceUpdatedAt || "",
+    moms_pct: s.momsPct ?? 25,
   };
 }
 

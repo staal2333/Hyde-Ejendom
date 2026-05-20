@@ -24,6 +24,7 @@ import {
 import {
   applyOperatingExpenses,
   calcCaseEconomics,
+  calcLiquidityForecast,
   calcMonthlyForecast,
   calcPortfolioKPIs,
   totalMonthlyOperatingCost,
@@ -50,7 +51,7 @@ function fmtPct(n: number) {
 
 const SUB_TABS = [
   { id: "cases" as SubTab, label: "Cases", icon: "M3 6.75A2.25 2.25 0 015.25 4.5h13.5A2.25 2.25 0 0121 6.75v10.5A2.25 2.25 0 0118.75 19.5H5.25A2.25 2.25 0 013 17.25V6.75z" },
-  { id: "forecast" as SubTab, label: "Forecast & Drift", icon: "M3 13.125C3 12.504 3.504 12 4.125 12h2.25c.621 0 1.125.504 1.125 1.125v6.75C7.5 20.496 6.996 21 6.375 21h-2.25A1.125 1.125 0 013 19.875v-6.75zM9.75 8.625c0-.621.504-1.125 1.125-1.125h2.25c.621 0 1.125.504 1.125 1.125v11.25c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V8.625zM16.5 4.125c0-.621.504-1.125 1.125-1.125h2.25C20.496 3 21 3.504 21 4.125v15.75c0 .621-.504 1.125-1.125 1.125h-2.25a1.125 1.125 0 01-1.125-1.125V4.125z" },
+  { id: "forecast" as SubTab, label: "Likviditet", icon: "M2.25 18L9 11.25l4.306 4.307a11.95 11.95 0 015.814-5.519l2.74-1.22m0 0l-5.94-2.28m5.94 2.28l-2.28 5.941" },
   { id: "settings" as SubTab, label: "Indstillinger", icon: "M10.343 3.94c.09-.542.56-.94 1.11-.94h1.094c.55 0 1.02.398 1.11.94l.149.894c.07.424.384.764.78.93.398.164.855.142 1.205-.108l.737-.527a1.125 1.125 0 011.45.12l.773.774c.39.389.44 1.002.12 1.45l-.527.737c-.25.35-.272.806-.107 1.204.165.397.505.71.93.78l.893.15c.543.09.94.56.94 1.109v1.094c0 .55-.397 1.02-.94 1.11l-.893.149c-.425.07-.765.383-.93.78-.165.398-.143.854.107 1.204l.527.738c.32.447.269 1.06-.12 1.45l-.774.773a1.125 1.125 0 01-1.449.12l-.738-.527c-.35-.25-.806-.272-1.203-.107-.398.165-.71.505-.781.929l-.149.894c-.09.542-.56.94-1.11.94h-1.094c-.55 0-1.019-.398-1.11-.94l-.148-.894c-.071-.424-.384-.764-.781-.93-.398-.164-.854-.142-1.204.108l-.738.527c-.447.32-1.06.269-1.45-.12l-.773-.774a1.125 1.125 0 01-.12-1.45l.527-.737c.25-.35.273-.806.108-1.204-.165-.397-.505-.71-.93-.78l-.894-.15c-.542-.09-.94-.56-.94-1.109v-1.094c0-.55.398-1.02.94-1.11l.894-.149c.424-.07.765-.383.93-.78.165-.398.143-.854-.108-1.204l-.526-.738a1.125 1.125 0 01.12-1.45l.773-.773a1.125 1.125 0 011.45-.12l.737.527c.35.25.807.272 1.204.107.397-.165.71-.505.78-.93l.15-.893z" },
 ];
 
@@ -240,6 +241,19 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
   const forecastMax = useMemo(
     () => Math.max(1, ...forecast.map((m) => Math.abs(m.expectedDB))),
     [forecast]
+  );
+
+  // Likviditet — runway-projektion
+  const liquidity = useMemo(
+    () =>
+      calcLiquidityForecast(
+        cases,
+        monthlyOpEx,
+        settings?.cashBalance ?? 0,
+        settings?.momsPct ?? 25,
+        12
+      ),
+    [cases, monthlyOpEx, settings?.cashBalance, settings?.momsPct]
   );
 
   const econ = useMemo(() => calcCaseEconomics(form), [form]);
@@ -1460,40 +1474,143 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
         </div>
       )}
 
-      {/* ═══ FORECAST SUB-TAB ═══ */}
+      {/* ═══ LIKVIDITET SUB-TAB ═══ */}
       {subTab === "forecast" && (
         <div className="space-y-3">
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+          {/* Top: kassebeholdning + runway KPIs */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+            <div className="rounded-lg border border-violet-300 bg-violet-50 p-3">
+              <div className="text-[10px] font-semibold uppercase tracking-wide text-violet-600">
+                Kassebeholdning nu
+              </div>
+              <input
+                type="number"
+                className="mt-0.5 w-full bg-transparent text-lg font-bold text-slate-900 tabular-nums border-0 border-b border-violet-200 focus:border-violet-400 focus:outline-none px-0"
+                defaultValue={settings?.cashBalance ?? 0}
+                key={`cash-${settings?.cashBalanceUpdatedAt ?? ""}`}
+                onBlur={(e) => {
+                  const v = Number(e.target.value) || 0;
+                  if (settings && v !== settings.cashBalance) {
+                    saveSettings({ cashBalance: v, cashBalanceUpdatedAt: new Date().toISOString() });
+                  }
+                }}
+              />
+              <div className="text-[9px] text-slate-400 mt-0.5">
+                {settings?.cashBalanceUpdatedAt
+                  ? `Opdateret ${settings.cashBalanceUpdatedAt.slice(0, 10)}`
+                  : "Indtast jeres banksaldo"}
+              </div>
+            </div>
             <KpiCard
-              label="Forecast 12 mdr"
-              value={fmtDKK(forecastTotal)}
-              sublabel={monthlyOpEx > 0 ? `Efter drift (${fmtDKK(monthlyOpEx)}/md)` : "Brutto DB"}
-              tone={forecastTotal >= 0 ? "emerald" : "rose"}
+              label="Runway"
+              value={
+                liquidity.runwayMonths != null
+                  ? `${liquidity.runwayMonths} mdr`
+                  : "12+ mdr"
+              }
+              sublabel={
+                liquidity.runwayEndLabel
+                  ? `Kassen i nul: ${liquidity.runwayEndLabel}`
+                  : "Positiv hele horisonten"
+              }
+              tone={
+                liquidity.runwayMonths == null
+                  ? "emerald"
+                  : liquidity.runwayMonths >= 6
+                  ? "amber"
+                  : "rose"
+              }
             />
             <KpiCard
-              label="Faste driftsudgifter"
-              value={`${fmtDKK(monthlyOpEx)}/md`}
-              sublabel={`${fmtDKK(monthlyOpEx * 12)}/år`}
-              tone="amber"
+              label="Gns. cashflow / md"
+              value={fmtDKK(liquidity.avgMonthlyNet)}
+              sublabel={liquidity.avgMonthlyNet >= 0 ? "Kassen vokser" : "Kassen falder"}
+              tone={liquidity.avgMonthlyNet >= 0 ? "emerald" : "rose"}
             />
             <KpiCard
-              label="Gns. forventet DB/md"
-              value={fmtDKK(forecastTotal / 12)}
-              sublabel="Næste 12 måneder"
+              label="Laveste kasse (12 mdr)"
+              value={fmtDKK(liquidity.lowestCash)}
+              sublabel={`Moms est. ${fmtDKK(liquidity.totalMomsHorizon)}`}
+              tone={liquidity.lowestCash >= 0 ? "default" : "rose"}
             />
           </div>
 
-          {/* Forecast bars */}
+          {/* Cashflow-tabel */}
+          <div className="rounded-lg border border-emerald-200 bg-gradient-to-br from-emerald-50/60 to-white p-4">
+            <SectionHeader
+              icon="M2.25 18.75a60.07 60.07 0 0115.797 2.101c.727.198 1.453-.342 1.453-1.096V18.75M3.75 4.5v.75A.75.75 0 013 6h-.75m0 0v-.375c0-.621.504-1.125 1.125-1.125H20.25M2.25 6v9m18-10.5v.75c0 .414.336.75.75.75h.75m-1.5-1.5h.375c.621 0 1.125.504 1.125 1.125v9.75c0 .621-.504 1.125-1.125 1.125h-.375m1.5-1.5H21a.75.75 0 00-.75.75v.75m0 0H3.75m0 0h-.375a1.125 1.125 0 01-1.125-1.125V15m1.5 1.5v-.75A.75.75 0 003 15h-.75M15 10.5a3 3 0 11-6 0 3 3 0 016 0zm3 0h.008v.008H18V10.5zm-12 0h.008v.008H6V10.5z"
+              title="12 måneders cashflow"
+              hint="DB fra cases − faste driftsudgifter − moms-afregning"
+            />
+            <div className="rounded-md border border-slate-200 overflow-hidden bg-white">
+              <table className="w-full text-[11px]">
+                <thead className="bg-slate-50">
+                  <tr className="text-left text-[10px] text-slate-500">
+                    <th className="px-2 py-1.5 font-semibold">Måned</th>
+                    <th className="px-2 py-1.5 font-semibold text-right">DB ind</th>
+                    <th className="px-2 py-1.5 font-semibold text-right">Drift</th>
+                    <th className="px-2 py-1.5 font-semibold text-right">Moms</th>
+                    <th className="px-2 py-1.5 font-semibold text-right">Netto</th>
+                    <th className="px-2 py-1.5 font-semibold text-right">Kasse ultimo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {liquidity.months.map((m) => (
+                    <tr
+                      key={m.month}
+                      className={`border-t border-slate-100 ${m.negative ? "bg-rose-50" : ""}`}
+                    >
+                      <td className="px-2 py-1.5 font-medium text-slate-700">{m.monthLabel}</td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-emerald-700">
+                        {m.dbIn !== 0 ? fmtDKK(m.dbIn) : "—"}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
+                        {m.opexOut !== 0 ? `−${fmtDKK(m.opexOut)}` : "—"}
+                      </td>
+                      <td className="px-2 py-1.5 text-right tabular-nums text-slate-500">
+                        {m.momsOut !== 0 ? `−${fmtDKK(m.momsOut)}` : "—"}
+                      </td>
+                      <td
+                        className={`px-2 py-1.5 text-right tabular-nums font-semibold ${
+                          m.net >= 0 ? "text-emerald-700" : "text-rose-700"
+                        }`}
+                      >
+                        {fmtDKK(m.net)}
+                      </td>
+                      <td
+                        className={`px-2 py-1.5 text-right tabular-nums font-bold ${
+                          m.negative ? "text-rose-700" : "text-slate-900"
+                        }`}
+                      >
+                        {fmtDKK(m.cashEnd)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="text-[10px] text-slate-400 mt-2">
+              Moms estimeres som {settings?.momsPct ?? 25}% af DB og afregnes ved kalenderkvartal
+              (marts/juni/sep/dec). Cases med status "tabt" indgår ikke.
+            </div>
+          </div>
+
+          {/* Forecast bars — DB pr. måned */}
           <div className="rounded-lg border border-slate-200 bg-white p-4">
             <div className="text-[11px] font-semibold text-slate-700 mb-2">
-              Forventet dækningsbidrag pr. måned {monthlyOpEx > 0 ? "(efter faste driftsudgifter)" : "(brutto)"}
+              Forventet dækningsbidrag pr. måned{" "}
+              {monthlyOpEx > 0 ? "(efter faste driftsudgifter)" : "(brutto)"}
+              <span className="text-slate-400 font-normal"> · 12 mdr i alt {fmtDKK(forecastTotal)}</span>
             </div>
             <div className="space-y-1.5">
               {forecast.map((m) => {
                 const widthPct = (Math.abs(m.expectedDB) / forecastMax) * 100;
                 const isNeg = m.expectedDB < 0;
                 return (
-                  <div key={m.month} className="grid grid-cols-[80px_1fr_120px] items-center gap-2 text-[11px]">
+                  <div
+                    key={m.month}
+                    className="grid grid-cols-[80px_1fr_120px] items-center gap-2 text-[11px]"
+                  >
                     <div className="text-slate-600 font-medium">{m.monthLabel}</div>
                     <div className="h-5 bg-slate-50 rounded overflow-hidden relative">
                       <div
