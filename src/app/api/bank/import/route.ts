@@ -35,11 +35,35 @@ export async function POST(req: NextRequest) {
     // pdfjs-dist@5 fjernede Node-polyfills fra sin legacy-build, og pdf-parse@2
     // brugte den moderne build, så uploaden fejlede med "DOMMatrix is not defined".
     // unpdf wrapper pdfjs med de nødvendige polyfills indbygget.
-    const { extractText } = await import("unpdf");
-    const { text: rawText } = await extractText(new Uint8Array(buffer), {
-      mergePages: true,
-    });
-    const text = rawText.trim();
+    // unpdf's extractText kollapser alle whitespaces (inkl. linjeskift) til mellemrum
+    // når mergePages: true — så vores statement-parser ikke kan finde rækker.
+    // Vi bruger extractTextItems i stedet og rekonstruerer rækker via Y-koordinat,
+    // så hver transaktionsrække ender som én linje (som parseren forventer).
+    const { extractTextItems } = await import("unpdf");
+    const { items: pageItems } = await extractTextItems(new Uint8Array(buffer));
+    const lines: string[] = [];
+    for (const items of pageItems) {
+      // Gruppér items efter Y (afrundet til 2-pixel buckets så ascendere/descendere falder sammen)
+      const rowsByY = new Map<number, Array<{ x: number; str: string }>>();
+      for (const item of items) {
+        const yKey = Math.round(item.y / 2) * 2;
+        let row = rowsByY.get(yKey);
+        if (!row) {
+          row = [];
+          rowsByY.set(yKey, row);
+        }
+        row.push({ x: item.x, str: item.str });
+      }
+      // PDF-Y vokser opad → sortér descending så vi får øverste række først
+      const ys = [...rowsByY.keys()].sort((a, b) => b - a);
+      for (const y of ys) {
+        const row = rowsByY.get(y)!;
+        row.sort((a, b) => a.x - b.x);
+        const lineText = row.map((r) => r.str).join(" ").replace(/\s+/g, " ").trim();
+        if (lineText) lines.push(lineText);
+      }
+    }
+    const text = lines.join("\n").trim();
     if (text.length < 100) {
       return NextResponse.json(
         { error: "Kunne ikke læse kontoudtoget. Upload PDF'en direkte fra Lunar (ikke et foto)." },
