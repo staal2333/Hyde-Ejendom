@@ -31,11 +31,28 @@ export async function POST(req: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    // Udtræk tekst med pdf-parse
-    const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: new Uint8Array(buffer) });
-    const result = await parser.getText();
-    const text = (result.text || "").trim();
+    // Udtræk tekst med pdfjs-dist's legacy build.
+    // Den moderne build (som pdf-parse@2 bruger) kræver DOMMatrix/ImageData/Path2D,
+    // som ikke findes i Node.js — det giver "DOMMatrix is not defined" på serveren.
+    // Legacy-builden inkluderer de nødvendige stubs til Node.js.
+    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
+    const loadingTask = pdfjs.getDocument({
+      data: new Uint8Array(buffer),
+      useWorkerFetch: false,
+      isEvalSupported: false,
+      useSystemFonts: false,
+    });
+    const pdf = await loadingTask.promise;
+    const pageTexts: string[] = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const page = await pdf.getPage(i);
+      const content = await page.getTextContent();
+      const pageText = content.items
+        .map((item) => ("str" in item ? (item as { str: string }).str : ""))
+        .join(" ");
+      pageTexts.push(pageText);
+    }
+    const text = pageTexts.join("\n").trim();
     if (text.length < 100) {
       return NextResponse.json(
         { error: "Kunne ikke læse kontoudtoget. Upload PDF'en direkte fra Lunar (ikke et foto)." },
