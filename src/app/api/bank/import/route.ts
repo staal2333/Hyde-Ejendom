@@ -36,10 +36,10 @@ export async function POST(req: NextRequest) {
     // brugte den moderne build, så uploaden fejlede med "DOMMatrix is not defined".
     // unpdf wrapper pdfjs med de nødvendige polyfills indbygget.
     const { extractText } = await import("unpdf");
-    const { text: pages } = await extractText(new Uint8Array(buffer), {
-      mergePages: false,
+    const { text: rawText } = await extractText(new Uint8Array(buffer), {
+      mergePages: true,
     });
-    const text = (Array.isArray(pages) ? pages.join("\n") : pages).trim();
+    const text = rawText.trim();
     if (text.length < 100) {
       return NextResponse.json(
         { error: "Kunne ikke læse kontoudtoget. Upload PDF'en direkte fra Lunar (ikke et foto)." },

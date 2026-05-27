@@ -100,11 +100,11 @@ REGLER:
 
 async function extractPdfText(buffer: Buffer): Promise<string> {
   try {
-    // pdf-parse v2 — robust Node-side PDF text extraction
-    const { PDFParse } = await import("pdf-parse");
-    const parser = new PDFParse({ data: new Uint8Array(buffer) });
-    const result = await parser.getText();
-    return (result.text || "").trim();
+    // unpdf — Node-safe PDF text extraction (pdfjs-dist@5 mangler DOMMatrix
+    // i Node-miljøer; unpdf polyfiller det og bundler sin egen pdfjs).
+    const { extractText } = await import("unpdf");
+    const { text } = await extractText(new Uint8Array(buffer), { mergePages: true });
+    return text.trim();
   } catch (err) {
     logger.warn(`[invoice-scan] PDF text extraction failed: ${err instanceof Error ? err.message : err}`);
     return "";
