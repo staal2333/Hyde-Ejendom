@@ -31,28 +31,15 @@ export async function POST(req: NextRequest) {
 
     const buffer = Buffer.from(await file.arrayBuffer());
 
-    // Udtræk tekst med pdfjs-dist's legacy build.
-    // Den moderne build (som pdf-parse@2 bruger) kræver DOMMatrix/ImageData/Path2D,
-    // som ikke findes i Node.js — det giver "DOMMatrix is not defined" på serveren.
-    // Legacy-builden inkluderer de nødvendige stubs til Node.js.
-    const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-    const loadingTask = pdfjs.getDocument({
-      data: new Uint8Array(buffer),
-      useWorkerFetch: false,
-      isEvalSupported: false,
-      useSystemFonts: false,
+    // Udtræk tekst med unpdf — designet til serverless Node.js (Vercel).
+    // pdfjs-dist@5 fjernede Node-polyfills fra sin legacy-build, og pdf-parse@2
+    // brugte den moderne build, så uploaden fejlede med "DOMMatrix is not defined".
+    // unpdf wrapper pdfjs med de nødvendige polyfills indbygget.
+    const { extractText } = await import("unpdf");
+    const { text: pages } = await extractText(new Uint8Array(buffer), {
+      mergePages: false,
     });
-    const pdf = await loadingTask.promise;
-    const pageTexts: string[] = [];
-    for (let i = 1; i <= pdf.numPages; i++) {
-      const page = await pdf.getPage(i);
-      const content = await page.getTextContent();
-      const pageText = content.items
-        .map((item) => ("str" in item ? (item as { str: string }).str : ""))
-        .join(" ");
-      pageTexts.push(pageText);
-    }
-    const text = pageTexts.join("\n").trim();
+    const text = (Array.isArray(pages) ? pages.join("\n") : pages).trim();
     if (text.length < 100) {
       return NextResponse.json(
         { error: "Kunne ikke læse kontoudtoget. Upload PDF'en direkte fra Lunar (ikke et foto)." },
