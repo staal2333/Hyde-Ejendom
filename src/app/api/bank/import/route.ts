@@ -129,11 +129,17 @@ export async function POST(req: NextRequest) {
       cashUpdated,
     });
   } catch (error) {
-    logger.error(`[bank-import] ${error instanceof Error ? error.message : error}`, {
-      service: "bank",
-    });
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : null;
+    logger.error(`[bank-import] ${message}\n${stack ?? ""}`, { service: "bank" });
+    // TEMP DIAGNOSTIC — fjern når DOMMatrix-mysteriet er løst
+    const diag = {
+      domMatrixDefined: typeof (globalThis as { DOMMatrix?: unknown }).DOMMatrix !== "undefined",
+      stackHead: stack?.split("\n").slice(0, 6) ?? null,
+      commit: "1357c8a+pdf-parse-removed",
+    };
     return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Import fejlede" },
+      { error: message, _diag: diag },
       { status: 500 }
     );
   }
