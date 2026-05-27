@@ -10,6 +10,33 @@ import { saveBankTransactions } from "@/lib/bank/store";
 import { updateCostSettings } from "@/lib/case/settings-store";
 import { logger } from "@/lib/logger";
 
+// Defense-in-depth: polyfill DOMMatrix på globalThis FØR pdfjs (via unpdf) loades.
+// unpdf har sin egen polyfill, men Next.js/webpack tree-shaker nogle gange
+// pakker med "sideEffects: false" (som unpdf har sat), så vi sætter det også
+// her for at være helt sikre.
+if (typeof (globalThis as { DOMMatrix?: unknown }).DOMMatrix === "undefined") {
+  class DOMMatrixPolyfill {
+    a = 1; b = 0; c = 0; d = 1; e = 0; f = 0;
+    constructor(init?: number[] | string) {
+      if (Array.isArray(init) && init.length === 6) {
+        [this.a, this.b, this.c, this.d, this.e, this.f] = init;
+      }
+    }
+    translateSelf(tx: number, ty = 0) {
+      this.e = this.a * tx + this.c * ty + this.e;
+      this.f = this.b * tx + this.d * ty + this.f;
+      return this;
+    }
+    scaleSelf(sx: number, sy = sx) {
+      this.a *= sx; this.b *= sx; this.c *= sy; this.d *= sy;
+      return this;
+    }
+    multiplySelf() { return this; }
+    invertSelf() { return this; }
+  }
+  (globalThis as { DOMMatrix?: unknown }).DOMMatrix = DOMMatrixPolyfill;
+}
+
 export const runtime = "nodejs";
 export const maxDuration = 60;
 
