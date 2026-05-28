@@ -80,6 +80,93 @@ export async function listPlannedPayments(): Promise<PlannedPayment[]> {
   }
 }
 
+export async function getPlannedPayment(id: string): Promise<PlannedPayment | null> {
+  if (!HAS_SUPABASE || !supabase) return null;
+  try {
+    const { data, error } = await supabase
+      .from("planned_payments")
+      .select("*")
+      .eq("id", id)
+      .maybeSingle();
+    if (error) throw error;
+    return data ? rowToPayment(data) : null;
+  } catch (err) {
+    logger.error(`[planned-payments] get error: ${err instanceof Error ? err.message : err}`);
+    return null;
+  }
+}
+
+/**
+ * Match bankrækker mod planlagte 'forventet'-rækker og sæt status til 'modtaget'/'betalt'.
+ * Match-kriterier:
+ *   - direction "ind" ↔ positiv transaktion, "ud" ↔ negativ
+ *   - beløb matcher inden for 0,5 kr (rounding)
+ *   - dato inden for ±14 dage af expected_date (bank-bogføring lagger ofte ift. fakturadato)
+ *   - hver planlagt kan kun matches én gang per import
+ *   - hvis flere planlagte matcher samme transaktion → spring over (ambiguøst)
+ */
+export interface MatchedPayment {
+  id: string;
+  label: string;
+  newStatus: "modtaget" | "betalt";
+  matchedTransactionTitle: string;
+  matchedTransactionDate: string;
+}
+
+export async function autoMatchToPlannedPayments(
+  txs: Array<{ postedDate: string; title: string; amount: number }>
+): Promise<MatchedPayment[]> {
+  if (!HAS_SUPABASE || !supabase) return [];
+  const planned = await listPlannedPayments();
+  const pending = planned.filter((p) => p.status === "forventet");
+  if (pending.length === 0) return [];
+
+  const AMOUNT_TOLERANCE = 0.5;
+  const DAYS_TOLERANCE = 14;
+
+  const dayMs = 24 * 60 * 60 * 1000;
+  const matched: MatchedPayment[] = [];
+  const usedPlannedIds = new Set<string>();
+
+  for (const tx of txs) {
+    const txAbs = Math.abs(tx.amount);
+    const txSignIn = tx.amount > 0; // ind = positiv
+    const candidates = pending.filter((p) => {
+      if (usedPlannedIds.has(p.id)) return false;
+      if (p.direction === "ind" && !txSignIn) return false;
+      if (p.direction === "ud" && txSignIn) return false;
+      if (Math.abs(p.amount - txAbs) > AMOUNT_TOLERANCE) return false;
+      const dDiff = Math.abs(
+        (new Date(p.expectedDate).getTime() - new Date(tx.postedDate).getTime()) / dayMs
+      );
+      return dDiff <= DAYS_TOLERANCE;
+    });
+
+    if (candidates.length !== 1) continue; // 0 = no match, >1 = ambiguous
+
+    const winner = candidates[0];
+    const newStatus = winner.direction === "ind" ? "modtaget" : "betalt";
+    const { error } = await supabase
+      .from("planned_payments")
+      .update({ status: newStatus })
+      .eq("id", winner.id);
+    if (error) {
+      logger.warn(`[planned-payments] auto-match update failed for ${winner.id}: ${error.message}`);
+      continue;
+    }
+    usedPlannedIds.add(winner.id);
+    matched.push({
+      id: winner.id,
+      label: winner.label,
+      newStatus,
+      matchedTransactionTitle: tx.title,
+      matchedTransactionDate: tx.postedDate,
+    });
+  }
+
+  return matched;
+}
+
 export async function upsertPlannedPayment(
   input: PlannedPaymentUpsertInput
 ): Promise<PlannedPayment> {

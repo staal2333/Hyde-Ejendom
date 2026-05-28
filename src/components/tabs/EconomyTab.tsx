@@ -573,16 +573,32 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
           imported?: number;
           closingBalance?: number;
           error?: string;
+          autoMatched?: Array<{
+            id: string;
+            label: string;
+            newStatus: "modtaget" | "betalt";
+            matchedTransactionTitle: string;
+          }>;
         };
         if (!r.ok || !d.success) {
           onToast(d.error || "Kunne ikke importere kontoudtog", "error");
           return;
         }
-        await Promise.all([fetchBankSummary(), fetchSettings()]);
+        // Refresh også planlagte så auto-matchede rækker viser ny status
+        await Promise.all([fetchBankSummary(), fetchSettings(), fetchPlannedPayments()]);
+        const matchedCount = d.autoMatched?.length ?? 0;
+        const matchSuffix = matchedCount > 0
+          ? ` · ${matchedCount} planlagt${matchedCount === 1 ? "" : "e"} markeret som ${
+              d.autoMatched!.some((m) => m.newStatus === "modtaget") &&
+              d.autoMatched!.some((m) => m.newStatus === "betalt")
+                ? "modtaget/betalt"
+                : d.autoMatched![0].newStatus
+            }`
+          : "";
         onToast(
           `Kontoudtog importeret — ${d.imported} transaktioner, saldo ${Math.round(
             d.closingBalance || 0
-          ).toLocaleString("da-DK")} kr`,
+          ).toLocaleString("da-DK")} kr${matchSuffix}`,
           "success"
         );
       } catch (err) {
@@ -591,7 +607,7 @@ export function EconomyTab({ onToast }: EconomyTabProps) {
         setBankImportLoading(false);
       }
     },
-    [fetchBankSummary, fetchSettings, onToast]
+    [fetchBankSummary, fetchSettings, fetchPlannedPayments, onToast]
   );
 
   const openCustomerInvoicePicker = () => customerInvoiceRef.current?.click();

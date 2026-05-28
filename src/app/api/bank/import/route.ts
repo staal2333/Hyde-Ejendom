@@ -8,6 +8,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { parseStatementText } from "@/lib/bank/statement-parser";
 import { saveBankTransactions } from "@/lib/bank/store";
 import { updateCostSettings } from "@/lib/case/settings-store";
+import { autoMatchToPlannedPayments } from "@/lib/case/planned-payments";
 import { logger } from "@/lib/logger";
 
 // Defense-in-depth: polyfill DOMMatrix på globalThis FØR pdfjs (via unpdf) loades.
@@ -120,6 +121,18 @@ export async function POST(req: NextRequest) {
       logger.warn(`[bank-import] kunne ikke opdatere kassebeholdning: ${e instanceof Error ? e.message : e}`);
     }
 
+    // Auto-match: marker planlagte betalinger som modtaget/betalt når en
+    // matchende bank-transaktion er kommet ind.
+    let autoMatched: Awaited<ReturnType<typeof autoMatchToPlannedPayments>> = [];
+    try {
+      autoMatched = await autoMatchToPlannedPayments(statement.transactions);
+      if (autoMatched.length > 0) {
+        logger.info(`[bank-import] auto-matched ${autoMatched.length} planlagte betalinger`);
+      }
+    } catch (e) {
+      logger.warn(`[bank-import] auto-match fejlede: ${e instanceof Error ? e.message : e}`);
+    }
+
     return NextResponse.json({
       success: true,
       imported: saved,
@@ -127,6 +140,7 @@ export async function POST(req: NextRequest) {
       accountHolder: statement.accountHolder,
       accountNumber: statement.accountNumber,
       cashUpdated,
+      autoMatched,
     });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
